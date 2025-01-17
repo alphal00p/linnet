@@ -9,21 +9,25 @@ pub trait RefOne {
 }
 
 #[cfg(feature = "symbolica")]
-impl RefZero for Atom {
+impl RefZero for symbolica::atom::Atom {
     fn ref_zero(&self) -> Self {
-        Atom::new_num(0)
+        symbolica::atom::Atom::new_num(0)
     }
 }
 
 #[cfg(feature = "symbolica")]
-impl<T: RefOne + Real + RefZero> RefOne for symbolica::domains::float::Complex<T> {
+impl<T: RefOne + symbolica::domains::float::Real + RefZero> RefOne
+    for symbolica::domains::float::Complex<T>
+{
     fn ref_one(&self) -> Self {
         Self::new(self.re.ref_one(), self.im.ref_zero())
     }
 }
 
 #[cfg(feature = "symbolica")]
-impl<T: Real + RefZero> RefZero for symbolica::domains::float::Complex<T> {
+impl<T: symbolica::domains::float::Real + RefZero> RefZero
+    for symbolica::domains::float::Complex<T>
+{
     fn ref_zero(&self) -> Self {
         Self::new(self.re.ref_zero(), self.im.ref_zero())
     }

@@ -159,7 +159,7 @@
 
         LD_LIBRARY_PATH = "${pkgs.stdenv.cc.cc.lib}/lib";
 
-
+        EDITOR = "zeditor --wait";
         # Extra inputs can be added here; cargo and rustc are provided by default.
         packages = with pkgs; [
           # pkgs.ripgrep

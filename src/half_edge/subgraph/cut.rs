@@ -15,7 +15,9 @@ use crate::half_edge::{
 
 use super::{Cycle, Inclusion, SubGraph, SubGraphOps};
 #[cfg(feature = "layout")]
-use crate::layout::{LayoutEdge, LayoutIters, LayoutParams, LayoutSettings, LayoutVertex};
+use crate::half_edge::layout::{
+    LayoutEdge, LayoutIters, LayoutParams, LayoutSettings, LayoutVertex,
+};
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct OrientedCut {
