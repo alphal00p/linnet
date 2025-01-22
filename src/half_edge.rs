@@ -1,9 +1,11 @@
+use core::panic;
 use std::num::TryFromIntError;
 use std::ops::{Index, IndexMut, Mul, Neg};
 use std::{collections::VecDeque, fmt::Display, hash::Hash};
 
 use ahash::{AHashMap, AHashSet};
 use bitvec::{slice::IterOnes, vec::BitVec};
+use indexmap::{IndexMap, IndexSet};
 use itertools::Itertools;
 use rand::{rngs::SmallRng, Rng, SeedableRng};
 use serde::{Deserialize, Serialize};
@@ -232,6 +234,17 @@ impl<E> From<Orientation> for EdgeData<E> {
 impl<E> EdgeData<E> {
     pub fn un_orient(&mut self) {
         self.orientation = Orientation::Undirected;
+    }
+
+    pub fn is_set(&self) -> bool {
+        self.data.is_some()
+    }
+
+    pub fn empty(orientation: Orientation) -> Self {
+        EdgeData {
+            orientation,
+            data: None,
+        }
     }
 
     pub fn orient(&mut self) {
@@ -492,6 +505,22 @@ impl<E> InvolutiveMapping<E> {
             InvolutiveMapping::Identity { .. } => SignOrZero::Zero,
             InvolutiveMapping::Sink { .. } => SignOrZero::Minus,
             InvolutiveMapping::Source { .. } => SignOrZero::Plus,
+        }
+    }
+
+    pub fn map_empty<E2>(&self) -> InvolutiveMapping<E2> {
+        match self {
+            InvolutiveMapping::Identity { underlying, .. } => InvolutiveMapping::Identity {
+                data: EdgeData::none(),
+                underlying: *underlying,
+            },
+            InvolutiveMapping::Source { sink_idx, .. } => InvolutiveMapping::Source {
+                data: EdgeData::none(),
+                sink_idx: *sink_idx,
+            },
+            InvolutiveMapping::Sink { source_idx, .. } => InvolutiveMapping::Sink {
+                source_idx: *source_idx,
+            },
         }
     }
 
@@ -931,7 +960,7 @@ impl<N, E> Involution<N, E> {
         out
     }
 
-    fn map_data_ref<F, G, N2, E2>(&self, f: F, g: &G) -> Involution<N2, E2>
+    pub fn map_data_ref<F, G, N2, E2>(&self, f: F, g: &G) -> Involution<N2, E2>
     where
         F: FnMut(&N) -> N2,
         G: FnMut(&E) -> E2 + Clone,
@@ -963,7 +992,7 @@ impl<N, E> Involution<N, E> {
     //     }
     // }
 
-    fn map_edge_data<E2>(
+    pub fn map_edge_data<E2>(
         self,
         mut g: impl FnMut(EdgeId, EdgeData<E>) -> EdgeData<E2>,
     ) -> Involution<N, E2>
@@ -1268,7 +1297,7 @@ impl<N, E> Involution<N, E> {
     //     self.edge_data_mut(InvolutionIdx(source))
     // }
 
-    fn set_edge_data(&mut self, index: Hedge, new_data: E) -> EdgeData<E> {
+    pub fn set_edge_data(&mut self, index: Hedge, new_data: E) -> EdgeData<E> {
         match &mut self[index] {
             InvolutiveMapping::Source { data, .. } => {
                 let old = data.take();
@@ -1557,6 +1586,52 @@ impl<N: Clone, E: Clone> From<symbolica::graph::Graph<N, E>> for HedgeGraph<E, N
     }
 }
 
+#[cfg(feature = "symbolica")]
+impl<N: Clone, E: Clone> TryFrom<HedgeGraph<E, N>> for symbolica::graph::Graph<N, E> {
+    type Error = HedgeGraphError;
+
+    fn try_from(value: HedgeGraph<E, N>) -> Result<Self, Self::Error> {
+        let mut graph = symbolica::graph::Graph::new();
+        let mut map = AHashMap::new();
+
+        for (i, node) in value.node_data.iter().enumerate() {
+            map.insert(NodeIndex(i), graph.add_node(node.clone()));
+        }
+
+        for (i, node) in value.iter_egdes(&value.full_filter()) {
+            if let EdgeId::Paired { source, sink } = i {
+                let source = map[&value.node_id(source)];
+                let sink = map[&value.node_id(sink)];
+
+                let data = node.data.unwrap().clone();
+                let orientation = node.orientation;
+
+                match orientation {
+                    Orientation::Default => {
+                        graph
+                            .add_edge(source, sink, true, data)
+                            .map_err(HedgeGraphError::SymbolicaError)?;
+                    }
+                    Orientation::Reversed => {
+                        graph
+                            .add_edge(sink, source, true, data)
+                            .map_err(HedgeGraphError::SymbolicaError)?;
+                    }
+                    Orientation::Undirected => {
+                        graph
+                            .add_edge(source, sink, false, data)
+                            .map_err(HedgeGraphError::SymbolicaError)?;
+                    }
+                }
+            } else {
+                return Err(HedgeGraphError::HasIdentityHedge);
+            }
+        }
+
+        Ok(graph)
+    }
+}
+
 // impl From<&BareGraph> for HedgeGraph<usize, usize> {
 //     fn from(value: &BareGraph) -> Self {
 //         let mut builder = HedgeGraphBuilder::new();
@@ -1590,7 +1665,6 @@ use crate::num_traits::RefZero;
 // use super::{BareGraph, EdgeType, VertexInfo};
 
 #[derive(Error, Debug)]
-
 pub enum HedgeError {
     #[error("Invalid start node")]
     InvalidStart,
@@ -1639,9 +1713,27 @@ pub enum HedgeGraphError {
     NoNode,
     #[error("Invalid edge")]
     NoEdge,
+    #[error("Dangling Half edge present")]
+    HasIdentityHedge,
+    #[error("SymbolicaError: {0}")]
+    SymbolicaError(&'static str),
 }
 
 impl<E, V> HedgeGraph<E, V> {
+    pub fn nodes<S: SubGraph>(&self, subgraph: &S) -> Vec<NodeIndex> {
+        let mut nodes = IndexSet::new();
+        for i in subgraph.included_iter() {
+            let node = self.node_id(i);
+            nodes.insert(node);
+        }
+
+        nodes.into_iter().collect()
+    }
+
+    pub fn connected_hedge(&self, hedge: Hedge) -> Hedge {
+        self.involution.inv(hedge)
+    }
+
     pub fn iter_nodes(&self) -> impl Iterator<Item = (&HedgeNode, &V)> {
         self.nodes.iter().zip(self.node_data.iter())
     }
@@ -1924,6 +2016,21 @@ impl<E, V> HedgeGraph<E, V> {
         }
     }
 
+    // pub fn map<E2, V2>(
+    //     self,
+    //     f: impl FnMut(V) -> V2,
+    //     g: impl FnMut(EdgeId, EdgeData<E>) -> EdgeData<E2>,
+    // ) -> HedgeGraph<E2, V2> {
+    //     let involution = self.involution.map_edge_data(g);
+    //     let node_data = self.node_data.into_iter().map(f).collect();
+    //     HedgeGraph {
+    //         base_nodes: self.base_nodes,
+    //         nodes: self.nodes,
+    //         node_data,
+    //         involution,
+    //     }
+    // }
+
     pub fn iter_egde_data<'a, S: SubGraph>(
         &'a self,
         subgraph: &'a S,
@@ -1995,6 +2102,10 @@ impl<E, V> HedgeGraph<E, V> {
 
     pub fn involved_node_id(&self, hedge: Hedge) -> Option<NodeIndex> {
         self.involution.involved_hedge_data(hedge).copied()
+    }
+
+    pub fn node_id(&self, hedge: Hedge) -> NodeIndex {
+        *self.involution.hedge_data(hedge)
     }
 
     pub fn connected_components<S: SubGraph>(&self, subgraph: &S) -> Vec<BitVec> {
@@ -2826,8 +2937,8 @@ impl<E, V> HedgeGraph<E, V> {
                 .set(self.involution.inv(h).0, true);
         }
 
-        let complement = new_node.complement(self).hairs;
-
+        let hairy = new_node.internal_graph.filter.union(&new_node.hairs);
+        let complement = hairy.complement(self);
         let count = self.count_connected_components(&complement);
 
         if count == 1 && !regions.insert(new_node.internal_graph.clone()) {
@@ -2849,11 +2960,93 @@ impl<E, V> HedgeGraph<E, V> {
             }
         }
     }
+
+    pub fn new_derived_edge_data<T>(&self, f: &impl Fn(&E) -> T) -> HedgeVec<T> {
+        HedgeVec::mapped_from_involution(&self.involution, f)
+    }
+
+    pub fn new_derived_edge_data_empty<T>(&self) -> HedgeVec<T> {
+        HedgeVec::empty_from_involution(&self.involution)
+    }
+}
+
+// Data stored once per edge (pair of half-edges or external edge)
+pub struct HedgeVec<T> {
+    // involution:Vec<(Hedge,Option<usize>)
+    data: Vec<InvolutiveMapping<T>>,
+}
+
+impl<T> HedgeVec<T> {
+    fn inv(&self, hedge: Hedge) -> Hedge {
+        match self.data[hedge.0] {
+            InvolutiveMapping::Sink { source_idx } => source_idx,
+            InvolutiveMapping::Source { sink_idx, .. } => sink_idx,
+            InvolutiveMapping::Identity { .. } => hedge,
+        }
+    }
+
+    fn mapped_from_involution<N, E>(involution: &Involution<N, E>, f: &impl Fn(&E) -> T) -> Self {
+        let data = involution
+            .iter()
+            .map(|(_, (e, _))| e.map_data_ref(f))
+            .collect();
+        HedgeVec { data }
+    }
+
+    fn empty_from_involution<N, E>(involution: &Involution<N, E>) -> Self {
+        let data = involution.iter().map(|(_, (e, _))| e.map_empty()).collect();
+        HedgeVec { data }
+    }
+
+    fn data_inv(&self, hedge: Hedge) -> Hedge {
+        match self.data[hedge.0] {
+            InvolutiveMapping::Sink { source_idx } => source_idx,
+            _ => hedge,
+        }
+    }
+
+    pub fn is_set(&self, hedge: Hedge) -> bool {
+        self.get(hedge).is_set()
+    }
+
+    fn get(&self, hedge: Hedge) -> EdgeData<&T> {
+        let invh = self.data_inv(hedge);
+
+        match &self.data[invh.0] {
+            InvolutiveMapping::Identity { data, .. } => data.as_ref(),
+            InvolutiveMapping::Source { data, .. } => data.as_ref(),
+            _ => panic!("should have gotten data inv"),
+        }
+    }
+}
+
+impl<T> IndexMut<Hedge> for HedgeVec<T> {
+    fn index_mut(&mut self, index: Hedge) -> &mut Self::Output {
+        let invh = self.data_inv(index);
+
+        match &mut self.data[invh.0] {
+            InvolutiveMapping::Identity { data, .. } => &mut data.data,
+            InvolutiveMapping::Source { data, .. } => &mut data.data,
+            _ => panic!("should have gotten data inv"),
+        }
+    }
+}
+impl<T> Index<Hedge> for HedgeVec<T> {
+    type Output = Option<T>;
+    fn index(&self, index: Hedge) -> &Self::Output {
+        let invh = self.data_inv(index);
+
+        match &self.data[invh.0] {
+            InvolutiveMapping::Identity { data, .. } => &data.data,
+            InvolutiveMapping::Source { data, .. } => &data.data,
+            _ => panic!("should have gotten data inv"),
+        }
+    }
 }
 
 pub struct TraversalTree {
     pub traversal: Vec<Hedge>,
-    inv: Involution<Parent, ()>,
+    inv: Involution<Parent, ()>, // essentially just a vec of Parent that is the same length as the vec of hedges
     pub tree: InternalSubGraph,
     pub covers: BitVec,
 }
@@ -2868,7 +3061,26 @@ pub enum Parent {
 }
 
 impl TraversalTree {
-    fn covers(&self) -> BitVec {
+    pub fn children(&self, hedge: Hedge) -> BitVec {
+        let mut children = <BitVec as SubGraph>::empty(self.inv.inv.len());
+
+        for (i, m) in self.inv.hedge_data.iter().enumerate() {
+            match m {
+                Parent::Hedge { hedge_to_root, .. } => {
+                    if *hedge_to_root == hedge {
+                        children.set(i, true);
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        children.set(hedge.0, false);
+
+        children
+    }
+
+    pub fn covers(&self) -> BitVec {
         let mut covers = <BitVec as SubGraph>::empty(self.inv.inv.len());
         for (i, m) in self.inv.hedge_data.iter().enumerate() {
             match m {
@@ -2879,6 +3091,87 @@ impl TraversalTree {
             }
         }
         covers
+    }
+
+    pub fn leaf_edges(&self) -> BitVec {
+        let mut leaves = <BitVec as SubGraph>::empty(self.inv.inv.len());
+        for hedge in self.covers().included_iter() {
+            let is_not_parent = !self.inv.iter().any(|(_, (_, p))| {
+                if let Parent::Hedge { hedge_to_root, .. } = p {
+                    *hedge_to_root == hedge
+                } else {
+                    false
+                }
+            });
+            if is_not_parent {
+                leaves.set(hedge.0, true);
+            }
+        }
+        leaves
+    }
+
+    pub fn leaf_nodes<N, E>(&self, graph: &HedgeGraph<N, E>) -> Vec<NodeIndex> {
+        let mut leaves = IndexSet::new();
+
+        for hedge in self.covers().included_iter() {
+            if let Parent::Hedge { hedge_to_root, .. } = self.inv.hedge_data(hedge) {
+                if *hedge_to_root == hedge {
+                    let mut sect = self
+                        .tree
+                        .filter
+                        .intersection(&graph.node_hairs(hedge).hairs);
+
+                    sect.set(hedge.0, false);
+
+                    if sect.count_ones() == 0 {
+                        leaves.insert(graph.node_id(hedge));
+                    }
+                }
+            }
+        }
+
+        leaves.into_iter().collect()
+    }
+
+    /// Parent of a hedge, if is a `Parent::Hedge` then the hedge to root is in the same node,
+    /// but points towards the root
+    pub fn parent(&self, hedge: Hedge) -> &Parent {
+        &self.inv.hedge_data(hedge)
+    }
+
+    pub fn parent_node<N, E>(
+        &self,
+        child: NodeIndex,
+        graph: &HedgeGraph<N, E>,
+    ) -> Option<NodeIndex> {
+        let any_hedge = graph
+            .hairs_from_id(child)
+            .hairs
+            .included_iter()
+            .next()
+            .unwrap();
+
+        if let Parent::Hedge { hedge_to_root, .. } = self.parent(any_hedge) {
+            return Some(graph.node_id(self.inv.inv(*hedge_to_root)));
+        };
+
+        None
+    }
+
+    pub fn child_nodes<N, E>(&self, parent: NodeIndex, graph: &HedgeGraph<N, E>) -> Vec<NodeIndex> {
+        let mut children = IndexSet::new();
+
+        for h in graph.hairs_from_id(parent).hairs.included_iter() {
+            if let Parent::Hedge { hedge_to_root, .. } = self.parent(h) {
+                if *hedge_to_root != h {
+                    if let Some(c) = graph.involved_node_id(h) {
+                        children.insert(c);
+                    }
+                }
+            }
+        }
+
+        children.into_iter().collect()
     }
 
     fn path_to_root(&self, start: Hedge) -> BitVec {

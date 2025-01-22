@@ -4,9 +4,55 @@ use ahash::AHashSet;
 use bitvec::vec::BitVec;
 use serde::{Deserialize, Serialize};
 
-use crate::half_edge::{HedgeGraph, PowersetIterator};
+use crate::half_edge::{Hedge, HedgeGraph, PowersetIterator};
 
-use super::{InternalSubGraph, SubGraphOps};
+use super::{Inclusion, InternalSubGraph, SubGraph, SubGraphOps};
+
+#[derive(Clone, Debug, Serialize, Deserialize, Hash, PartialEq, Eq, PartialOrd, Ord)]
+pub struct SignedCycle {
+    pub filter: BitVec,
+    pub loop_count: Option<usize>,
+}
+
+impl SignedCycle {
+    pub fn from_cycle<N, E>(
+        cycle: Cycle,
+        according_to: Hedge,
+        graph: &HedgeGraph<N, E>,
+    ) -> Option<Self> {
+        if !cycle.is_circuit(graph) {
+            return None;
+        }
+
+        if !cycle.filter.includes(&according_to) {
+            return None;
+        }
+
+        let mut filter = graph.empty_filter();
+
+        let mut current_hedge = according_to;
+
+        loop {
+            if cycle.filter.includes(&current_hedge) {
+                break;
+            }
+            filter.set(current_hedge.0, true);
+
+            current_hedge = graph.involution.inv(
+                graph
+                    .hairs_from_id(graph.node_id(current_hedge))
+                    .hairs
+                    .included_iter()
+                    .find(|h| cycle.filter.includes(h) && (*h != current_hedge))?,
+            );
+        }
+
+        Some(SignedCycle {
+            filter,
+            loop_count: cycle.loop_count,
+        })
+    }
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Cycle {

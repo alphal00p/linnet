@@ -323,9 +323,10 @@ impl<E, V> PositionalHedgeGraph<E, V> {
     }
 
     pub fn cetz_impl_collection(
-        graphs: &[(String, String, Vec<Self>)],
+        graphs: &[(String, String, Vec<(String, Self)>)],
         edge_label: &impl Fn(&E) -> String,
         edge_decoration: &impl Fn(&E) -> Decoration,
+        pagebreak: bool,
     ) -> String {
         let mut out = Self::cetz_preamble();
         out.push_str("#{\nlet cols = (30%,30%,30%)\n");
@@ -335,17 +336,20 @@ impl<E, V> PositionalHedgeGraph<E, V> {
             for (j, g) in gs.iter().enumerate() {
                 out.push_str(&format!(
                     "let {col_name}{j}={}",
-                    g.cetz_bare(edge_label, edge_decoration)
+                    g.1.cetz_bare(edge_label, edge_decoration)
                 ))
             }
         }
         for (col_name, label, gs) in graphs.iter() {
             out.push_str(&format!("[{}]\n", label));
             out.push_str("grid(columns: cols,gutter: 20pt,");
-            for i in 0..gs.len() {
-                out.push_str(&format!("{col_name}{i},"));
+            for (i, (lab, _)) in gs.iter().enumerate() {
+                out.push_str(&format!("box[#{col_name}{i} {}],", lab));
             }
             out.push_str(")\n");
+            if pagebreak {
+                out.push_str("pagebreak()\n");
+            }
         }
         out.push('}');
         out
