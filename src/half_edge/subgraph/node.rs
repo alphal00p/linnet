@@ -3,7 +3,8 @@ use bitvec::vec::BitVec;
 use bitvec::{bitvec, order::Lsb0};
 use serde::{Deserialize, Serialize};
 
-use crate::half_edge::{GVEdgeAttrs, Hedge, HedgeGraph, HedgeNodeBuilder, InvolutiveMapping};
+use crate::half_edge::builder::HedgeNodeBuilder;
+use crate::half_edge::{Hedge, HedgeGraph};
 
 use super::contracted::ContractedSubGraph;
 use super::Inclusion;
@@ -52,110 +53,6 @@ impl SubGraph for HedgeNode {
 
     fn nhedges(&self) -> usize {
         self.hairs.nhedges()
-    }
-
-    fn dot<E, V>(
-        &self,
-        graph: &HedgeGraph<E, V>,
-        graph_info: String,
-        edge_attr: &impl Fn(&E) -> Option<String>,
-        node_attr: &impl Fn(&V) -> Option<String>,
-    ) -> String {
-        let mut out = "digraph {\n ".to_string();
-        out.push_str(
-            "  node [shape=circle,height=0.1,label=\"\"];  overlap=\"scale\"; layout=\"neato\";\n ",
-        );
-
-        out.push_str(graph_info.as_str());
-
-        for (n, v) in graph.iter_node_data(&self.internal_graph) {
-            if let Some(a) = node_attr(v) {
-                out.push_str(
-                    format!("  {} [{}];\n", graph.id_from_hairs(n).unwrap().0, a).as_str(),
-                );
-            }
-        }
-
-        for (hedge_id, (edge, incident_node)) in graph.involution.iter() {
-            match &edge {
-                //Internal graphs never have unpaired edges
-                InvolutiveMapping::Identity { data, underlying } => {
-                    let attr = if self.internal_graph.filter.includes(&hedge_id) {
-                        None
-                    } else if self.hairs.includes(&hedge_id) {
-                        Some(GVEdgeAttrs {
-                            color: Some("\"gray50\"".to_string()),
-                            label: None,
-                            other: data.as_ref().data.and_then(edge_attr),
-                        })
-                    } else {
-                        Some(GVEdgeAttrs {
-                            color: Some("\"gray75\"".to_string()),
-                            label: None,
-                            other: data.as_ref().data.and_then(edge_attr),
-                        })
-                    };
-                    out.push_str(&InvolutiveMapping::<()>::identity_dot(
-                        hedge_id,
-                        incident_node.0,
-                        attr.as_ref(),
-                        data.orientation,
-                        *underlying,
-                    ));
-                }
-                InvolutiveMapping::Source { data, .. } => {
-                    let attr = if self.internal_graph.filter.includes(&hedge_id) {
-                        None
-                    } else if self.hairs.includes(&hedge_id)
-                        && !self.hairs.includes(&graph.involution.inv(hedge_id))
-                    {
-                        Some(GVEdgeAttrs {
-                            color: Some("\"gray50:gray75;0.5\"".to_string()),
-                            label: None,
-                            other: data.as_ref().data.and_then(edge_attr),
-                        })
-                    } else if self.hairs.includes(&graph.involution.inv(hedge_id))
-                        && !self.hairs.includes(&hedge_id)
-                    {
-                        Some(GVEdgeAttrs {
-                            color: Some("\"gray75:gray50;0.5\"".to_string()),
-                            label: None,
-                            other: data.as_ref().data.and_then(edge_attr),
-                        })
-                    } else if self.hairs.includes(&graph.involution.inv(hedge_id))
-                        && self.hairs.includes(&hedge_id)
-                    {
-                        Some(GVEdgeAttrs {
-                            color: Some("\"gray50\"".to_string()),
-                            label: None,
-                            other: data.as_ref().data.and_then(edge_attr),
-                        })
-                    } else {
-                        Some(GVEdgeAttrs {
-                            color: Some("\"gray75\"".to_string()),
-                            label: None,
-                            other: data.as_ref().data.and_then(edge_attr),
-                        })
-                    };
-                    out.push_str(&InvolutiveMapping::<()>::pair_dot(
-                        incident_node.0,
-                        graph.involved_node_id(hedge_id).unwrap().0,
-                        attr.as_ref(),
-                        data.orientation,
-                    ));
-                }
-                InvolutiveMapping::Sink { source_idx } => {
-                    if self.internal_graph.filter.includes(&hedge_id)
-                        && !self.internal_graph.filter.includes(source_idx)
-                    {
-                        panic!("Internal graph has a dangling sink edge")
-                    }
-                }
-            }
-        }
-
-        out += "}";
-        out
     }
 
     fn hairs(&self, node: &HedgeNode) -> BitVec {

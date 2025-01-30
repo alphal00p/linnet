@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::hash::Hash;
 use std::ops::Index;
 
-use crate::half_edge::{GVEdgeAttrs, Hedge, HedgeGraph, InvolutiveMapping, TraversalTree};
+use crate::half_edge::{Hedge, HedgeGraph, InvolutiveMapping, TraversalTree};
 
 use super::{node::HedgeNode, Cycle, Inclusion, SubGraph, SubGraphOps};
 
@@ -94,81 +94,6 @@ impl SubGraph for InternalSubGraph {
             filter: BitVec::empty(size),
             loopcount: Some(0),
         }
-    }
-    fn dot<E, V>(
-        &self,
-        graph: &HedgeGraph<E, V>,
-        graph_info: String,
-        edge_attr: &impl Fn(&E) -> Option<String>,
-        node_attr: &impl Fn(&V) -> Option<String>,
-    ) -> String {
-        let mut out = "digraph {\n ".to_string();
-        out.push_str(
-            "  node [shape=circle,height=0.1,label=\"\"];  overlap=\"scale\"; layout=\"neato\";\n ",
-        );
-
-        out.push_str(graph_info.as_str());
-
-        for (n, v) in graph.iter_node_data(self) {
-            if let Some(a) = node_attr(v) {
-                out.push_str(
-                    format!("  {} [{}];\n", graph.id_from_hairs(n).unwrap().0, a).as_str(),
-                );
-            }
-        }
-
-        for (hedge_id, (edge, incident_node)) in graph.involution.iter() {
-            match &edge {
-                //Internal graphs never have unpaired edges
-                InvolutiveMapping::Identity { data, underlying } => {
-                    let attr = if self.filter.includes(&hedge_id) {
-                        panic!("Internal subgraphs should never have unpaired edges")
-                    } else {
-                        Some(GVEdgeAttrs {
-                            color: Some("\"gray75\"".to_string()),
-                            label: None,
-                            other: data.as_ref().data.and_then(edge_attr),
-                        })
-                    };
-                    out.push_str(&InvolutiveMapping::<()>::identity_dot(
-                        hedge_id,
-                        incident_node.0,
-                        attr.as_ref(),
-                        data.orientation,
-                        *underlying,
-                    ));
-                }
-                InvolutiveMapping::Source { data, .. } => {
-                    let attr = if self.filter.includes(&hedge_id)
-                        && !self.filter.includes(&graph.involution.inv(hedge_id))
-                        || self.filter.includes(&graph.involution.inv(hedge_id))
-                            && !self.filter.includes(&hedge_id)
-                    {
-                        panic!("Internal subgraphs should never have unpaired edges")
-                    } else if !self.filter.includes(&graph.involution.inv(hedge_id))
-                        && !self.filter.includes(&hedge_id)
-                    {
-                        Some(GVEdgeAttrs {
-                            color: Some("\"gray75\"".to_string()),
-                            label: None,
-                            other: data.as_ref().data.and_then(edge_attr),
-                        })
-                    } else {
-                        None
-                    };
-                    out.push_str(&InvolutiveMapping::<()>::pair_dot(
-                        incident_node.0,
-                        graph.involved_node_id(hedge_id).unwrap().0,
-                        attr.as_ref(),
-                        data.orientation,
-                    ));
-                }
-                InvolutiveMapping::Sink { .. } => {}
-            }
-        }
-
-        out += "}";
-        out
     }
 
     fn hairs(&self, node: &HedgeNode) -> BitVec {

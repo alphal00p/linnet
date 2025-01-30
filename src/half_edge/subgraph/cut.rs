@@ -9,8 +9,8 @@ use std::{
 use thiserror::Error;
 
 use crate::half_edge::{
-    EdgeData, Flow, Hedge, HedgeGraph, HedgeGraphBuilder, InvolutiveMapping, Orientation,
-    PowersetIterator, SignOrZero,
+    involution::SignOrZero, EdgeData, Flow, Hedge, HedgeGraph, HedgeGraphBuilder,
+    InvolutiveMapping, Orientation, PowersetIterator,
 };
 
 use super::{Cycle, Inclusion, SubGraph, SubGraphOps};
@@ -66,7 +66,7 @@ impl OrientedCut {
             } else {
                 sign.set(i.0, true);
             }
-            match graph.involution[i] {
+            match graph.involution.hedge_data(i) {
                 InvolutiveMapping::Source { .. } => {
                     reference.set(i.0, true);
                 }
@@ -92,7 +92,7 @@ impl OrientedCut {
             } else {
                 sign.set(i.0, true);
             }
-            match graph.involution[i] {
+            match graph.involution.hedge_data(i) {
                 InvolutiveMapping::Identity { .. } => {
                     return Err(CutError::CutEdgeIsIdentity);
                 }
@@ -167,19 +167,19 @@ impl OrientedCut {
     pub fn iter_edges<'a, E, V>(
         &'a self,
         graph: &'a HedgeGraph<E, V>,
-    ) -> impl Iterator<Item = (Orientation, &'a EdgeData<E>)> {
+    ) -> impl Iterator<Item = (Orientation, EdgeData<&'a E>)> {
         self.reference
             .included_iter()
-            .map(|i| (self.orientation(i, graph), graph.involution.edge_data(i)))
+            .map(|i| (self.orientation(i, graph), graph.get_edge_data_full(i)))
     }
 
     pub fn iter_edges_relative<'a, E, V>(
         &'a self,
         graph: &'a HedgeGraph<E, V>,
-    ) -> impl Iterator<Item = (Orientation, &'a EdgeData<E>)> {
+    ) -> impl Iterator<Item = (Orientation, EdgeData<&'a E>)> {
         self.reference
             .included_iter()
-            .map(|i| (self.relative_orientation(i), graph.involution.edge_data(i)))
+            .map(|i| (self.relative_orientation(i), graph.get_edge_data_full(i)))
     }
 
     pub fn relative_orientation(&self, i: Hedge) -> Orientation {
@@ -295,7 +295,7 @@ impl OrientedCut {
 
         for (j, i) in graph.involution.inv.iter().enumerate() {
             if let InvolutiveMapping::Identity { data, underlying } = i {
-                let d = ByAddress(data.as_ref().data.unwrap());
+                let d = ByAddress(data.as_ref().data);
                 match underlying {
                     Flow::Sink => {
                         leftright_map
@@ -345,9 +345,9 @@ impl OrientedCut {
                 continue;
             }
             let source = graph.node_hairs(i);
-            match &graph.involution[i] {
+            match &graph.involution.hedge_data(i) {
                 InvolutiveMapping::Identity { data, underlying } => {
-                    let datae = data.data.as_ref().unwrap();
+                    let datae = graph.get_edge_data(i);
                     builder.add_external_edge(
                         nodeidmap[source],
                         (datae, Orientation::Default, map(datae)),
@@ -358,7 +358,7 @@ impl OrientedCut {
                 InvolutiveMapping::Source { data, sink_idx } => {
                     let sink = graph.node_hairs(*sink_idx);
 
-                    let datae = data.data.as_ref().unwrap();
+                    let datae = graph.get_edge_data(i);
 
                     builder.add_edge(
                         nodeidmap[source],
@@ -386,7 +386,7 @@ impl OrientedCut {
 
             // Flow::try_from(self.relative_orientation(i)).unwrap();
             let orientation = data.orientation.relative_to(flow);
-            let datae = data.data.unwrap();
+            let datae = &graph[*data.data].0;
             builder.add_external_edge(
                 nodeidmap[source],
                 (datae, underlying, map(datae)),

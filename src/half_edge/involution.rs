@@ -9,7 +9,7 @@ use thiserror::Error;
 
 use crate::num_traits::RefZero;
 
-use super::{subgraph::SubGraph, GVEdgeAttrs};
+use super::{subgraph::SubGraph, GVEdgeAttrs, HedgeGraph, NodeIndex};
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Hedge(pub usize);
@@ -46,6 +46,27 @@ pub enum HedgePair {
 }
 
 impl HedgePair {
+    pub fn is_unpaired(&self) -> bool {
+        matches!(self, HedgePair::Unpaired { .. })
+    }
+    pub fn any_hedge(&self) -> Hedge {
+        match self {
+            HedgePair::Unpaired { hedge, .. } => *hedge,
+            HedgePair::Paired { source, .. } => *source,
+            HedgePair::Split {
+                source,
+                sink,
+                split,
+            } => {
+                if *split == Flow::Source {
+                    *source
+                } else {
+                    *sink
+                }
+            }
+        }
+    }
+
     pub fn from_half_edge<E>(hedge: Hedge, involution: &Involution<E>) -> Self {
         match involution.hedge_data(hedge) {
             InvolutiveMapping::Source { sink_idx, .. } => HedgePair::Paired {
@@ -85,7 +106,7 @@ impl HedgePair {
         if subgraph.includes(&hedge) {
             match involution.hedge_data(hedge) {
                 InvolutiveMapping::Source { sink_idx, .. } => {
-                    if subgraph.includes(&sink_idx) {
+                    if subgraph.includes(sink_idx) {
                         Some(HedgePair::Paired {
                             source: hedge,
                             sink: *sink_idx,
@@ -99,7 +120,7 @@ impl HedgePair {
                     }
                 }
                 InvolutiveMapping::Sink { source_idx } => {
-                    if subgraph.includes(&source_idx) {
+                    if subgraph.includes(source_idx) {
                         None
                     } else {
                         Some(HedgePair::Split {
@@ -119,6 +140,127 @@ impl HedgePair {
         }
     }
 
+    // uses the present color for split edge background
+    pub fn fill_color(&self, attr: GVEdgeAttrs) -> GVEdgeAttrs {
+        match self {
+            HedgePair::Unpaired { flow, .. } => {
+                if attr.color.is_some() {
+                    attr
+                } else {
+                    let color = flow.color().to_owned();
+                    GVEdgeAttrs {
+                        color: Some(color),
+                        label: attr.label,
+                        other: attr.other,
+                    }
+                }
+            }
+            HedgePair::Paired { .. } => {
+                if attr.color.is_some() {
+                    attr
+                } else {
+                    let color = format!("{}:{};0.5", Flow::Source.color(), Flow::Sink.color());
+                    GVEdgeAttrs {
+                        color: Some(color),
+                        label: attr.label,
+                        other: attr.other,
+                    }
+                }
+            }
+            HedgePair::Split { split, .. } => {
+                let background = if let Some(color) = attr.color {
+                    color
+                } else {
+                    "gray75".to_owned()
+                };
+
+                let color = match split {
+                    Flow::Source => format!("{}:{};0.5", split.color(), background),
+                    Flow::Sink => format!("{}:{};0.5", background, split.color()),
+                };
+                GVEdgeAttrs {
+                    color: Some(color),
+                    label: attr.label,
+                    other: attr.other,
+                }
+            }
+        }
+    }
+
+    pub fn dot<E, V>(
+        &self,
+        graph: &HedgeGraph<E, V>,
+        orientation: Orientation,
+        attr: GVEdgeAttrs,
+    ) -> String {
+        let attr = self.fill_color(attr);
+        match self {
+            HedgePair::Unpaired { hedge, flow } => InvolutiveMapping::<()>::identity_dot(
+                *hedge,
+                graph[*hedge],
+                Some(&attr),
+                orientation,
+                *flow,
+            ),
+            HedgePair::Paired { source, sink } => InvolutiveMapping::<()>::pair_dot(
+                graph[*source],
+                graph[*sink],
+                Some(&attr),
+                orientation,
+            ),
+            HedgePair::Split { source, sink, .. } => InvolutiveMapping::<()>::pair_dot(
+                graph[*source],
+                graph[*sink],
+                Some(&attr),
+                orientation,
+            ),
+        }
+    }
+
+    pub fn with_subgraph<S: SubGraph>(self, subgraph: &S) -> Option<Self> {
+        match self {
+            HedgePair::Paired { source, sink } => {
+                match (subgraph.includes(&source), subgraph.includes(&sink)) {
+                    (true, true) => Some(HedgePair::Paired { source, sink }),
+                    (true, false) => Some(HedgePair::Split {
+                        source,
+                        sink,
+                        split: Flow::Source,
+                    }),
+                    (false, true) => Some(HedgePair::Split {
+                        source,
+                        sink,
+                        split: Flow::Sink,
+                    }),
+                    (false, false) => None,
+                }
+            }
+            HedgePair::Split { source, sink, .. } => {
+                match (subgraph.includes(&source), subgraph.includes(&sink)) {
+                    (true, true) => Some(HedgePair::Paired { source, sink }),
+                    (true, false) => Some(HedgePair::Split {
+                        source,
+                        sink,
+                        split: Flow::Source,
+                    }),
+                    (false, true) => Some(HedgePair::Split {
+                        source,
+                        sink,
+                        split: Flow::Sink,
+                    }),
+                    (false, false) => None,
+                }
+            }
+            HedgePair::Unpaired { hedge, flow } => {
+                if subgraph.includes(&hedge) {
+                    Some(HedgePair::Unpaired { hedge, flow })
+                } else {
+                    None
+                }
+            }
+        }
+    }
+
     pub fn from_half_edge_with_subgraph<E, S: SubGraph>(
         hedge: Hedge,
         involution: &Involution<E>,
@@ -127,7 +269,7 @@ impl HedgePair {
         if subgraph.includes(&hedge) {
             Some(match involution.hedge_data(hedge) {
                 InvolutiveMapping::Source { sink_idx, .. } => {
-                    if subgraph.includes(&sink_idx) {
+                    if subgraph.includes(sink_idx) {
                         HedgePair::Paired {
                             source: hedge,
                             sink: *sink_idx,
@@ -141,7 +283,7 @@ impl HedgePair {
                     }
                 }
                 InvolutiveMapping::Sink { source_idx } => {
-                    if subgraph.includes(&source_idx) {
+                    if subgraph.includes(source_idx) {
                         HedgePair::Paired {
                             source: *source_idx,
                             sink: hedge,
@@ -308,6 +450,15 @@ pub enum Orientation {
 pub enum Flow {
     Source, // outgoing
     Sink,   // incoming
+}
+
+impl Flow {
+    pub fn color(&self) -> &'static str {
+        match self {
+            Flow::Source => "red",
+            Flow::Sink => "blue",
+        }
+    }
 }
 
 impl Neg for Flow {
@@ -612,7 +763,7 @@ impl<E> InvolutiveMapping<E> {
 
     pub fn identity_dot(
         edge_id: Hedge,
-        source: usize,
+        source: NodeIndex,
         attr: Option<&GVEdgeAttrs>,
         orientation: Orientation,
         flow: Flow,
@@ -646,8 +797,8 @@ impl<E> InvolutiveMapping<E> {
     }
 
     pub fn pair_dot(
-        source: usize,
-        sink: usize,
+        source: NodeIndex,
+        sink: NodeIndex,
         attr: Option<&GVEdgeAttrs>,
         orientation: Orientation,
     ) -> String {
@@ -672,48 +823,25 @@ impl<E> InvolutiveMapping<E> {
         }
         out
     }
-
-    pub fn default_dot(
-        &self,
-        edge_id: Hedge,
-        source: Option<usize>,
-        sink: Option<usize>,
-        attr: Option<&GVEdgeAttrs>,
-    ) -> String {
-        let mut out = "".to_string();
-        match self {
-            InvolutiveMapping::Identity { data, underlying } => {
-                out.push_str(&Self::identity_dot(
-                    edge_id,
-                    source.unwrap(),
-                    attr,
-                    data.orientation,
-                    *underlying,
-                ));
-            }
-            InvolutiveMapping::Source { data, .. } => {
-                out.push_str(&Self::pair_dot(
-                    source.unwrap(),
-                    sink.unwrap(),
-                    attr,
-                    data.orientation,
-                ));
-            }
-            InvolutiveMapping::Sink { .. } => {}
-        }
-        out
-    }
 }
 
-#[derive(Error, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize, Error)]
 pub enum InvolutionError {
     #[error("Should have been identity")]
     NotIdentity,
+    #[error("Should have been an paired hedge")]
+    NotPaired,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct Involution<E> {
-    inv: Vec<InvolutiveMapping<E>>,
+pub struct Involution<E = EdgeIndex> {
+    pub(super) inv: Vec<InvolutiveMapping<E>>,
+}
+
+impl<E> Default for Involution<E> {
+    fn default() -> Self {
+        Involution::new()
+    }
 }
 
 impl<E> Involution<E> {
@@ -731,6 +859,10 @@ impl<E> Involution<E> {
 
     pub fn len(&self) -> usize {
         self.inv.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.inv.is_empty()
     }
 
     pub fn new() -> Self {
@@ -812,11 +944,11 @@ impl<E> Involution<E> {
         self.iter_idx().all(|h| {
             let pair = self.inv(h);
             if h == pair {
-                return self.is_identity(h);
+                self.is_identity(h)
             } else {
-                return self.inv(pair) == h
+                self.inv(pair) == h
                     && ((self.is_sink(h) && self.is_source(pair))
-                        || (self.is_source(h) && self.is_sink(pair)));
+                        || (self.is_source(h) && self.is_sink(pair)))
             }
         })
     }
@@ -848,7 +980,7 @@ impl<E> Involution<E> {
         &mut self,
         source_idx: Hedge,
         sink_idx: Hedge,
-        merge_fn: &impl Fn(Flow, EdgeData<E>, Flow, EdgeData<E>) -> (Flow, EdgeData<E>),
+        merge_fn: impl FnOnce(Flow, EdgeData<E>, Flow, EdgeData<E>) -> (Flow, EdgeData<E>),
     ) -> Result<(), InvolutionError>
     where
         E: Clone,
@@ -895,11 +1027,61 @@ impl<E> Involution<E> {
         }
     }
 
+    /// Splits the edge that hedge is a part of into two dangling hedges, adding the data to the side given by hedge.
+    /// The underlying orientation of the new edges is the same as the original edge, i.e. the source will now have `Flow::Source` and the sink will have `Flow::Sink`.
+    /// The superficial orientation has to be given knowing this.
+    pub fn split_edge(&mut self, hedge: Hedge, data: EdgeData<E>) -> Result<(), InvolutionError> {
+        if self.is_identity(hedge) {
+            Err(InvolutionError::NotPaired)
+        } else {
+            let invh = self.inv(hedge);
+            if let Some(replacing_data) = self.get_data_owned(hedge) {
+                //hedge is a source, replace its data with the new data
+                self.set(
+                    hedge,
+                    InvolutiveMapping::Identity {
+                        data,
+                        underlying: Flow::Source,
+                    },
+                );
+                self.set(
+                    invh,
+                    InvolutiveMapping::Identity {
+                        data: replacing_data,
+                        underlying: Flow::Sink,
+                    },
+                );
+            } else {
+                // hedge is a sink, give it the new data
+                self.set(
+                    hedge,
+                    InvolutiveMapping::Identity {
+                        data,
+                        underlying: Flow::Sink,
+                    },
+                );
+                let data = self.get_data_owned(invh).unwrap(); //extract the data from the source
+                self.set(
+                    invh,
+                    InvolutiveMapping::Identity {
+                        data,
+                        underlying: Flow::Source,
+                    },
+                );
+            }
+            Ok(())
+        }
+    }
+
     pub fn hedge_pair(&self, hedge: Hedge) -> HedgePair {
         HedgePair::from_half_edge(hedge, self)
     }
 
-    fn smart_data<S: SubGraph>(&self, hedge: Hedge, subgraph: &S) -> Option<&EdgeData<E>> {
+    pub(crate) fn smart_data<S: SubGraph>(
+        &self,
+        hedge: Hedge,
+        subgraph: &S,
+    ) -> Option<&EdgeData<E>> {
         if subgraph.includes(&hedge) {
             match self.hedge_data(hedge) {
                 InvolutiveMapping::Identity { .. } => Some(self.edge_data(hedge)),
@@ -984,7 +1166,7 @@ impl<E> Involution<E> {
     }
 
     pub fn iter_edge_data_mut(&mut self) -> impl Iterator<Item = &mut EdgeData<E>> {
-        self.iter_mut().filter_map(|(e, m)| match m {
+        self.iter_mut().filter_map(|(_, m)| match m {
             InvolutiveMapping::Source { data, .. } => Some(data),
             InvolutiveMapping::Identity { data, .. } => Some(data),
             _ => None,
@@ -1008,7 +1190,7 @@ impl<E> Involution<E> {
         Involution { inv }
     }
 
-    pub fn map_data_ref<'a, F, G, E2>(&'a self, g: &G) -> Involution<E2>
+    pub fn map_data_ref<'a, G, E2>(&'a self, g: &G) -> Involution<E2>
     where
         G: FnMut(&'a E) -> E2 + Clone,
     {
@@ -1021,7 +1203,7 @@ impl<E> Involution<E> {
         Involution { inv }
     }
 
-    pub fn map_data<'a, F, G, E2>(self, g: &G) -> Involution<E2>
+    pub fn map_data<F, G, E2>(self, g: &G) -> Involution<E2>
     where
         G: FnMut(E) -> E2 + Clone,
     {
@@ -1034,7 +1216,7 @@ impl<E> Involution<E> {
         Involution { inv }
     }
 
-    pub fn map_data_option<'a, F, G, E2>(self, g: &G) -> Option<Involution<E2>>
+    pub fn map_data_option<F, G, E2>(self, g: &G) -> Option<Involution<E2>>
     where
         G: FnMut(E) -> Option<E2> + Clone,
     {
@@ -1126,7 +1308,7 @@ impl<E> Involution<E> {
     }
 
     /// Swap the data carrier in a pair of hedges.
-    fn flip_underlying(&mut self, hedge: Hedge) {
+    pub(super) fn flip_underlying(&mut self, hedge: Hedge) {
         let pair = self.inv(hedge);
 
         self.inv.swap(hedge.0, pair.0);
@@ -1158,7 +1340,7 @@ impl<E> Involution<E> {
         }
     }
 
-    fn random(len: usize, seed: u64) -> Involution<()> {
+    pub(crate) fn random(len: usize, seed: u64) -> Involution<()> {
         let mut rng = SmallRng::seed_from_u64(seed);
 
         let mut inv = Involution::new();
@@ -1195,11 +1377,11 @@ impl<E> Involution<E> {
         };
     }
 
-    fn hedge_data(&self, hedge: Hedge) -> &InvolutiveMapping<E> {
+    pub(super) fn hedge_data(&self, hedge: Hedge) -> &InvolutiveMapping<E> {
         &self.inv[hedge.0]
     }
 
-    fn hedge_data_mut(&mut self, hedge: Hedge) -> &mut InvolutiveMapping<E> {
+    pub(super) fn hedge_data_mut(&mut self, hedge: Hedge) -> &mut InvolutiveMapping<E> {
         &mut self.inv[hedge.0]
     }
 
@@ -1210,7 +1392,11 @@ impl<E> Involution<E> {
         }
     }
 
-    fn print<S: SubGraph>(&self, subgraph: &S, h_label: &impl Fn(&E) -> Option<String>) -> String {
+    pub fn print<S: SubGraph>(
+        &self,
+        subgraph: &S,
+        h_label: &impl Fn(&E) -> Option<String>,
+    ) -> String {
         let mut out = "".to_string();
         for (i, e) in self.iter() {
             if !subgraph.includes(&i) {
@@ -1234,6 +1420,14 @@ impl<E> Involution<E> {
             }
         }
         out
+    }
+}
+
+impl<E> FromIterator<InvolutiveMapping<E>> for Involution<E> {
+    fn from_iter<I: IntoIterator<Item = InvolutiveMapping<E>>>(iter: I) -> Self {
+        Involution {
+            inv: iter.into_iter().collect(),
+        }
     }
 }
 
@@ -1261,8 +1455,8 @@ impl<E> IndexMut<Hedge> for Involution<E> {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct EdgeIndex(usize);
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+pub struct EdgeIndex(pub(crate) usize);
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct EdgeVec<E> {

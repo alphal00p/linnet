@@ -301,24 +301,24 @@ fn K33() {
     );
     println!("{:?}", t1.traversal);
 
-    println!(
-        "{}",
-        t1.inv.print(
-            &graph.full_filter(),
-            &|a| match a {
-                Parent::Root => Some("Root       \t |     \t|".to_string()),
-                Parent::Hedge {
-                    hedge_to_root,
-                    traversal_order,
-                } => Some(format!(
-                    "parent {} \t | rank {} \t|",
-                    hedge_to_root, traversal_order
-                )),
-                Parent::Unset => None,
-            },
-            &|_| None
-        )
-    );
+    // println!(
+    //     "{}",
+    //     t1.inv.print(
+    //         &graph.full_filter(),
+    //         &|a| match a {
+    //             Parent::Root => Some("Root       \t |     \t|".to_string()),
+    //             Parent::Hedge {
+    //                 hedge_to_root,
+    //                 traversal_order,
+    //             } => Some(format!(
+    //                 "parent {} \t | rank {} \t|",
+    //                 hedge_to_root, traversal_order
+    //             )),
+    //             Parent::Unset => None,
+    //         },
+    //         &|_| None
+    //     )
+    // );
     println!("{}", graph.dot(&graph.nesting_node_from_subgraph(t1.tree)));
     println!(
         "{}",

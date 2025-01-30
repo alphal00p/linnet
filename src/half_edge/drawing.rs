@@ -3,7 +3,7 @@ use std::{fmt::Display, mem};
 
 use cgmath::{Angle, Basis2, InnerSpace, Matrix3, Rad, Rotation, SquareMatrix, Vector2, Zero};
 
-use super::{layout::FancySettings, Flow};
+use super::{layout::FancySettings, Flow, NodeIndex};
 
 #[derive(Clone, Debug)]
 pub enum CetzArc {
@@ -404,6 +404,116 @@ impl EdgeGeometry {
                 }
             }
             _ => self,
+        }
+    }
+
+    pub fn cetz_identity<L: Display>(
+        &self,
+        source: NodeIndex,
+        decoration: Decoration,
+        label: L,
+    ) -> String {
+        match self {
+            EdgeGeometry::Simple { pos, angle } => {
+                format!(
+                    "edge(node{}.pos,{},decoration:{},angle:{})\n",
+                    source,
+                    pos.to_cetz(),
+                    decoration.to_cetz(),
+                    angle.to_cetz(),
+                )
+            }
+            EdgeGeometry::Fancy {
+                pos,
+                label_pos,
+                label_angle,
+            } => {
+                format!(
+                    "edge(node{}.pos,{},decoration:{},angle:{})\ncetz.draw.content({},angle:{},[{}])\n",
+                    source,
+                    pos.to_cetz(),
+                    decoration.to_cetz(),
+                    label_angle.to_cetz(),
+                    label_pos.to_cetz(),
+                    label_angle.to_cetz(),
+                    label,
+                )
+            }
+            EdgeGeometry::FancyArrow {
+                pos,
+                arrow_arc,
+                label_pos,
+                label_angle,
+            } => {
+                format!(
+                "edge(node{}.pos,{},decoration:{},angle:{})\ncetz.draw.content({},angle:{},[{}])\n{}\n",
+                source,
+                pos.to_cetz(),
+                decoration.to_cetz(),
+                label_angle.to_cetz(),
+                label_pos.to_cetz(),
+                label_angle.to_cetz(),
+                label,
+                arrow_arc.hobby_arrow(),
+                )
+            }
+        }
+    }
+
+    pub fn cetz_pair<L: Display>(
+        &self,
+        source: NodeIndex,
+        sink: NodeIndex,
+        decoration: Decoration,
+        label: L,
+    ) -> String {
+        match self {
+            EdgeGeometry::Simple { pos, angle } => {
+                format!(
+                    "edge(node{}.pos,{},node{}.pos,decoration:{},angle:{})\n",
+                    source,
+                    pos.to_cetz(),
+                    sink,
+                    decoration.to_cetz(),
+                    angle.to_cetz()
+                )
+            }
+            EdgeGeometry::Fancy {
+                pos,
+                label_pos,
+                label_angle,
+            } => {
+                format!(
+                    "edge(node{}.pos,{},node{}.pos,decoration:{},angle:{})\ncetz.draw.content({},angle:{},[{}])\n",
+                    source,
+                    pos.to_cetz(),
+                    sink,
+                    decoration.to_cetz(),
+                    label_angle.to_cetz(),
+                    label_pos.to_cetz(),
+                    label_angle.to_cetz(),
+                    label
+                )
+            }
+            EdgeGeometry::FancyArrow {
+                pos,
+                arrow_arc,
+                label_pos,
+                label_angle,
+            } => {
+                format!(
+                    "edge(node{}.pos,{},node{}.pos,decoration:{},angle:{})\ncetz.draw.content({},angle:{},[{}])\n{}\n",
+                    source,
+                    pos.to_cetz(),
+                    sink,
+                    decoration.to_cetz(),
+                    label_angle.to_cetz(),
+                    label_pos.to_cetz(),
+                    label_angle.to_cetz(),
+                    label,
+                    arrow_arc.hobby_arrow(),
+                )
+            }
         }
     }
 }

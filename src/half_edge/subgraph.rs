@@ -7,7 +7,7 @@ use std::{
 use ahash::AHashSet;
 use bitvec::{bitvec, order::Lsb0, slice::BitSlice, vec::BitVec};
 
-use super::{GVEdgeAttrs, Hedge, HedgeGraph, InvolutiveMapping, PowersetIterator};
+use super::{involution::HedgePair, GVEdgeAttrs, Hedge, HedgeGraph, PowersetIterator};
 
 const BASE62_ALPHABET: &[u8; 62] =
     b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
@@ -179,6 +179,20 @@ pub trait SubGraph:
         covering
     }
 
+    fn background_color(&self, hedge_pair: Option<HedgePair>) -> Option<String> {
+        let color = "\"gray\"".to_string();
+
+        if let Some(p) = hedge_pair {
+            if let HedgePair::Split { .. } = p {
+                Some(color)
+            } else {
+                None
+            }
+        } else {
+            Some(color)
+        }
+    }
+
     fn string_label(&self) -> String;
     fn included_iter(&self) -> SubGraphHedgeIter {
         SubGraphHedgeIter {
@@ -196,7 +210,41 @@ pub trait SubGraph:
         graph_info: String,
         edge_attr: &impl Fn(&E) -> Option<String>,
         node_attr: &impl Fn(&V) -> Option<String>,
-    ) -> String;
+    ) -> String {
+        let mut out = "digraph {\n ".to_string();
+        out.push_str(
+            "  node [shape=circle,height=0.1,label=\"\"];  overlap=\"scale\"; layout=\"neato\";\n ",
+        );
+
+        out.push_str(graph_info.as_str());
+
+        for (n, v) in graph.iter_node_data(self) {
+            if let Some(a) = node_attr(v) {
+                out.push_str(
+                    format!("  {} [{}];\n", graph.id_from_hairs(n).unwrap().0, a).as_str(),
+                );
+            }
+        }
+
+        for (hedge_pair, _, data) in graph.iter_all_edges() {
+            let subgraph_pair = hedge_pair.with_subgraph(self);
+
+            let attr = GVEdgeAttrs {
+                color: self.background_color(subgraph_pair),
+                label: None,
+                other: edge_attr(data.data),
+            };
+
+            if let Some(p) = subgraph_pair {
+                out.push_str(&p.dot(graph, data.orientation, attr));
+            } else {
+                out.push_str(&hedge_pair.dot(graph, data.orientation, attr));
+            }
+        }
+
+        out += "}";
+        out
+    }
 
     fn hairs(&self, node: &HedgeNode) -> BitVec;
     fn empty(size: usize) -> Self;
@@ -239,103 +287,6 @@ impl SubGraph for BitVec {
 
     fn nhedges(&self) -> usize {
         self.count_ones()
-    }
-
-    fn dot<E, V>(
-        &self,
-        graph: &HedgeGraph<E, V>,
-        graph_info: String,
-        edge_attr: &impl Fn(&E) -> Option<String>,
-        node_attr: &impl Fn(&V) -> Option<String>,
-    ) -> String {
-        let mut out = "digraph {\n ".to_string();
-        out.push_str(
-            "  node [shape=circle,height=0.1,label=\"\"];  overlap=\"scale\"; layout=\"neato\";\n ",
-        );
-
-        out.push_str(graph_info.as_str());
-
-        for (n, v) in graph.iter_node_data(self) {
-            if let Some(a) = node_attr(v) {
-                out.push_str(
-                    format!("  {} [{}];\n", graph.id_from_hairs(n).unwrap().0, a).as_str(),
-                );
-            }
-        }
-
-        for (hedge_id, (edge, incident_node)) in graph.involution.iter() {
-            match &edge {
-                InvolutiveMapping::Identity { data, underlying } => {
-                    let attr = if self.includes(&hedge_id) {
-                        let color = match underlying {
-                            super::Flow::Sink => "\"blue\"",
-                            super::Flow::Source => "\"red\"",
-                        };
-                        Some(GVEdgeAttrs {
-                            color: Some(color.to_string()),
-                            label: None,
-                            other: data.as_ref().data.and_then(edge_attr),
-                        })
-                    } else {
-                        Some(GVEdgeAttrs {
-                            color: Some("\"gray75\"".to_string()),
-                            label: None,
-                            other: data.as_ref().data.and_then(edge_attr),
-                        })
-                    };
-                    out.push_str(&InvolutiveMapping::<()>::identity_dot(
-                        hedge_id,
-                        incident_node.0,
-                        attr.as_ref(),
-                        data.orientation,
-                        *underlying,
-                    ));
-                }
-                InvolutiveMapping::Source { data, .. } => {
-                    let attr = if self.includes(&hedge_id)
-                        && !self.includes(&graph.involution.inv(hedge_id))
-                    {
-                        Some(GVEdgeAttrs {
-                            color: Some("\"gray75:blue;0.5\"".to_string()),
-                            label: None,
-                            other: data.as_ref().data.and_then(edge_attr),
-                        })
-                    } else if self.includes(&graph.involution.inv(hedge_id))
-                        && !self.includes(&hedge_id)
-                    {
-                        Some(GVEdgeAttrs {
-                            color: Some("\"red:gray75;0.5\"".to_string()),
-                            label: None,
-                            other: data.as_ref().data.and_then(edge_attr),
-                        })
-                    } else if !self.includes(&graph.involution.inv(hedge_id))
-                        && !self.includes(&hedge_id)
-                    {
-                        Some(GVEdgeAttrs {
-                            color: Some("\"gray75\"".to_string()),
-                            label: None,
-                            other: data.as_ref().data.and_then(edge_attr),
-                        })
-                    } else {
-                        Some(GVEdgeAttrs {
-                            color: Some("\"red:blue;0.5\"".to_string()),
-                            label: None,
-                            other: data.as_ref().data.and_then(edge_attr),
-                        })
-                    };
-                    out.push_str(&InvolutiveMapping::<()>::pair_dot(
-                        incident_node.0,
-                        graph.involved_node_id(hedge_id).unwrap().0,
-                        attr.as_ref(),
-                        data.orientation,
-                    ));
-                }
-                InvolutiveMapping::Sink { .. } => {}
-            }
-        }
-
-        out += "}";
-        out
     }
 
     fn hairs(&self, node: &HedgeNode) -> BitVec {
