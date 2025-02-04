@@ -3,11 +3,11 @@ use std::{
     ops::{Index, IndexMut, Mul, Neg},
 };
 
+use crate::num_traits::RefZero;
+use derive_more::{From, Into};
 use rand::{rngs::SmallRng, Rng, SeedableRng};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
-
-use crate::num_traits::RefZero;
 
 use super::{subgraph::SubGraph, GVEdgeAttrs, HedgeGraph, NodeIndex};
 
@@ -1455,7 +1455,9 @@ impl<E> IndexMut<Hedge> for Involution<E> {
     }
 }
 
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(
+    Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, From, Into,
+)]
 pub struct EdgeIndex(pub(crate) usize);
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
