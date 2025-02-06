@@ -28,7 +28,7 @@ impl SignedCycle {
             return None;
         }
 
-        let mut filter = graph.empty_filter();
+        let mut filter = graph.empty_subgraph::<BitVec>();
 
         let mut current_hedge = according_to;
 

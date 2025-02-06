@@ -262,7 +262,7 @@ impl TraversalTree {
         covers: BitVec,
         parents: Vec<Parent>,
     ) -> Self {
-        let mut tree = graph.empty_filter();
+        let mut tree = graph.empty_subgraph::<BitVec>();
 
         let involution = graph.involution.map_data_ref(&|_| ());
 

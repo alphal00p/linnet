@@ -57,8 +57,8 @@ impl OrientedCut {
         cut: BitVec,
         graph: &HedgeGraph<E, V>,
     ) -> Result<Self, CutError> {
-        let mut reference = graph.empty_filter();
-        let mut sign = graph.empty_filter();
+        let mut reference = graph.empty_subgraph::<BitVec>();
+        let mut sign = graph.empty_subgraph::<BitVec>();
 
         for i in cut.included_iter() {
             if sign.includes(&i) {
@@ -83,8 +83,8 @@ impl OrientedCut {
         cut: BitVec,
         graph: &HedgeGraph<E, V>,
     ) -> Result<Self, CutError> {
-        let mut reference = graph.empty_filter();
-        let mut sign = graph.empty_filter();
+        let mut reference = graph.empty_subgraph::<BitVec>();
+        let mut sign = graph.empty_subgraph::<BitVec>();
 
         for i in cut.included_iter() {
             if sign.includes(&i) {
@@ -114,7 +114,7 @@ impl OrientedCut {
             if c.count_ones() == 0 {
                 continue;
             }
-            let mut all_sources = graph.empty_filter();
+            let mut all_sources = graph.empty_subgraph::<BitVec>();
 
             for h in c.iter_ones() {
                 match graph.involution.inv[h] {
@@ -133,7 +133,7 @@ impl OrientedCut {
             let pset = PowersetIterator::new(n_cut_edges); //.unchecked_sub(1)
 
             for i in pset {
-                let mut cut_content = graph.empty_filter();
+                let mut cut_content = graph.empty_subgraph::<BitVec>();
                 for (j, h) in all_sources.included_iter().enumerate() {
                     // if let Some(j) = j.checked_sub(1) {
                     if i[j] {

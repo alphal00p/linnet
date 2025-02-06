@@ -172,7 +172,7 @@ pub trait SubGraph:
     Clone + Eq + Hash + Inclusion<Self> + Inclusion<BitVec> + Inclusion<Hedge>
 {
     fn covers<E, V>(&self, graph: &HedgeGraph<E, V>) -> BitVec {
-        let mut covering = graph.empty_filter();
+        let mut covering = graph.empty_subgraph::<BitVec>();
         for i in self.included_iter() {
             covering.union_with(&graph.node_hairs(i).hairs)
         }
