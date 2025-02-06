@@ -1,5 +1,5 @@
 ---
-source: src/graph/half_edge/tests.rs
+source: src/half_edge/tests.rs
 expression: graph.base_dot()
 ---
 digraph {

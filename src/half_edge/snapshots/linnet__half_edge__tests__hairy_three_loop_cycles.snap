@@ -1,5 +1,5 @@
 ---
-source: src/graph/half_edge/tests.rs
+source: src/half_edge/tests.rs
 expression: cycles
 ---
 [
@@ -10,9 +10,9 @@ expression: cycles
         width: 64,
         index: 0,
       ),
-      bits: 12,
+      bits: 15,
       data: [
-        4035,
+        32259,
       ],
     ),
     loop_count: Some(1),
@@ -24,9 +24,9 @@ expression: cycles
         width: 64,
         index: 0,
       ),
-      bits: 12,
+      bits: 15,
       data: [
-        4044,
+        32268,
       ],
     ),
     loop_count: Some(1),
@@ -38,9 +38,9 @@ expression: cycles
         width: 64,
         index: 0,
       ),
-      bits: 12,
+      bits: 15,
       data: [
-        4080,
+        32304,
       ],
     ),
     loop_count: Some(1),
