@@ -1,4 +1,9 @@
-// First, define the newtypes for node and data indices.
+use std::{
+    cell::Cell,
+    ops::{Index, IndexMut},
+};
+
+/// A newtype for a node (index into `self.nodes`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ParentPointer(pub usize);
 
@@ -8,6 +13,7 @@ impl From<usize> for ParentPointer {
     }
 }
 
+/// A newtype for the set–data index (index into `UnionFind::set_data`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct SetIndex(pub usize);
 
@@ -17,55 +23,54 @@ impl From<usize> for SetIndex {
     }
 }
 
-use std::{
-    cell::Cell,
-    ops::{Index, IndexMut},
-};
-
-/// The enum representing a node in the union–find tree.
-///
-/// - `Root { set_data_idx, rank }` means this node is a root and stores its
-///   union–by–rank value and an index (of type `DataIndex`) into the associated data.
-/// - `Child(parent)` means this node is not a root; it points to its parent (a `NodeIndex`).
+/// A node can be:
+/// - `Root { set_data_idx, rank }`: this node is a root, with `rank` for union–by–rank,
+///   and it owns the data at `set_data_idx`.
+/// - `Child(parent)`: a non–root pointing to another node's index.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum UFNode {
     Root { set_data_idx: SetIndex, rank: usize },
     Child(ParentPointer),
 }
 
-/// The basic union–find structure. It partitions a contiguous vector of base data (`T`)
-/// and—for each active set—stores associated data (`U`) in a separate compact vector.
-///
-/// Internally:
-/// - The parent–pointer tree is stored as a `Vec<Cell<Node>>` so that `find` (with path compression)
-///   can update parent pointers even on an immutable reference.
-/// - Each root’s associated data index is stored both in its `Node::Root` variant and in a separate
-///   mapping (`node_data: Vec<DataIndex>`). The inverse mapping (`data_to_node: Vec<NodeIndex>`)
-///   tells you which node owns a given slot in `set_data`.
+/// A UnionFind structure that:
+/// - Stores a parallel `elements: Vec<T>` (one per node).
+/// - Maintains a parent–pointer forest (`Vec<Cell<UFNode>>`).
+/// - Stores associated data (`U`) for each root in `set_data: Vec<Option<U>>`,
+///   using swap–removal when merging.
+/// - `data_to_node` is the inverse of `set_data_idx`, telling us which node currently owns
+///   each slot in `set_data`.
 pub struct UnionFind<T, U> {
-    /// The base storage (kept contiguous so you can later filter or index it).
+    /// The base storage of node elements (parallel to `nodes`).
     pub elements: Vec<T>,
-    /// The parent–pointer tree (each node is wrapped in a `Cell`).
-    nodes: Vec<Cell<UFNode>>,
-    /// Associated data for *roots*. Non-roots do not own data. We store an Option<U>
-    /// so we can "take" it out when merging without needing U: Clone.
-    set_data: Vec<Option<U>>,
-    /// Inverse mapping: for each slot in `set_data`, the node (current root) that owns that slot.
-    data_to_node: Vec<ParentPointer>,
+
+    /// Each node is a `Cell<UFNode>` for in-place mutation during path compression.
+    pub nodes: Vec<Cell<UFNode>>,
+
+    /// For each root, there's exactly one `Some(U)` slot here.
+    /// Non–roots may have been swapped out to maintain compactness.
+    set_data: Vec<SetData<U>>,
+}
+
+pub struct SetData<U> {
+    root_pointer: ParentPointer,
+    data: Option<U>,
+}
+
+pub fn left<E>(l: E, _: E) -> E {
+    l
+}
+
+pub fn right<E>(_: E, r: E) -> E {
+    r
 }
 
 impl<T, U> UnionFind<T, U> {
-    /// Creates a new union–find.
-    ///
-    /// Both `elements` and `associated` must have the same length. Initially, each element is in its own set
-    /// and its associated data is stored at the same index (wrapped as a `DataIndex`) in `set_data`.
+    /// Builds a union-find where each node is its own set, with `rank=0` and `SetIndex(i)` owning
+    /// the `i`th slot in `set_data`.
     pub fn new(elements: Vec<T>, associated: Vec<U>) -> Self {
         let n = elements.len();
-        assert_eq!(
-            n,
-            associated.len(),
-            "elements and associated data must have the same length"
-        );
+        assert_eq!(n, associated.len());
         let nodes = (0..n)
             .map(|i| {
                 Cell::new(UFNode::Root {
@@ -74,227 +79,229 @@ impl<T, U> UnionFind<T, U> {
                 })
             })
             .collect();
-        let data_to_node = (0..n).map(ParentPointer).collect();
+
+        let set_data = associated
+            .into_iter()
+            .enumerate()
+            .map(|(i, d)| SetData {
+                root_pointer: ParentPointer(i),
+                data: Some(d),
+            })
+            .collect();
+
         Self {
             elements,
             nodes,
-            set_data: associated.into_iter().map(Some).collect(),
-            data_to_node,
+            set_data,
         }
     }
 
-    /// Finds the representative (root) of the set containing `x`, performing path compression.
-    ///
-    /// This method takes only `&self` because each node is stored in a `Cell`, allowing interior mutation.
+    /// **Find** the representative (root) of the set containing `x`, path compressing along the way.
     pub fn find(&self, x: ParentPointer) -> ParentPointer {
-        let node = self.nodes[x.0].get();
-        match node {
+        match self[&x].get() {
             UFNode::Root { .. } => x,
             UFNode::Child(parent) => {
                 let root = self.find(parent);
-                // Path compression: update x's pointer to point directly to the root.
+                // path compression
                 self[&x].set(UFNode::Child(root));
                 root
             }
         }
     }
 
-    /// Returns a reference to the associated data for the set containing `x`.
-    pub fn find_data(&self, x: ParentPointer) -> &U {
-        &self[self.find_data_index(x)]
-    }
-
-    /// Returns a reference to the associated data for the set containing `x`.
+    /// Returns the `SetIndex` for the set containing `x`.
     pub fn find_data_index(&self, x: ParentPointer) -> SetIndex {
         let root = self.find(x);
         match self[&root].get() {
             UFNode::Root { set_data_idx, .. } => set_data_idx,
-            _ => unreachable!("find() should always return a root"),
+            UFNode::Child(_) => unreachable!("find always returns a root"),
         }
     }
 
-    /// Merges the sets containing `x` and `y` using the provided merger function.
+    /// Returns a shared reference to the data for `x`'s set, unwrapping the `Option`.
+    /// Panics if no data is present (which shouldn't happen for a valid root).
+    pub fn find_data(&self, x: ParentPointer) -> &U {
+        &self[self.find_data_index(x)]
+    }
+
+    /// **Union** the sets containing `x` and `y`, merging their data with `merge(U, U) -> U`.
     ///
-    /// The merger function receives two copies of the associated data (thus requiring `U: Clone`)
-    /// and returns a new value. The winning set (determined by union–by–rank) retains its data slot,
-    /// while the losing set's slot is removed via swap removal (with appropriate pointer updates).
+    /// - Union–by–rank
+    /// - Merged data is placed in the winner’s slot.
+    /// - Loser’s slot is swap–removed from `set_data`.
+    /// - Returns the new root.
     pub fn union<F>(&mut self, x: ParentPointer, y: ParentPointer, merge: F) -> ParentPointer
     where
         F: FnOnce(U, U) -> U,
-        U: Clone,
     {
-        let root_x = self.find(x);
-        let root_y = self.find(y);
-        if root_x == root_y {
-            return root_x;
+        let rx = self.find(x);
+        let ry = self.find(y);
+        if rx == ry {
+            return rx;
         }
 
-        // Retrieve rank and associated data index from each root.
-        let (rank_x, data_idx_x) = match self[&root_x].get() {
+        // Extract rank + data index from each root
+        let (rank_x, data_x) = match self[&rx].get() {
             UFNode::Root { rank, set_data_idx } => (rank, set_data_idx),
             _ => unreachable!(),
         };
-        let (rank_y, data_idx_y) = match self[&root_y].get() {
+        let (rank_y, data_y) = match self[&ry].get() {
             UFNode::Root { rank, set_data_idx } => (rank, set_data_idx),
             _ => unreachable!(),
         };
 
-        // Decide the winner and loser by union–by–rank.
-        let (winner, loser, winner_data_idx, loser_data_idx) = if rank_x < rank_y {
-            (root_y, root_x, data_idx_y, data_idx_x)
-        } else {
-            (root_x, root_y, data_idx_x, data_idx_y)
+        let (winner, loser, winner_data_idx, loser_data_idx, same_rank) = match rank_x.cmp(&rank_y)
+        {
+            std::cmp::Ordering::Less => (ry, rx, data_y, data_x, false),
+            std::cmp::Ordering::Greater => (rx, ry, data_x, data_y, false),
+            std::cmp::Ordering::Equal => (rx, ry, data_x, data_y, true),
         };
 
-        // If the ranks are equal, increment the winner's rank.
-        if rank_x == rank_y {
-            if let UFNode::Root { set_data_idx, rank } = self.nodes[winner.0].get() {
-                self.nodes[winner.0].set(UFNode::Root {
+        if same_rank {
+            if let UFNode::Root { set_data_idx, rank } = self[&winner].get() {
+                self[&winner].set(UFNode::Root {
                     set_data_idx,
                     rank: rank + 1,
                 });
             }
         }
 
-        // Make the loser point to the winner.
-        self.nodes[loser.0].set(UFNode::Child(winner));
+        // Make loser point to winner
+        self[&loser].set(UFNode::Child(winner));
 
-        // Merge the associated data.
+        // Merge their data
+        // We can now fetch the `Option<U>` for each side using `uf[&SetIndex]`.
+        let winner_opt = self[&winner_data_idx].data.take();
+        let loser_opt = self[&loser_data_idx].data.take();
+
+        // Take out the two `U`s, merge them, store back in winner's slot
         let merged = merge(
-            self.set_data[winner_data_idx.0].take().unwrap(),
-            self.set_data[loser_data_idx.0].take().unwrap(),
+            winner_opt.expect("winner has no data?"),
+            loser_opt.expect("loser has no data?"),
         );
-        self.set_data[winner_data_idx.0] = Some(merged);
+        self[&winner_data_idx].data = Some(merged);
 
-        // Remove the losing set’s associated data from the compact storage via swap removal.
+        // Swap–remove from the losing slot
         let last_idx = self.set_data.len() - 1;
         if loser_data_idx.0 != last_idx {
+            // Swap data
             self.set_data.swap(loser_data_idx.0, last_idx);
-            self.data_to_node.swap(loser_data_idx.0, last_idx);
-            // Update the node that now owns the swapped-in data.
-            let swapped_node = self.data_to_node[loser_data_idx.0];
-            if let UFNode::Root { rank, .. } = self.nodes[swapped_node.0].get() {
-                self.nodes[swapped_node.0].set(UFNode::Root {
-                    set_data_idx: SetIndex(loser_data_idx.0),
-                    rank,
-                });
-            }
-            // If the winner’s data slot was at the end, update it.
-            if winner_data_idx.0 == last_idx {
-                if let UFNode::Root { rank, .. } = self.nodes[winner.0].get() {
-                    self.nodes[winner.0].set(UFNode::Root {
-                        set_data_idx: SetIndex(loser_data_idx.0),
+
+            // Fix the node that got swapped in
+            let swapped_node = self.set_data[loser_data_idx.0].root_pointer;
+            if let UFNode::Root { set_data_idx, rank } = self[&swapped_node].get() {
+                // set_data_idx might have been the old `last_idx`.
+                // Now it must be `loser_data_idx`.
+                if set_data_idx.0 == last_idx {
+                    self[&swapped_node].set(UFNode::Root {
+                        set_data_idx: loser_data_idx,
                         rank,
                     });
                 }
             }
+
+            // If the winner's data was at last_idx, fix it
+            if winner_data_idx.0 == last_idx {
+                if let UFNode::Root { set_data_idx, rank } = self[&winner].get() {
+                    if set_data_idx.0 == last_idx {
+                        // point it to the new location
+                        self[&winner].set(UFNode::Root {
+                            set_data_idx: loser_data_idx,
+                            rank,
+                        });
+                    }
+                }
+            }
         }
         self.set_data.pop();
-        self.data_to_node.pop();
 
         winner
     }
 
+    /// Allows mutating the set–data of `x` in place, unwrapping the `Option`.
     pub fn map_set_data_of<F>(&mut self, x: ParentPointer, f: F)
     where
         F: FnOnce(&mut U),
     {
-        let set_id = self.find_data_index(x);
-        f(&mut self[set_id]);
+        let idx = self.find_data_index(x);
+        let data_ref = &mut self[idx]; // &mut U
+        f(data_ref);
     }
 
-    /// `map_into` consumes `self` and produces a brand-new `UnionFind<T2, U2>`
-    /// that has the *same union structure*, but with `T` transformed into `T2`
-    /// and `U` transformed into `U2`.
-    ///
-    /// This does **not** require `T: Clone` or `U: Clone` because we are
-    /// taking ownership of the old vectors (`elements`, `set_data`, etc.).
-    ///
-    /// - `f_elem` will be applied to each element `T`.
-    /// - `f_data` will be applied to each associated-data `U`.
-    ///
-    /// All rank/parent relationships remain exactly the same.
-    pub fn map_into<T2, U2, F1, F2>(self, f_elem: F1, mut f_data: F2) -> UnionFind<T2, U2>
-    where
-        F1: FnMut(T) -> T2,
-        F2: FnMut(U) -> U2,
-    {
-        // 1) Transform the elements
-        let elements: Vec<T2> = self.elements.into_iter().map(f_elem).collect();
-
-        // 2) Transform set_data: each slot is Option<U>.
-        // We'll map the "Some(u)" to "Some(f_data(u))".
-        let set_data: Vec<Option<U2>> = self
-            .set_data
-            .into_iter()
-            .map(|maybe_u| maybe_u.map(&mut f_data))
-            .collect();
-
-        // 3) We can keep `data_to_node` as-is (just `Vec<ParentPointer>`).
-        let data_to_node = self.data_to_node;
-
-        // 4) Replicate each Node inside a new `Cell` (so the new UnionFind
-        //    has distinct `Cell`s, but the same child/parent/rank data).
-        let nodes: Vec<Cell<UFNode>> = self
-            .nodes
-            .into_iter()
-            .map(|cell_old| {
-                let node_old = cell_old.get();
-                Cell::new(node_old)
-            })
-            .collect();
-
-        UnionFind {
-            elements,
-            nodes,
-            data_to_node,
-            set_data,
-        }
-    }
-
+    /// Takes ownership of the old data for `x`'s set, applies a function, and replaces it.
     pub fn replace_set_data_of<F>(&mut self, x: ParentPointer, f: F)
     where
         F: FnOnce(U) -> U,
     {
-        let set_id = self.find_data_index(x);
-
-        // Take ownership of the old data
-        let old_data = self.set_data[set_id.0].take().expect("data must exist");
-        let new_data = f(old_data);
-        self[set_id] = new_data;
+        let idx = self.find_data_index(x);
+        let old_data = self[&idx].data.take().expect("no data to replace");
+        self[&idx].data.replace(f(old_data));
     }
 }
 
+// -------------------------------------------------------------------
+// Index impls
+// -------------------------------------------------------------------
+
+/// 1) `impl Index<SetIndex>` => returns `&U` (unwrapped from `Option<U>`).
 impl<T, U> Index<SetIndex> for UnionFind<T, U> {
     type Output = U;
-    fn index(&self, index: SetIndex) -> &Self::Output {
-        self.set_data[index.0].as_ref().expect("data must exist")
+    fn index(&self, idx: SetIndex) -> &Self::Output {
+        self.set_data[idx.0]
+            .data
+            .as_ref()
+            .expect("no data in that slot!")
     }
 }
 
+/// 1b) `impl IndexMut<SetIndex>` => returns `&mut U`.
 impl<T, U> IndexMut<SetIndex> for UnionFind<T, U> {
-    fn index_mut(&mut self, index: SetIndex) -> &mut Self::Output {
-        self.set_data[index.0].as_mut().expect("data must exist")
+    fn index_mut(&mut self, idx: SetIndex) -> &mut Self::Output {
+        self.set_data[idx.0]
+            .data
+            .as_mut()
+            .expect("no data in that slot!")
     }
 }
 
+/// 2) `impl Index<&SetIndex>` => returns `&Option<U>`.
+///    This lets you see if it’s Some/None, or call methods like `.take()`.
+impl<T, U> Index<&SetIndex> for UnionFind<T, U> {
+    type Output = SetData<U>;
+    fn index(&self, idx: &SetIndex) -> &Self::Output {
+        &self.set_data[idx.0]
+    }
+}
+
+/// 2b) `impl IndexMut<&SetIndex>` => returns `&mut Option<U>`.
+impl<T, U> IndexMut<&SetIndex> for UnionFind<T, U> {
+    fn index_mut(&mut self, idx: &SetIndex) -> &mut Self::Output {
+        &mut self.set_data[idx.0]
+    }
+}
+
+/// `impl Index<ParentPointer>` => returns `&T`.
+/// This is the direct element in `elements`.
 impl<T, U> Index<ParentPointer> for UnionFind<T, U> {
     type Output = T;
-    fn index(&self, index: ParentPointer) -> &Self::Output {
-        &self.elements[index.0]
+    fn index(&self, idx: ParentPointer) -> &Self::Output {
+        &self.elements[idx.0]
     }
 }
 
+/// `impl IndexMut<ParentPointer>` => returns `&mut T`.
+impl<T, U> IndexMut<ParentPointer> for UnionFind<T, U> {
+    fn index_mut(&mut self, idx: ParentPointer) -> &mut Self::Output {
+        &mut self.elements[idx.0]
+    }
+}
+
+/// `impl Index<&ParentPointer>` => returns `&Cell<UFNode>`,
+/// allowing `self[&x].get()` or `self[&x].set(...)`.
 impl<T, U> Index<&ParentPointer> for UnionFind<T, U> {
     type Output = Cell<UFNode>;
-    fn index(&self, index: &ParentPointer) -> &Self::Output {
-        &self.nodes[index.0]
-    }
-}
-
-impl<T, U> IndexMut<ParentPointer> for UnionFind<T, U> {
-    fn index_mut(&mut self, index: ParentPointer) -> &mut Self::Output {
-        &mut self.elements[index.0]
+    fn index(&self, idx: &ParentPointer) -> &Self::Output {
+        &self.nodes[idx.0]
     }
 }
 
