@@ -1465,11 +1465,6 @@ pub struct EdgeVec<E> {
     data: Vec<E>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct HedgeVec<N> {
-    data: Vec<N>,
-}
-
 pub struct DrainingInvolutionIter<E> {
     into: std::vec::IntoIter<InvolutiveMapping<E>>,
     current: Hedge,

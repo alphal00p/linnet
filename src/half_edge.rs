@@ -934,10 +934,27 @@ impl<E, V> HedgeGraph<E, V> {
         SmartHedgeVec { data, involution }
     }
 
-    pub fn new_hedgevec<T>(&self, f: &impl Fn(&E) -> T) -> HedgeVec<T> {
-        let data = self.edge_data.iter().map(|(e, _)| f(e)).collect();
+    pub fn new_hedgevec<T>(&self, f: &impl Fn(&E, EdgeIndex) -> T) -> HedgeVec<T> {
+        let data = self
+            .edge_data
+            .iter()
+            .enumerate()
+            .map(|(i, (e, _))| f(e, EdgeIndex(i)))
+            .collect();
 
         HedgeVec(data)
+    }
+
+    pub fn new_hedgevec_from_iter<T, I: IntoIterator<Item = T>>(
+        &self,
+        iter: I,
+    ) -> Result<HedgeVec<T>, HedgeGraphError> {
+        let data: Vec<_> = iter.into_iter().collect();
+        if data.len() != self.edge_data.len() {
+            return Err(HedgeGraphError::DataLengthMismatch);
+        }
+
+        Ok(HedgeVec(data))
     }
 }
 
@@ -1632,6 +1649,8 @@ pub enum HedgeGraphError {
     SymbolicaError(&'static str),
     #[error("InvolutionError: {0}")]
     InvolutionError(#[from] InvolutionError),
+    #[error("Data length mismatch")]
+    DataLengthMismatch,
 }
 
 pub mod hedgevec;
