@@ -147,9 +147,8 @@ impl HedgePair {
                 if attr.color.is_some() {
                     attr
                 } else {
-                    let color = flow.color().to_owned();
                     GVEdgeAttrs {
-                        color: Some(color),
+                        color: Some(format!("\"{}\"", flow.color())),
                         label: attr.label,
                         other: attr.other,
                     }
@@ -159,7 +158,7 @@ impl HedgePair {
                 if attr.color.is_some() {
                     attr
                 } else {
-                    let color = format!("{}:{};0.5", Flow::Source.color(), Flow::Sink.color());
+                    let color = format!("\"{}:{};0.5\"", Flow::Source.color(), Flow::Sink.color());
                     GVEdgeAttrs {
                         color: Some(color),
                         label: attr.label,

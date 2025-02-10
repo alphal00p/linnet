@@ -1476,19 +1476,7 @@ impl<E, V> HedgeGraph<E, V> {
     }
 
     pub fn base_dot(&self) -> String {
-        let mut out = "digraph {\n ".to_string();
-        out.push_str("  node [shape=circle,height=0.1,label=\"\"];  overlap=\"scale\";\n ");
-        for (p, i, d) in self.iter_all_edges() {
-            let attr = GVEdgeAttrs {
-                label: Some(format!("\"{:?}:{}\"", p, i.0)),
-                color: None,
-                other: None,
-            };
-            out.push_str(&p.dot(self, d.orientation, attr));
-        }
-
-        out += "}";
-        out
+        self.dot(&self.full_filter())
     }
 }
 
@@ -1653,5 +1641,7 @@ pub mod tree;
 pub mod drawing;
 #[cfg(feature = "layout")]
 pub mod layout;
+#[cfg(test)]
+mod test_graphs;
 #[cfg(test)]
 mod tests;
