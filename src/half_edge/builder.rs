@@ -1,12 +1,14 @@
 use super::{
+    hedgevec::SmartHedgeVec,
     involution::{EdgeData, EdgeIndex, Flow, Hedge, Involution, Orientation},
+    nodestorage::{NodeStorage, NodeStorageVec},
     subgraph::HedgeNode,
     HedgeGraph, NodeIndex,
 };
 
 #[derive(Clone, Debug)]
 pub struct HedgeNodeBuilder<V> {
-    data: V,
+    pub(crate) data: V,
     pub(crate) hedges: Vec<Hedge>,
 }
 
@@ -24,7 +26,7 @@ impl<E, V> HedgeGraphBuilder<E, V> {
         }
     }
 
-    pub fn build(self) -> HedgeGraph<E, V> {
+    pub fn build<N: NodeStorage<NodeData = V>>(self) -> HedgeGraph<E, V, N> {
         self.into()
     }
 
@@ -67,22 +69,9 @@ impl<E, V> Default for HedgeGraphBuilder<E, V> {
     }
 }
 
-impl<E, V> From<HedgeGraphBuilder<E, V>> for HedgeGraph<E, V> {
+impl<E, V, N: NodeStorage<NodeData = V>> From<HedgeGraphBuilder<E, V>> for HedgeGraph<E, V, N> {
     fn from(builder: HedgeGraphBuilder<E, V>) -> Self {
         let len = builder.involution.len();
-        let nodes: Vec<HedgeNode> = builder
-            .nodes
-            .iter()
-            .map(|x| (HedgeNode::from_builder(x, len)))
-            .collect();
-        let mut hedgedata = vec![None; builder.involution.len()];
-        for (v, n) in builder.nodes.iter().enumerate() {
-            for h in &n.hedges {
-                hedgedata[h.0] = Some(NodeIndex(v));
-            }
-        }
-        let hedge_data = hedgedata.into_iter().map(|x| x.unwrap()).collect();
-        let node_data: Vec<V> = builder.nodes.into_iter().map(|x| x.data).collect();
         let mut edge_data = Vec::new();
 
         let involution = builder.involution.map_full(|h, d| {
@@ -92,12 +81,11 @@ impl<E, V> From<HedgeGraphBuilder<E, V>> for HedgeGraph<E, V> {
         });
 
         HedgeGraph {
-            base_nodes: nodes.len(),
-            nodes,
-            node_data,
-            hedge_data,
-            edge_data,
-            involution,
+            node_store: N::build(builder.nodes, len),
+            edge_store: SmartHedgeVec {
+                data: edge_data,
+                involution,
+            },
         }
     }
 }

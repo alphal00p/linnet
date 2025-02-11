@@ -4,7 +4,7 @@ use bitvec::{bitvec, order::Lsb0};
 use serde::{Deserialize, Serialize};
 
 use crate::half_edge::builder::HedgeNodeBuilder;
-use crate::half_edge::{Hedge, HedgeGraph};
+use crate::half_edge::{Hedge, HedgeGraph, NodeStorage};
 
 use super::contracted::ContractedSubGraph;
 use super::Inclusion;
@@ -47,7 +47,7 @@ impl Inclusion<BitVec> for HedgeNode {
 }
 
 impl SubGraph for HedgeNode {
-    fn nedges<E, V>(&self, graph: &HedgeGraph<E, V>) -> usize {
+    fn nedges<E, V, N: NodeStorage<NodeData = V>>(&self, graph: &HedgeGraph<E, V, N>) -> usize {
         self.internal_graph.nedges(graph)
     }
 
@@ -82,7 +82,7 @@ impl SubGraph for HedgeNode {
 }
 
 impl SubGraphOps for HedgeNode {
-    fn complement<E, V>(&self, graph: &HedgeGraph<E, V>) -> Self {
+    fn complement<E, V, N: NodeStorage<NodeData = V>>(&self, graph: &HedgeGraph<E, V, N>) -> Self {
         Self::from_internal_graph(self.internal_graph.complement(graph), graph)
     }
 
@@ -123,7 +123,10 @@ impl HedgeNode {
         self.internal_graph.filter.clone() | &self.hairs
     }
 
-    pub fn from_internal_graph<E, V>(subgraph: InternalSubGraph, graph: &HedgeGraph<E, V>) -> Self {
+    pub fn from_internal_graph<E, V, N: NodeStorage<NodeData = V>>(
+        subgraph: InternalSubGraph,
+        graph: &HedgeGraph<E, V, N>,
+    ) -> Self {
         graph.nesting_node_from_subgraph(subgraph)
     }
 
@@ -187,7 +190,7 @@ impl HedgeNode {
         self.internal_graph.is_empty()
     }
 
-    pub fn valid<E, V>(&self, _graph: &HedgeGraph<E, V>) -> bool {
+    pub fn valid<E, V, N: NodeStorage<NodeData = V>>(&self, _graph: &HedgeGraph<E, V, N>) -> bool {
         true
     }
 

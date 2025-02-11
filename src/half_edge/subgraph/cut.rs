@@ -1,23 +1,25 @@
+use crate::half_edge::nodestorage::NodeStorageVec;
+use crate::half_edge::{
+    involution::SignOrZero, EdgeData, Flow, Hedge, HedgeGraph, HedgeGraphBuilder,
+    InvolutiveMapping, NodeStorage, Orientation, PowersetIterator,
+};
 use ahash::AHashMap;
 use bitvec::vec::BitVec;
-use by_address::ByAddress;
-use indexmap::IndexMap;
 use std::{
     fmt::{Display, Formatter},
     hash::Hash,
 };
 use thiserror::Error;
 
-use crate::half_edge::{
-    involution::SignOrZero, EdgeData, Flow, Hedge, HedgeGraph, HedgeGraphBuilder,
-    InvolutiveMapping, Orientation, PowersetIterator,
-};
-
 use super::{Cycle, Inclusion, SubGraph, SubGraphOps};
 #[cfg(feature = "layout")]
 use crate::half_edge::layout::{
     LayoutEdge, LayoutIters, LayoutParams, LayoutSettings, LayoutVertex,
 };
+
+#[cfg(feature = "layout")]
+use by_address::ByAddress;
+use indexmap::IndexMap;
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct OrientedCut {
@@ -53,9 +55,9 @@ pub enum CutError {
 }
 
 impl OrientedCut {
-    pub fn from_underlying_coerce<E, V>(
+    pub fn from_underlying_coerce<E, V, N: NodeStorage<NodeData = V>>(
         cut: BitVec,
-        graph: &HedgeGraph<E, V>,
+        graph: &HedgeGraph<E, V, N>,
     ) -> Result<Self, CutError> {
         let mut reference = graph.empty_subgraph::<BitVec>();
         let mut sign = graph.empty_subgraph::<BitVec>();
@@ -66,7 +68,7 @@ impl OrientedCut {
             } else {
                 sign.set(i.0, true);
             }
-            match graph.involution.hedge_data(i) {
+            match graph.edge_store.involution.hedge_data(i) {
                 InvolutiveMapping::Source { .. } => {
                     reference.set(i.0, true);
                 }
@@ -79,9 +81,9 @@ impl OrientedCut {
         Ok(OrientedCut { reference, sign })
     }
 
-    pub fn from_underlying_strict<E, V>(
+    pub fn from_underlying_strict<E, V, N: NodeStorage<NodeData = V>>(
         cut: BitVec,
-        graph: &HedgeGraph<E, V>,
+        graph: &HedgeGraph<E, V, N>,
     ) -> Result<Self, CutError> {
         let mut reference = graph.empty_subgraph::<BitVec>();
         let mut sign = graph.empty_subgraph::<BitVec>();
@@ -92,7 +94,7 @@ impl OrientedCut {
             } else {
                 sign.set(i.0, true);
             }
-            match graph.involution.hedge_data(i) {
+            match graph.edge_store.involution.hedge_data(i) {
                 InvolutiveMapping::Identity { .. } => {
                     return Err(CutError::CutEdgeIsIdentity);
                 }
@@ -107,7 +109,9 @@ impl OrientedCut {
         Ok(OrientedCut { reference, sign })
     }
 
-    pub fn all_initial_state_cuts<E, V>(graph: &HedgeGraph<E, V>) -> Vec<Self> {
+    pub fn all_initial_state_cuts<E, V, N: NodeStorage<NodeData = V>>(
+        graph: &HedgeGraph<E, V, N>,
+    ) -> Vec<Self> {
         let mut all_cuts = Vec::new();
 
         for c in graph.non_cut_edges() {
@@ -117,7 +121,7 @@ impl OrientedCut {
             let mut all_sources = graph.empty_subgraph::<BitVec>();
 
             for h in c.iter_ones() {
-                match graph.involution.inv[h] {
+                match graph.edge_store.involution.inv[h] {
                     InvolutiveMapping::Identity { .. } => {
                         panic!("cut edge is identity")
                     }
@@ -137,7 +141,7 @@ impl OrientedCut {
                 for (j, h) in all_sources.included_iter().enumerate() {
                     // if let Some(j) = j.checked_sub(1) {
                     if i[j] {
-                        cut_content.set(graph.involution.inv(h).0, true);
+                        cut_content.set(graph.inv(h).0, true);
                     } else {
                         cut_content.set(h.0, true);
                     }
@@ -164,18 +168,18 @@ impl OrientedCut {
 
         winding_number
     }
-    pub fn iter_edges<'a, E, V>(
+    pub fn iter_edges<'a, E, V, N: NodeStorage<NodeData = V>>(
         &'a self,
-        graph: &'a HedgeGraph<E, V>,
+        graph: &'a HedgeGraph<E, V, N>,
     ) -> impl Iterator<Item = (Orientation, EdgeData<&'a E>)> {
         self.reference
             .included_iter()
             .map(|i| (self.orientation(i, graph), graph.get_edge_data_full(i)))
     }
 
-    pub fn iter_edges_relative<'a, E, V>(
+    pub fn iter_edges_relative<'a, E, V, N: NodeStorage<NodeData = V>>(
         &'a self,
-        graph: &'a HedgeGraph<E, V>,
+        graph: &'a HedgeGraph<E, V, N>,
     ) -> impl Iterator<Item = (Orientation, EdgeData<&'a E>)> {
         self.reference
             .included_iter()
@@ -191,8 +195,12 @@ impl OrientedCut {
         }
     }
 
-    pub fn orientation<E, V>(&self, i: Hedge, graph: &HedgeGraph<E, V>) -> Orientation {
-        let orientation = match graph.involution.edge_data(i).orientation {
+    pub fn orientation<E, V, N: NodeStorage<NodeData = V>>(
+        &self,
+        i: Hedge,
+        graph: &HedgeGraph<E, V, N>,
+    ) -> Orientation {
+        let orientation = match graph.edge_store.involution.edge_data(i).orientation {
             Orientation::Undirected => Orientation::Default,
             o => o,
         };
@@ -235,7 +243,7 @@ impl Inclusion<OrientedCut> for OrientedCut {
 }
 
 impl SubGraph for OrientedCut {
-    fn nedges<E, V>(&self, _graph: &HedgeGraph<E, V>) -> usize {
+    fn nedges<E, V, N: NodeStorage<NodeData = V>>(&self, _graph: &HedgeGraph<E, V, N>) -> usize {
         self.nhedges()
     }
 
@@ -253,9 +261,9 @@ impl SubGraph for OrientedCut {
         }
     }
 
-    fn dot<E, V>(
+    fn dot<E, V, N: NodeStorage<NodeData = V>>(
         &self,
-        _graph: &crate::half_edge::HedgeGraph<E, V>,
+        _graph: &crate::half_edge::HedgeGraph<E, V, N>,
         _graph_info: String,
         _edge_attr: &impl Fn(&E) -> Option<String>,
         _node_attr: &impl Fn(&V) -> Option<String>,
@@ -281,19 +289,23 @@ impl OrientedCut {
     #[cfg(feature = "layout")]
     pub fn layout<'a, E, V, T>(
         self,
-        graph: &'a HedgeGraph<E, V>,
+        graph: &'a HedgeGraph<E, V, NodeStorageVec<V>>,
         params: LayoutParams,
         iters: LayoutIters,
         edge: f64,
         map: &impl Fn(&E) -> T,
-    ) -> HedgeGraph<LayoutEdge<(&'a E, Orientation, T)>, LayoutVertex<&'a V>> {
+    ) -> HedgeGraph<
+        LayoutEdge<(&'a E, Orientation, T)>,
+        LayoutVertex<&'a V>,
+        NodeStorageVec<LayoutVertex<&'a V>>,
+    > {
         let mut left = vec![];
         let mut leftright_map = IndexMap::new();
         let mut right = vec![];
 
         let graph = self.to_owned_graph(graph, map);
 
-        for (j, i) in graph.involution.inv.iter().enumerate() {
+        for (j, i) in graph.edge_store.involution.inv.iter().enumerate() {
             if let InvolutiveMapping::Identity { data, underlying } = i {
                 let d = ByAddress(data.as_ref().data);
                 match underlying {
@@ -326,11 +338,11 @@ impl OrientedCut {
         graph.layout(settings)
     }
 
-    pub fn to_owned_graph<'a, E, V, T>(
+    pub fn to_owned_graph<'a, E, V, T, N: NodeStorage<NodeData = V>>(
         self,
-        graph: &'a HedgeGraph<E, V>,
+        graph: &'a HedgeGraph<E, V, N>,
         map: &impl Fn(&E) -> T,
-    ) -> HedgeGraph<(&'a E, Orientation, T), &'a V> {
+    ) -> HedgeGraph<(&'a E, Orientation, T), &'a V, NodeStorageVec<&'a V>> {
         let mut builder = HedgeGraphBuilder::new();
 
         let mut nodeidmap = AHashMap::new();
@@ -341,11 +353,11 @@ impl OrientedCut {
         let complement = self.reference.complement(graph);
 
         for i in complement.included_iter() {
-            if self.reference.includes(&graph.involution.inv(i)) {
+            if self.reference.includes(&graph.inv(i)) {
                 continue;
             }
             let source = graph.node_hairs(i);
-            match &graph.involution.hedge_data(i) {
+            match &graph.edge_store.involution.hedge_data(i) {
                 InvolutiveMapping::Identity { data, underlying } => {
                     let datae = graph.get_edge_data(i);
                     builder.add_external_edge(
@@ -376,7 +388,7 @@ impl OrientedCut {
             //     panic!("should be source");
             // }
             let source = graph.node_hairs(i);
-            let data = graph.involution.edge_data(i).as_ref();
+            let data = graph.edge_store.involution.edge_data(i).as_ref();
 
             let (flow, underlying) = if self.sign.includes(&i) {
                 (Flow::Source, Orientation::Default)
@@ -386,14 +398,14 @@ impl OrientedCut {
 
             // Flow::try_from(self.relative_orientation(i)).unwrap();
             let orientation = data.orientation.relative_to(flow);
-            let datae = &graph[*data.data].0;
+            let datae = &graph[*data.data];
             builder.add_external_edge(
                 nodeidmap[source],
                 (datae, underlying, map(datae)),
                 orientation,
                 flow,
             );
-            let h = graph.involution.inv(i);
+            let h = graph.inv(i);
             let sink = graph.node_hairs(h);
             builder.add_external_edge(
                 nodeidmap[sink],

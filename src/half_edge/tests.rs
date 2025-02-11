@@ -14,7 +14,7 @@ fn threeloop() {
     builder.add_edge(c, d, (), false);
     builder.add_edge(d, a, (), false);
 
-    let graph = builder.build();
+    let graph: HedgeGraph<(), ()> = builder.build();
 
     insta::assert_snapshot!("three_loop_dot", graph.base_dot());
     insta::assert_ron_snapshot!("three_loop", graph);
@@ -61,7 +61,7 @@ fn hairythreeloop() {
     builder.add_edge(d, a, (), false);
 
     assert_eq!(builder.involution.len(), 15);
-    let graph = builder.build();
+    let graph: HedgeGraph<(), ()> = builder.build();
 
     insta::assert_snapshot!("hairy_three_loop_dot", graph.base_dot());
     insta::assert_ron_snapshot!("hairy_three_loop", graph);
@@ -95,12 +95,12 @@ fn banana_cuts() {
     builder.add_edge(a, b, (), false);
     builder.add_edge(a, b, (), false);
 
-    let three_banana = builder.clone().build();
+    let three_banana: HedgeGraph<(), ()> = builder.clone().build();
 
     assert_eq!(6, three_banana.non_cut_edges().len());
     builder.add_edge(a, b, (), false);
 
-    let four_banana = builder.build();
+    let four_banana: HedgeGraph<(), ()> = builder.build();
     assert_eq!(14, four_banana.non_cut_edges().len());
 }
 
@@ -119,7 +119,7 @@ fn three_loop_fly() {
     builder.add_edge(c, d, (), false);
     builder.add_edge(d, c, (), false);
 
-    let fly = builder.clone().build();
+    let fly: HedgeGraph<(), ()> = builder.clone().build();
     assert_eq!(32, fly.non_cut_edges().len());
 }
 
@@ -137,7 +137,7 @@ fn doubletriangle() {
     builder.add_edge(c, d, (), true);
     builder.add_edge(a, c, (), true);
 
-    let fly = builder.clone().build();
+    let fly: HedgeGraph<(), ()> = builder.clone().build();
 
     for _c in fly.non_cut_edges() {
         // println!("{c:?}");
@@ -183,7 +183,7 @@ fn cube() {
     builder.add_edge(c, g, (), false);
     builder.add_edge(d, h, (), false);
 
-    let graph = builder.build();
+    let graph: HedgeGraph<(), ()> = builder.build();
 
     insta::assert_snapshot!("cube_dot", graph.base_dot());
 
@@ -197,7 +197,7 @@ fn cube() {
 #[ignore]
 fn alt_vs_pair() {
     for s in 0..100 {
-        let rand_graph = HedgeGraph::<(), ()>::random(10, 14, s);
+        let rand_graph = HedgeGraph::<(), (), NodeStorageVec<()>>::random(10, 14, s);
 
         let before = Instant::now();
         let all_spinneys = rand_graph.all_spinneys();
@@ -287,13 +287,18 @@ fn K33() {
     builder.add_edge(c, e, (), false);
     builder.add_edge(c, f, (), false);
 
-    let graph = builder.build();
+    let graph: HedgeGraph<(), ()> = builder.build();
     graph.full_node();
     println!("built");
 
     println!("{}", graph.dot(&graph.full_node()));
 
-    let t1 = TraversalTree::dfs(&graph, &graph.full_filter(), &graph.nodes[4], None);
+    let t1 = TraversalTree::dfs(
+        &graph,
+        &graph.full_filter(),
+        graph.node_store.get_node(NodeIndex(4)),
+        None,
+    );
 
     println!(
         "{}",
@@ -330,7 +335,11 @@ fn K33() {
     println!("{}", graph.cyclotomatic_number(&graph.full_graph()));
 
     let cycles = graph
-        .paton_cycle_basis(&graph.full_graph(), &graph.nodes[4], None)
+        .paton_cycle_basis(
+            &graph.full_graph(),
+            &graph.node_store.get_node(NodeIndex(4)),
+            None,
+        )
         .unwrap()
         .0;
 
@@ -381,7 +390,7 @@ fn petersen() {
 
     builder.add_edge(h, j, (), false);
 
-    let graph = builder.build();
+    let graph: HedgeGraph<(), ()> = builder.build();
 
     println!("{}", graph.base_dot());
 
@@ -446,7 +455,7 @@ fn wagner_graph() {
 
     builder.add_edge(n8, n1, (), false);
 
-    let graph = builder.build();
+    let graph: HedgeGraph<(), ()> = builder.build();
 
     println!("{}", graph.base_dot());
 
@@ -545,7 +554,7 @@ fn flower_snark() {
 
     builder.add_edge(n20, n6, (), false); //next
 
-    let graph = builder.build();
+    let graph: HedgeGraph<(), ()> = builder.build();
 
     println!("{}", graph.base_dot());
 
@@ -594,7 +603,7 @@ fn join() {
     ab.add_external_edge(v1, (), true, Flow::Sink);
     ab.add_external_edge(v2, (), true, Flow::Source);
 
-    let a = ab.build();
+    let a: HedgeGraph<(), ()> = ab.build();
     println!("{}", a.base_dot());
     let b = a.clone();
 
@@ -605,5 +614,7 @@ fn join() {
     println!("{}", c.base_dot());
 }
 use std::time::Instant;
+
+use nodestorage::NodeStorageVec;
 
 use super::*;

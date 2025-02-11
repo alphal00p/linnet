@@ -3,10 +3,13 @@ use ahash::AHashMap;
 use super::{
     builder::HedgeGraphBuilder,
     involution::{HedgePair, Orientation},
+    nodestorage::{NodeStorage, NodeStorageVec},
     HedgeGraph, HedgeGraphError, NodeIndex,
 };
 
-impl<N: Clone, E: Clone> From<symbolica::graph::Graph<N, E>> for HedgeGraph<E, N> {
+impl<N: Clone, E: Clone> From<symbolica::graph::Graph<N, E>>
+    for HedgeGraph<E, N, NodeStorageVec<N>>
+{
     fn from(graph: symbolica::graph::Graph<N, E>) -> Self {
         let mut builder = HedgeGraphBuilder::new();
         let mut map = AHashMap::new();
@@ -26,15 +29,17 @@ impl<N: Clone, E: Clone> From<symbolica::graph::Graph<N, E>> for HedgeGraph<E, N
     }
 }
 
-impl<N: Clone, E: Clone> TryFrom<HedgeGraph<E, N>> for symbolica::graph::Graph<N, E> {
+impl<N: Clone, E: Clone, S: NodeStorage<NodeData = N>> TryFrom<HedgeGraph<E, N, S>>
+    for symbolica::graph::Graph<N, E>
+{
     type Error = HedgeGraphError;
 
-    fn try_from(value: HedgeGraph<E, N>) -> Result<Self, Self::Error> {
+    fn try_from(value: HedgeGraph<E, N, S>) -> Result<Self, Self::Error> {
         let mut graph = symbolica::graph::Graph::new();
         let mut map = AHashMap::new();
 
-        for (i, node) in value.node_data.iter().enumerate() {
-            map.insert(NodeIndex(i), graph.add_node(node.clone()));
+        for (i, node) in value.node_store.iter() {
+            map.insert(i, graph.add_node(node.clone()));
         }
 
         for (i, _, d) in value.iter_all_edges() {

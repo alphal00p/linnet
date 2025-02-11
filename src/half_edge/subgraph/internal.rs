@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::hash::Hash;
 use std::ops::Index;
 
-use crate::half_edge::{Hedge, HedgeGraph, InvolutiveMapping, TraversalTree};
+use crate::half_edge::{Hedge, HedgeGraph, InvolutiveMapping, NodeStorage, TraversalTree};
 
 use super::{node::HedgeNode, Cycle, Inclusion, SubGraph, SubGraphOps};
 
@@ -81,7 +81,7 @@ impl Inclusion<BitVec> for InternalSubGraph {
 }
 
 impl SubGraph for InternalSubGraph {
-    fn nedges<E, V>(&self, _graph: &HedgeGraph<E, V>) -> usize {
+    fn nedges<E, V, N: NodeStorage<NodeData = V>>(&self, _graph: &HedgeGraph<E, V, N>) -> usize {
         self.nhedges() / 2
     }
 
@@ -136,7 +136,7 @@ impl SubGraphOps for InternalSubGraph {
         (self.filter.clone() | &other.filter).count_ones() == 0
     }
 
-    fn complement<E, V>(&self, graph: &HedgeGraph<E, V>) -> Self {
+    fn complement<E, V, N: NodeStorage<NodeData = V>>(&self, graph: &HedgeGraph<E, V, N>) -> Self {
         InternalSubGraph {
             filter: !self.filter.clone() & !graph.external_filter(),
             loopcount: None,
@@ -150,31 +150,45 @@ impl SubGraphOps for InternalSubGraph {
 }
 
 impl InternalSubGraph {
-    fn valid_filter<E, V>(filter: &BitVec, graph: &HedgeGraph<E, V>) -> bool {
+    fn valid_filter<E, V, N: NodeStorage<NodeData = V>>(
+        filter: &BitVec,
+        graph: &HedgeGraph<E, V, N>,
+    ) -> bool {
         for i in filter.included_iter() {
-            if !filter.includes(&graph.involution.inv(i)) {
+            if !filter.includes(&graph.inv(i)) {
                 return false;
             }
         }
         true
     }
 
-    pub fn add_edge<E, V>(&mut self, hedge: Hedge, graph: &HedgeGraph<E, V>) {
-        if !graph.involution.is_identity(hedge) {
+    pub fn add_edge<E, V, N: NodeStorage<NodeData = V>>(
+        &mut self,
+        hedge: Hedge,
+        graph: &HedgeGraph<E, V, N>,
+    ) {
+        if !graph.edge_store.involution.is_identity(hedge) {
             self.filter.set(hedge.0, true);
-            self.filter.set(graph.involution.inv(hedge).0, true);
+            self.filter.set(graph.inv(hedge).0, true);
         }
     }
 
-    pub fn remove_edge<E, V>(&mut self, hedge: Hedge, graph: &HedgeGraph<E, V>) {
-        if !graph.involution.is_identity(hedge) {
+    pub fn remove_edge<E, V, N: NodeStorage<NodeData = V>>(
+        &mut self,
+        hedge: Hedge,
+        graph: &HedgeGraph<E, V, N>,
+    ) {
+        if !graph.edge_store.involution.is_identity(hedge) {
             self.filter.set(hedge.0, false);
-            self.filter.set(graph.involution.inv(hedge).0, false);
+            self.filter.set(graph.inv(hedge).0, false);
         }
     }
 
-    pub fn try_new<E, V>(filter: BitVec, graph: &HedgeGraph<E, V>) -> Option<Self> {
-        if filter.len() != graph.involution.len() {
+    pub fn try_new<E, V, N: NodeStorage<NodeData = V>>(
+        filter: BitVec,
+        graph: &HedgeGraph<E, V, N>,
+    ) -> Option<Self> {
+        if filter.len() != graph.n_hedges() {
             return None;
         }
         if !Self::valid_filter(&filter, graph) {
@@ -187,8 +201,11 @@ impl InternalSubGraph {
         })
     }
 
-    pub fn cleaned_filter_optimist<E, V>(mut filter: BitVec, graph: &HedgeGraph<E, V>) -> Self {
-        for (i, m) in graph.involution.inv.iter().enumerate() {
+    pub fn cleaned_filter_optimist<E, V, N: NodeStorage<NodeData = V>>(
+        mut filter: BitVec,
+        graph: &HedgeGraph<E, V, N>,
+    ) -> Self {
+        for (i, m) in graph.edge_store.involution.inv.iter().enumerate() {
             match m {
                 InvolutiveMapping::Identity { .. } => filter.set(i, false),
                 InvolutiveMapping::Sink { source_idx } => {
@@ -209,8 +226,11 @@ impl InternalSubGraph {
         }
     }
 
-    pub fn cleaned_filter_pessimist<E, V>(mut filter: BitVec, graph: &HedgeGraph<E, V>) -> Self {
-        for (i, m) in graph.involution.inv.iter().enumerate() {
+    pub fn cleaned_filter_pessimist<E, V, N: NodeStorage<NodeData = V>>(
+        mut filter: BitVec,
+        graph: &HedgeGraph<E, V, N>,
+    ) -> Self {
+        for (i, m) in graph.edge_store.involution.inv.iter().enumerate() {
             match m {
                 InvolutiveMapping::Identity { .. } => filter.set(i, false),
                 InvolutiveMapping::Sink { source_idx } => {
@@ -232,20 +252,29 @@ impl InternalSubGraph {
         }
     }
 
-    pub fn valid<E, V>(&self, graph: &HedgeGraph<E, V>) -> bool {
+    pub fn valid<E, V, N: NodeStorage<NodeData = V>>(&self, graph: &HedgeGraph<E, V, N>) -> bool {
         Self::valid_filter(&self.filter, graph)
     }
 
-    pub fn to_hairy_subgraph<E, V>(&self, graph: &HedgeGraph<E, V>) -> HedgeNode {
+    pub fn to_hairy_subgraph<E, V, N: NodeStorage<NodeData = V>>(
+        &self,
+        graph: &HedgeGraph<E, V, N>,
+    ) -> HedgeNode {
         graph.nesting_node_from_subgraph(self.clone())
     }
 
-    pub fn set_loopcount<E, V>(&mut self, graph: &HedgeGraph<E, V>) {
+    pub fn set_loopcount<E, V, N: NodeStorage<NodeData = V>>(
+        &mut self,
+        graph: &HedgeGraph<E, V, N>,
+    ) {
         self.loopcount = Some(graph.cyclotomatic_number(self));
     }
 
-    pub fn cycle_basis<E, V>(&self, graph: &HedgeGraph<E, V>) -> (Vec<Cycle>, TraversalTree) {
-        let node = &graph.nodes[0];
+    pub fn cycle_basis<E, V, N: NodeStorage<NodeData = V>>(
+        &self,
+        graph: &HedgeGraph<E, V, N>,
+    ) -> (Vec<Cycle>, TraversalTree) {
+        let node = graph.iter_nodes().next().unwrap().0;
         graph.paton_cycle_basis(self, node, None).unwrap()
     }
 }

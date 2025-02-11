@@ -4,7 +4,7 @@ use ahash::AHashSet;
 use bitvec::vec::BitVec;
 use serde::{Deserialize, Serialize};
 
-use crate::half_edge::{Hedge, HedgeGraph, PowersetIterator};
+use crate::half_edge::{Hedge, HedgeGraph, NodeStorage, PowersetIterator};
 
 use super::{Inclusion, InternalSubGraph, SubGraph, SubGraphOps};
 
@@ -15,10 +15,10 @@ pub struct SignedCycle {
 }
 
 impl SignedCycle {
-    pub fn from_cycle<N, E>(
+    pub fn from_cycle<V, E, N: NodeStorage<NodeData = V>>(
         cycle: Cycle,
         according_to: Hedge,
-        graph: &HedgeGraph<N, E>,
+        graph: &HedgeGraph<E, V, N>,
     ) -> Option<Self> {
         if !cycle.is_circuit(graph) {
             return None;
@@ -38,7 +38,7 @@ impl SignedCycle {
             }
             filter.set(current_hedge.0, true);
 
-            current_hedge = graph.involution.inv(
+            current_hedge = graph.inv(
                 graph
                     .hairs_from_id(graph.node_id(current_hedge))
                     .hairs
@@ -60,7 +60,10 @@ pub struct Cycle {
     pub loop_count: Option<usize>,
 }
 impl Cycle {
-    pub fn internal_graph<N, E>(self, graph: &HedgeGraph<N, E>) -> InternalSubGraph {
+    pub fn internal_graph<E, V, N: NodeStorage<NodeData = V>>(
+        self,
+        graph: &HedgeGraph<E, V, N>,
+    ) -> InternalSubGraph {
         InternalSubGraph::cleaned_filter_pessimist(self.filter, graph)
     }
     pub fn new_unchecked(filter: BitVec) -> Self {
@@ -69,7 +72,10 @@ impl Cycle {
             loop_count: None,
         }
     }
-    pub fn is_circuit<E, V>(&self, graph: &HedgeGraph<E, V>) -> bool {
+    pub fn is_circuit<E, V, N: NodeStorage<NodeData = V>>(
+        &self,
+        graph: &HedgeGraph<E, V, N>,
+    ) -> bool {
         for e in graph.iter_egde_node(&self.filter) {
             let adgacent = self.filter.intersection(&e.hairs);
             if adgacent.count_ones() != 2 {
@@ -81,7 +87,10 @@ impl Cycle {
         }
         true
     }
-    pub fn new_circuit<E, V>(filter: BitVec, graph: &HedgeGraph<E, V>) -> Option<Self> {
+    pub fn new_circuit<E, V, N: NodeStorage<NodeData = V>>(
+        filter: BitVec,
+        graph: &HedgeGraph<E, V, N>,
+    ) -> Option<Self> {
         let circuit = Self {
             filter,
             loop_count: Some(1),
@@ -92,7 +101,10 @@ impl Cycle {
             None
         }
     }
-    pub fn new<E, V>(filter: BitVec, graph: &HedgeGraph<E, V>) -> Option<Self> {
+    pub fn new<E, V, N: NodeStorage<NodeData = V>>(
+        filter: BitVec,
+        graph: &HedgeGraph<E, V, N>,
+    ) -> Option<Self> {
         for e in graph.iter_egde_node(&filter) {
             let adgacent = filter.intersection(&e.hairs);
             if adgacent.count_ones() % 2 == 1 {

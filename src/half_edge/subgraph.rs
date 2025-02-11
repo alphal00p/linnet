@@ -7,7 +7,7 @@ use std::{
 use ahash::AHashSet;
 use bitvec::{bitvec, order::Lsb0, slice::BitSlice, vec::BitVec};
 
-use super::{involution::HedgePair, GVEdgeAttrs, Hedge, HedgeGraph, PowersetIterator};
+use super::{involution::HedgePair, GVEdgeAttrs, Hedge, HedgeGraph, NodeStorage, PowersetIterator};
 
 const BASE62_ALPHABET: &[u8; 62] =
     b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
@@ -150,7 +150,7 @@ pub trait SubGraphOps: SubGraph {
         new
     }
 
-    fn complement<E, V>(&self, graph: &HedgeGraph<E, V>) -> Self;
+    fn complement<E, V, N: NodeStorage<NodeData = V>>(&self, graph: &HedgeGraph<E, V, N>) -> Self;
 }
 
 pub trait Inclusion<T> {
@@ -171,7 +171,7 @@ impl Iterator for SubGraphHedgeIter<'_> {
 pub trait SubGraph:
     Clone + Eq + Hash + Inclusion<Self> + Inclusion<BitVec> + Inclusion<Hedge>
 {
-    fn covers<E, V>(&self, graph: &HedgeGraph<E, V>) -> BitVec {
+    fn covers<E, V, N: NodeStorage<NodeData = V>>(&self, graph: &HedgeGraph<E, V, N>) -> BitVec {
         let mut covering = graph.empty_subgraph::<BitVec>();
         for i in self.included_iter() {
             covering.union_with(&graph.node_hairs(i).hairs)
@@ -202,11 +202,11 @@ pub trait SubGraph:
     fn included(&self) -> &BitSlice;
     // fn includes(&self, i: InvolutionIdx) -> bool;
     fn nhedges(&self) -> usize;
-    fn nedges<E, V>(&self, graph: &HedgeGraph<E, V>) -> usize; //not counting unpaired hedges
+    fn nedges<E, V, N: NodeStorage<NodeData = V>>(&self, graph: &HedgeGraph<E, V, N>) -> usize; //not counting unpaired hedges
 
-    fn dot<E, V>(
+    fn dot<E, V, N: NodeStorage<NodeData = V>>(
         &self,
-        graph: &HedgeGraph<E, V>,
+        graph: &HedgeGraph<E, V, N>,
         graph_info: String,
         edge_attr: &impl Fn(&E) -> Option<String>,
         node_attr: &impl Fn(&V) -> Option<String>,
@@ -275,10 +275,10 @@ impl SubGraph for BitVec {
     fn included(&self) -> &BitSlice {
         self.as_bitslice()
     }
-    fn nedges<E, V>(&self, graph: &HedgeGraph<E, V>) -> usize {
+    fn nedges<E, V, N: NodeStorage<NodeData = V>>(&self, graph: &HedgeGraph<E, V, N>) -> usize {
         let mut count = 0;
         for i in self.included_iter() {
-            if i != graph.involution.inv(i) && self.includes(&graph.involution.inv(i)) {
+            if i != graph.inv(i) && self.includes(&graph.inv(i)) {
                 count += 1;
             }
         }
@@ -373,7 +373,7 @@ impl SubGraphOps for BitVec {
         self.intersection(other).count_ones() == 0
     }
 
-    fn complement<E, V>(&self, _graph: &HedgeGraph<E, V>) -> Self {
+    fn complement<E, V, N: NodeStorage<NodeData = V>>(&self, _graph: &HedgeGraph<E, V, N>) -> Self {
         !self.clone()
     }
 

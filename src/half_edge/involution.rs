@@ -9,7 +9,7 @@ use rand::{rngs::SmallRng, Rng, SeedableRng};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use super::{subgraph::SubGraph, GVEdgeAttrs, HedgeGraph, NodeIndex};
+use super::{subgraph::SubGraph, GVEdgeAttrs, HedgeGraph, NodeIndex, NodeStorage};
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Hedge(pub usize);
@@ -186,9 +186,9 @@ impl HedgePair {
         }
     }
 
-    pub fn dot<E, V>(
+    pub fn dot<E, V, N: NodeStorage<NodeData = V>>(
         &self,
-        graph: &HedgeGraph<E, V>,
+        graph: &HedgeGraph<E, V, N>,
         orientation: Orientation,
         attr: GVEdgeAttrs,
     ) -> String {
@@ -1228,7 +1228,7 @@ impl<E> Involution<E> {
         Some(Involution { inv })
     }
 
-    pub fn map_data_result<'a, F, G, E2, O>(self, g: &G) -> Result<Involution<E2>, O>
+    pub fn map_data_result<F, G, E2, O>(self, g: &G) -> Result<Involution<E2>, O>
     where
         G: FnMut(E) -> Result<E2, O> + Clone,
     {

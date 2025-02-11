@@ -15,6 +15,8 @@ use serde::{Deserialize, Serialize};
 use super::{
     drawing::{CetzEdge, CetzString, Decoration, EdgeGeometry},
     involution::HedgePair,
+    nodestorage::NodeStorage,
+    nodestorage::NodeStorageVec,
     subgraph::SubGraph,
     Flow, Hedge, HedgeGraph, Involution, NodeIndex, Orientation,
 };
@@ -168,7 +170,8 @@ impl HedgePair {
 
 impl<E> LayoutEdge<E> {}
 
-pub type PositionalHedgeGraph<E, V> = HedgeGraph<LayoutEdge<E>, LayoutVertex<V>>;
+pub type PositionalHedgeGraph<E, V> =
+    HedgeGraph<LayoutEdge<E>, LayoutVertex<V>, NodeStorageVec<LayoutVertex<V>>>;
 
 const CETZ_PREAMBLE: &str = r#"
 let node(pos)=cetz.draw.circle(pos,radius:0.02,fill: black)
@@ -229,14 +232,16 @@ impl FancySettings {
 
 impl<E, V> PositionalHedgeGraph<E, V> {
     pub fn to_fancy(&mut self, settings: &FancySettings) {
-        self.edge_data.iter_mut().for_each(|(e, p)| match p {
+        self.edge_store.data.iter_mut().for_each(|(e, p)| match p {
             HedgePair::Paired { source, sink } => {
-                let source_pos = self.node_data[self.hedge_data[source.0].0].pos;
-                let sink_pos = self.node_data[self.hedge_data[sink.0].0].pos;
+                let source_pos =
+                    self.node_store.node_data[self.node_store.hedge_data[source.0].0].pos;
+                let sink_pos = self.node_store.node_data[self.node_store.hedge_data[sink.0].0].pos;
                 e.to_fancy(source_pos, Some(sink_pos), Flow::Source, settings);
             }
             HedgePair::Unpaired { hedge, flow } => {
-                let source_pos = self.node_data[self.hedge_data[hedge.0].0].pos;
+                let source_pos =
+                    self.node_store.node_data[self.node_store.hedge_data[hedge.0].0].pos;
                 e.to_fancy(source_pos, None, *flow, settings);
             }
             _ => {}
@@ -291,11 +296,11 @@ impl<E, V> PositionalHedgeGraph<E, V> {
         edge_decoration: &impl Fn(&E) -> Decoration,
     ) -> String {
         let mut out = String::from("cetz.canvas(length:50%,{\n");
-        for a in 0..self.base_nodes {
+        for a in 0..self.n_nodes() {
             out.push_str(&format!(
                 "let node{}= (pos:{})\n",
                 a,
-                self.node_data[a].pos.to_cetz()
+                self.node_store.node_data[a].pos.to_cetz()
             ));
             out.push_str(&format!("node(node{}.pos)\n", a));
         }
@@ -323,7 +328,7 @@ impl<E, V> PositionalHedgeGraph<E, V> {
 }
 
 pub struct GraphLayout<'a, E, V> {
-    pub graph: &'a HedgeGraph<E, V>,
+    pub graph: &'a HedgeGraph<E, V, NodeStorageVec<V>>,
     pub positions: Positions,
     pub params: LayoutParams,
     pub rng: Arc<Mutex<SmallRng>>,
@@ -433,15 +438,15 @@ impl Positions {
     }
     pub fn to_graph<E, V>(
         self,
-        graph: HedgeGraph<E, V>,
+        graph: HedgeGraph<E, V, NodeStorageVec<V>>,
         params: &[f64],
     ) -> PositionalHedgeGraph<E, V> {
         graph.map(
-            |_, _, _, i, v| {
+            |_, _, i, v| {
                 let pos = self.vertex_positions[i.0];
                 LayoutVertex::new(v, params[pos.1], params[pos.2])
             },
-            |_, _, n, h, e| match h {
+            |_, n, h, e| match h {
                 HedgePair::Paired { source, sink } => {
                     let source_pos = self.vertex_positions[source.0];
                     let source_pos = Vector2::new(params[source_pos.1], params[source_pos.2]);
@@ -480,13 +485,13 @@ impl Positions {
         )
     }
 
-    pub fn new<E, V>(graph: &HedgeGraph<E, V>, seed: u64) -> (Vec<f64>, Self) {
+    pub fn new<E, V>(graph: &HedgeGraph<E, V, NodeStorageVec<V>>, seed: u64) -> (Vec<f64>, Self) {
         let mut rng = SmallRng::seed_from_u64(seed);
         let mut vertex_positions = Vec::new();
         let mut params = Vec::new();
         let ext_range = 2.0..4.0;
         let range = -1.0..1.0;
-        let edge_positions = graph.involution.as_ref().map_full(|e, d| {
+        let edge_positions = graph.edge_store.involution.as_ref().map_full(|e, d| {
             let j = params.len();
             if e.is_unpaired() {
                 params.push(rng.gen_range(ext_range.clone()));
@@ -513,7 +518,11 @@ impl Positions {
             },
         )
     }
-    pub fn circle_ext<E, V>(graph: &HedgeGraph<E, V>, seed: u64, radius: f64) -> (Vec<f64>, Self) {
+    pub fn circle_ext<E, V>(
+        graph: &HedgeGraph<E, V, NodeStorageVec<V>>,
+        seed: u64,
+        radius: f64,
+    ) -> (Vec<f64>, Self) {
         let mut rng = SmallRng::seed_from_u64(seed);
         let mut vertex_positions = Vec::new();
 
@@ -524,7 +533,7 @@ impl Positions {
         let mut angle = 0.;
         let angle_step = 2. * std::f64::consts::PI / f64::from(graph.n_externals() as u32);
 
-        let edge_positions = graph.involution.as_ref().map_full(|e, d| {
+        let edge_positions = graph.edge_store.involution.as_ref().map_full(|e, d| {
             let j = params.len();
             params.push(rng.gen_range(range.clone()));
             params.push(rng.gen_range(range.clone()));
@@ -744,7 +753,11 @@ pub struct LayoutIters {
 }
 
 impl LayoutSettings {
-    pub fn new<E, V>(graph: &HedgeGraph<E, V>, params: LayoutParams, iters: LayoutIters) -> Self {
+    pub fn new<E, V>(
+        graph: &HedgeGraph<E, V, NodeStorageVec<V>>,
+        params: LayoutParams,
+        iters: LayoutIters,
+    ) -> Self {
         let (init_params, positions) = Positions::new(graph, iters.seed);
 
         LayoutSettings {
@@ -756,7 +769,7 @@ impl LayoutSettings {
     }
 
     pub fn left_right_square<E, V>(
-        graph: &HedgeGraph<E, V>,
+        graph: &HedgeGraph<E, V, NodeStorageVec<V>>,
         params: LayoutParams,
         iters: LayoutIters,
         edge: f64,
@@ -796,7 +809,7 @@ impl LayoutSettings {
             (edge / 2., -edge / 2.)
         };
 
-        let mut edge_positions = graph.involution.as_ref().map_full(|e, d| {
+        let mut edge_positions = graph.edge_store.involution.as_ref().map_full(|e, d| {
             let j = init_params.len();
             init_params.push(rng.gen_range(range.clone()));
             init_params.push(rng.gen_range(range.clone()));
@@ -835,7 +848,7 @@ impl LayoutSettings {
 
     #[allow(clippy::too_many_arguments)]
     pub fn circle_ext<E, V>(
-        graph: &HedgeGraph<E, V>,
+        graph: &HedgeGraph<E, V, NodeStorageVec<V>>,
         params: LayoutParams,
         iters: LayoutIters,
         angle_factors: Vec<u32>,
@@ -854,7 +867,7 @@ impl LayoutSettings {
 
         let mut exti = 0;
 
-        let edge_positions = graph.involution.as_ref().map_full(|e, d| {
+        let edge_positions = graph.edge_store.involution.as_ref().map_full(|e, d| {
             let j = init_params.len();
             init_params.push(rng.gen_range(range.clone()));
             init_params.push(rng.gen_range(range.clone()));
@@ -890,11 +903,11 @@ impl LayoutSettings {
     }
 }
 
-impl<E, V> HedgeGraph<E, V> {
+impl<E, V> HedgeGraph<E, V, NodeStorageVec<V>> {
     pub fn layout(
         self,
         mut settings: LayoutSettings,
-    ) -> HedgeGraph<LayoutEdge<E>, LayoutVertex<V>> {
+    ) -> HedgeGraph<LayoutEdge<E>, LayoutVertex<V>, NodeStorageVec<LayoutVertex<V>>> {
         let layout = GraphLayout {
             rng: Arc::new(Mutex::new(SmallRng::seed_from_u64(0))),
             positions: settings.positions.clone(),

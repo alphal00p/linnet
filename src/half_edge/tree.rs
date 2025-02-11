@@ -6,7 +6,7 @@ use indexmap::IndexSet;
 use super::{
     involution::{Hedge, Involution},
     subgraph::{Cycle, HedgeNode, Inclusion, InternalSubGraph, SubGraph, SubGraphOps},
-    HedgeGraph, NodeIndex,
+    HedgeGraph, NodeIndex, NodeStorage,
 };
 
 pub struct TraversalTree {
@@ -42,13 +42,10 @@ impl TraversalTree {
         let mut children = <BitVec as SubGraph>::empty(self.inv.inv.len());
 
         for (i, m) in self.parents.iter().enumerate() {
-            match m {
-                Parent::Hedge { hedge_to_root, .. } => {
-                    if *hedge_to_root == hedge {
-                        children.set(i, true);
-                    }
+            if let Parent::Hedge { hedge_to_root, .. } = m {
+                if *hedge_to_root == hedge {
+                    children.set(i, true);
                 }
-                _ => {}
             }
         }
 
@@ -97,7 +94,10 @@ impl TraversalTree {
         &self.parents[hedge.0]
     }
 
-    pub fn leaf_nodes<N, E>(&self, graph: &HedgeGraph<N, E>) -> Vec<NodeIndex> {
+    pub fn leaf_nodes<V, N: NodeStorage<NodeData = V>, E>(
+        &self,
+        graph: &HedgeGraph<E, V, N>,
+    ) -> Vec<NodeIndex> {
         let mut leaves = IndexSet::new();
 
         for hedge in self.covers().included_iter() {
@@ -120,10 +120,10 @@ impl TraversalTree {
         leaves.into_iter().collect()
     }
 
-    pub fn parent_node<N, E>(
+    pub fn parent_node<V, N: NodeStorage<NodeData = V>, E>(
         &self,
         child: NodeIndex,
-        graph: &HedgeGraph<N, E>,
+        graph: &HedgeGraph<E, V, N>,
     ) -> Option<NodeIndex> {
         let any_hedge = graph
             .hairs_from_id(child)
@@ -139,7 +139,11 @@ impl TraversalTree {
         None
     }
 
-    pub fn child_nodes<N, E>(&self, parent: NodeIndex, graph: &HedgeGraph<N, E>) -> Vec<NodeIndex> {
+    pub fn child_nodes<V, N: NodeStorage<NodeData = V>, E>(
+        &self,
+        parent: NodeIndex,
+        graph: &HedgeGraph<E, V, N>,
+    ) -> Vec<NodeIndex> {
         let mut children = IndexSet::new();
 
         for h in graph.hairs_from_id(parent).hairs.included_iter() {
@@ -200,15 +204,15 @@ impl TraversalTree {
         Some(cycle)
     }
 
-    pub fn bfs<E, V, S: SubGraph>(
-        graph: &HedgeGraph<E, V>,
+    pub fn bfs<V, N: NodeStorage<NodeData = V>, E, S: SubGraph>(
+        graph: &HedgeGraph<E, V, N>,
         subgraph: &S,
         root_node: &HedgeNode,
         // target: Option<&HedgeNode>,
     ) -> Self {
         let mut queue = VecDeque::new();
         let mut seen = subgraph.hairs(root_node);
-        let mut parents = vec![Parent::Unset; graph.involution.len()];
+        let mut parents = vec![Parent::Unset; graph.n_hedges()];
 
         let mut traversal: Vec<Hedge> = Vec::new();
 
@@ -256,15 +260,15 @@ impl TraversalTree {
         TraversalTree::new(graph, traversal, seen, parents)
     }
 
-    pub fn new<E, V>(
-        graph: &HedgeGraph<E, V>,
+    pub fn new<V, N: NodeStorage<NodeData = V>, E>(
+        graph: &HedgeGraph<E, V, N>,
         traversal: Vec<Hedge>,
         covers: BitVec,
         parents: Vec<Parent>,
     ) -> Self {
         let mut tree = graph.empty_subgraph::<BitVec>();
 
-        let involution = graph.involution.map_data_ref(&|_| ());
+        let involution = graph.edge_store.involution.map_data_ref(&|_| ());
 
         for (i, j) in traversal.iter().map(|x| (*x, involution.inv(*x))) {
             tree.set(i.0, true);
@@ -280,8 +284,8 @@ impl TraversalTree {
         }
     }
 
-    pub fn dfs<E, V, S: SubGraph>(
-        graph: &HedgeGraph<E, V>,
+    pub fn dfs<V, N: NodeStorage<NodeData = V>, E, S: SubGraph>(
+        graph: &HedgeGraph<E, V, N>,
         subgraph: &S,
         root_node: &HedgeNode,
         include_hegde: Option<Hedge>,
@@ -291,7 +295,7 @@ impl TraversalTree {
         let mut seen = subgraph.hairs(root_node);
 
         let mut traversal: Vec<Hedge> = Vec::new();
-        let mut parents = vec![Parent::Unset; graph.involution.len()];
+        let mut parents = vec![Parent::Unset; graph.n_hedges()];
 
         let mut included_hedge_is_possible = false;
 
@@ -301,7 +305,7 @@ impl TraversalTree {
 
         for i in seen.included_iter() {
             parents[i.0] = Parent::Root;
-            if !seen.includes(&graph.involution.inv(i)) {
+            if !seen.includes(&graph.inv(i)) {
                 // if not self loop
                 if let Some(hedge) = include_hegde {
                     if hedge != i {
