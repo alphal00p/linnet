@@ -1,5 +1,7 @@
 use std::ops::{Index, IndexMut};
 
+use serde::{Deserialize, Serialize};
+
 use super::involution::{EdgeData, EdgeIndex, Hedge, HedgePair, Involution};
 
 pub struct SmartHedgeVec<T> {
@@ -99,6 +101,7 @@ impl<T> Index<&Hedge> for SmartHedgeVec<T> {
 }
 
 // Data stored once per edge (pair of half-edges or external edge)
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct HedgeVec<T>(pub(super) Vec<T>);
 
 impl<T> IntoIterator for HedgeVec<T> {
