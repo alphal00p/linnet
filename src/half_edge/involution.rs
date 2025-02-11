@@ -1455,7 +1455,7 @@ impl<E> IndexMut<Hedge> for Involution<E> {
 }
 
 #[derive(
-    Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, From, Into,
+    Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, From, Into, Hash,
 )]
 pub struct EdgeIndex(pub(crate) usize);
 
