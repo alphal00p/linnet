@@ -4,8 +4,10 @@ use std::num::TryFromIntError;
 use std::ops::{Index, IndexMut, Neg};
 
 use ahash::{AHashMap, AHashSet};
+use bitvec::prelude::*;
 use bitvec::{slice::IterOnes, vec::BitVec};
 use builder::HedgeGraphBuilder;
+use derive_more::{From, Into};
 use hedgevec::{HedgeVec, SmartHedgeVec};
 use indexmap::IndexSet;
 use involution::{
@@ -17,9 +19,7 @@ use nodestorage::{NodeStorage, NodeStorageVec};
 use rand::{rngs::SmallRng, Rng, SeedableRng};
 use ref_ops::RefMutNot;
 use serde::{Deserialize, Serialize};
-
-use bitvec::prelude::*;
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, Deserialize, From, Into)]
 pub struct NodeIndex(pub usize);
 
 impl std::fmt::Display for NodeIndex {
