@@ -3,15 +3,11 @@ use std::{
     ops::{Index, IndexMut},
 };
 
-/// A newtype for a node (index into `self.nodes`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct ParentPointer(pub usize);
+use crate::half_edge::involution::Hedge;
 
-impl From<usize> for ParentPointer {
-    fn from(x: usize) -> Self {
-        ParentPointer(x)
-    }
-}
+/// A newtype for a node (index into `self.nodes`).
+// #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub type ParentPointer = Hedge;
 
 /// A newtype for the set–data index (index into `UnionFind::set_data`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -40,9 +36,9 @@ pub enum UFNode {
 ///   using swap–removal when merging.
 /// - `data_to_node` is the inverse of `set_data_idx`, telling us which node currently owns
 ///   each slot in `set_data`.
-pub struct UnionFind<T, U> {
+pub struct UnionFind<U> {
     /// The base storage of node elements (parallel to `nodes`).
-    pub elements: Vec<T>,
+    // pub elements: Vec<T>,
 
     /// Each node is a `Cell<UFNode>` for in-place mutation during path compression.
     pub nodes: Vec<Cell<UFNode>>,
@@ -65,13 +61,13 @@ pub fn right<E>(_: E, r: E) -> E {
     r
 }
 
-impl<T, U> UnionFind<T, U> {
+impl<U> UnionFind<U> {
     /// Builds a union-find where each node is its own set, with `rank=0` and `SetIndex(i)` owning
     /// the `i`th slot in `set_data`.
-    pub fn new(elements: Vec<T>, associated: Vec<U>) -> Self {
-        let n = elements.len();
-        assert_eq!(n, associated.len());
-        let nodes = (0..n)
+    pub fn new(associated: Vec<U>) -> Self {
+        // let n = elements.len();
+        // assert_eq!(n, associated.len());
+        let nodes = (0..associated.len())
             .map(|i| {
                 Cell::new(UFNode::Root {
                     set_data_idx: SetIndex(i),
@@ -84,13 +80,13 @@ impl<T, U> UnionFind<T, U> {
             .into_iter()
             .enumerate()
             .map(|(i, d)| SetData {
-                root_pointer: ParentPointer(i),
+                root_pointer: Hedge(i),
                 data: Some(d),
             })
             .collect();
 
         Self {
-            elements,
+            // elements,
             nodes,
             set_data,
         }
@@ -244,7 +240,7 @@ impl<T, U> UnionFind<T, U> {
 // -------------------------------------------------------------------
 
 /// 1) `impl Index<SetIndex>` => returns `&U` (unwrapped from `Option<U>`).
-impl<T, U> Index<SetIndex> for UnionFind<T, U> {
+impl<U> Index<SetIndex> for UnionFind<U> {
     type Output = U;
     fn index(&self, idx: SetIndex) -> &Self::Output {
         self.set_data[idx.0]
@@ -255,7 +251,7 @@ impl<T, U> Index<SetIndex> for UnionFind<T, U> {
 }
 
 /// 1b) `impl IndexMut<SetIndex>` => returns `&mut U`.
-impl<T, U> IndexMut<SetIndex> for UnionFind<T, U> {
+impl<U> IndexMut<SetIndex> for UnionFind<U> {
     fn index_mut(&mut self, idx: SetIndex) -> &mut Self::Output {
         self.set_data[idx.0]
             .data
@@ -266,7 +262,7 @@ impl<T, U> IndexMut<SetIndex> for UnionFind<T, U> {
 
 /// 2) `impl Index<&SetIndex>` => returns `&Option<U>`.
 ///    This lets you see if it’s Some/None, or call methods like `.take()`.
-impl<T, U> Index<&SetIndex> for UnionFind<T, U> {
+impl<U> Index<&SetIndex> for UnionFind<U> {
     type Output = SetData<U>;
     fn index(&self, idx: &SetIndex) -> &Self::Output {
         &self.set_data[idx.0]
@@ -274,36 +270,38 @@ impl<T, U> Index<&SetIndex> for UnionFind<T, U> {
 }
 
 /// 2b) `impl IndexMut<&SetIndex>` => returns `&mut Option<U>`.
-impl<T, U> IndexMut<&SetIndex> for UnionFind<T, U> {
+impl<U> IndexMut<&SetIndex> for UnionFind<U> {
     fn index_mut(&mut self, idx: &SetIndex) -> &mut Self::Output {
         &mut self.set_data[idx.0]
     }
 }
 
-/// `impl Index<ParentPointer>` => returns `&T`.
-/// This is the direct element in `elements`.
-impl<T, U> Index<ParentPointer> for UnionFind<T, U> {
-    type Output = T;
-    fn index(&self, idx: ParentPointer) -> &Self::Output {
-        &self.elements[idx.0]
-    }
-}
+// /// `impl Index<ParentPointer>` => returns `&T`.
+// /// This is the direct element in `elements`.
+// impl<T, U> Index<ParentPointer> for UnionFind<T, U> {
+//     type Output = T;
+//     fn index(&self, idx: ParentPointer) -> &Self::Output {
+//         &self.elements[idx.0]
+//     }
+// }
 
-/// `impl IndexMut<ParentPointer>` => returns `&mut T`.
-impl<T, U> IndexMut<ParentPointer> for UnionFind<T, U> {
-    fn index_mut(&mut self, idx: ParentPointer) -> &mut Self::Output {
-        &mut self.elements[idx.0]
-    }
-}
+// /// `impl IndexMut<ParentPointer>` => returns `&mut T`.
+// impl<T, U> IndexMut<ParentPointer> for UnionFind<T, U> {
+//     fn index_mut(&mut self, idx: ParentPointer) -> &mut Self::Output {
+//         &mut self.elements[idx.0]
+//     }
+// }
 
 /// `impl Index<&ParentPointer>` => returns `&Cell<UFNode>`,
 /// allowing `self[&x].get()` or `self[&x].set(...)`.
-impl<T, U> Index<&ParentPointer> for UnionFind<T, U> {
+impl<U> Index<&ParentPointer> for UnionFind<U> {
     type Output = Cell<UFNode>;
     fn index(&self, idx: &ParentPointer) -> &Self::Output {
         &self.nodes[idx.0]
     }
 }
+
+pub mod union_find_node;
 
 pub mod bitvec_find;
 #[cfg(test)]
