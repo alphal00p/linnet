@@ -15,7 +15,6 @@ use serde::{Deserialize, Serialize};
 use super::{
     drawing::{CetzEdge, CetzString, Decoration, EdgeGeometry},
     involution::HedgePair,
-    nodestorage::NodeStorage,
     nodestorage::NodeStorageVec,
     subgraph::SubGraph,
     Flow, Hedge, HedgeGraph, Involution, NodeIndex, Orientation,
@@ -446,7 +445,7 @@ impl Positions {
                 let pos = self.vertex_positions[i.0];
                 LayoutVertex::new(v, params[pos.1], params[pos.2])
             },
-            |_, n, h, e| match h {
+            |_, _, h, e| match h {
                 HedgePair::Paired { source, sink } => {
                     let source_pos = self.vertex_positions[source.0];
                     let source_pos = Vector2::new(params[source_pos.1], params[source_pos.2]);
@@ -809,7 +808,7 @@ impl LayoutSettings {
             (edge / 2., -edge / 2.)
         };
 
-        let mut edge_positions = graph.edge_store.involution.as_ref().map_full(|e, d| {
+        let mut edge_positions = graph.edge_store.involution.as_ref().map_full(|_, d| {
             let j = init_params.len();
             init_params.push(rng.gen_range(range.clone()));
             init_params.push(rng.gen_range(range.clone()));

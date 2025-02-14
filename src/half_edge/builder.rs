@@ -1,8 +1,7 @@
 use super::{
     hedgevec::SmartHedgeVec,
     involution::{EdgeData, EdgeIndex, Flow, Hedge, Involution, Orientation},
-    nodestorage::{NodeStorage, NodeStorageVec},
-    subgraph::HedgeNode,
+    nodestorage::NodeStorage,
     HedgeGraph, NodeIndex,
 };
 

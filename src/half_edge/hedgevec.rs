@@ -49,7 +49,7 @@ impl<T> SmartHedgeVec<T> {
 
     pub fn map<T2, F: Fn(HedgePair, EdgeData<&T>) -> EdgeData<T2>>(
         &self,
-        mut f: &F,
+        f: &F,
     ) -> SmartHedgeVec<T2> {
         let mut data = Vec::new();
         let involution = self.involution.clone().map_full(|a, d| {
@@ -205,7 +205,7 @@ impl<T> SmartHedgeVec<T> {
                         },
                     )
                 }))
-                .map(|(i, m)| m)
+                .map(|(_, m)| m)
                 .collect(),
         };
 

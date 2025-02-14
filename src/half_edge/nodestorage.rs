@@ -139,8 +139,6 @@ impl<N> NodeStorage for NodeStorageVec<N> {
         let mut node_data = self.node_data;
         node_data.extend(other.node_data);
 
-        let self_shift = self.nodes.len();
-
         let nodes: Vec<_> = self
             .nodes
             .into_iter()
@@ -209,7 +207,7 @@ impl<N> NodeStorage for NodeStorageVec<N> {
 
         let mut hedge_data = vec![NodeIndex(0); sources[0].hairs.len()];
 
-        for (nid, n) in sources.into_iter().enumerate() {
+        for (nid, n) in sources.iter().enumerate() {
             nodes.push(n.clone());
             node_data.push(N::default());
             for i in n.hairs.included_iter() {
@@ -219,7 +217,7 @@ impl<N> NodeStorage for NodeStorageVec<N> {
 
         let len = nodes.len();
 
-        for (nid, n) in sinks.into_iter().enumerate() {
+        for (nid, n) in sinks.iter().enumerate() {
             nodes.push(n.clone());
             node_data.push(N::default());
 

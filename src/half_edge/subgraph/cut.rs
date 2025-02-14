@@ -19,7 +19,6 @@ use crate::half_edge::layout::{
 
 #[cfg(feature = "layout")]
 use by_address::ByAddress;
-use indexmap::IndexMap;
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct OrientedCut {
@@ -285,7 +284,7 @@ impl SubGraph for OrientedCut {
 }
 
 impl OrientedCut {
-    #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments, clippy::type_complexity)]
     #[cfg(feature = "layout")]
     pub fn layout<'a, E, V, T>(
         self,
@@ -299,6 +298,8 @@ impl OrientedCut {
         LayoutVertex<&'a V>,
         NodeStorageVec<LayoutVertex<&'a V>>,
     > {
+        use indexmap::IndexMap;
+
         let mut left = vec![];
         let mut leftright_map = IndexMap::new();
         let mut right = vec![];

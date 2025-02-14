@@ -17,7 +17,6 @@ use involution::{
 use itertools::Itertools;
 use nodestorage::{NodeStorage, NodeStorageVec};
 use rand::{rngs::SmallRng, Rng, SeedableRng};
-use ref_ops::RefMutNot;
 use serde::{Deserialize, Serialize};
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, Deserialize, From, Into)]
 pub struct NodeIndex(pub usize);
@@ -1020,7 +1019,7 @@ impl<E, V, N: NodeStorage<NodeData = V>> HedgeGraph<E, V, N> {
         self.node_store.iter_nodes()
     }
 
-    pub fn base_nodes_iter<'a>(&'a self) -> impl Iterator<Item = NodeIndex> + 'a {
+    pub fn base_nodes_iter(&self) -> impl Iterator<Item = NodeIndex> + '_ {
         self.node_store.iter_node_id()
     }
 

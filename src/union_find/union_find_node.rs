@@ -33,7 +33,7 @@ impl<V> From<NodeStorageVec<V>> for UnionFindNodeStore<V> {
 }
 
 impl SetIndex {
-    pub fn node_ref<'a>(&'a self) -> &'a NodeIndex {
+    pub fn node_ref(&self) -> &NodeIndex {
         unsafe { std::mem::transmute(self) }
     }
 }

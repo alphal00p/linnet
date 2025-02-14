@@ -51,9 +51,6 @@ pub enum UnionFindError {
 /// - `data_to_node` is the inverse of `set_data_idx`, telling us which node currently owns
 ///   each slot in `set_data`.
 pub struct UnionFind<U> {
-    /// The base storage of node elements (parallel to `nodes`).
-    // pub elements: Vec<T>,
-
     /// Each node is a `Cell<UFNode>` for in-place mutation during path compression.
     pub nodes: Vec<Cell<UFNode>>,
 
@@ -352,7 +349,7 @@ impl<U> UnionFind<U> {
                 .iter()
                 .map(|d| SetData {
                     root_pointer: d.root_pointer,
-                    data: d.data.as_ref().map(|d| f(d)),
+                    data: d.data.as_ref().map(&mut f),
                 })
                 .collect(),
         }

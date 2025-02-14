@@ -4,7 +4,7 @@ use super::{
     builder::HedgeGraphBuilder,
     involution::{HedgePair, Orientation},
     nodestorage::{NodeStorage, NodeStorageVec},
-    HedgeGraph, HedgeGraphError, NodeIndex,
+    HedgeGraph, HedgeGraphError,
 };
 
 impl<N: Clone, E: Clone> From<symbolica::graph::Graph<N, E>>

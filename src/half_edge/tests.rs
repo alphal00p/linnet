@@ -337,7 +337,7 @@ fn K33() {
     let cycles = graph
         .paton_cycle_basis(
             &graph.full_graph(),
-            &graph.node_store.get_node(NodeIndex(4)),
+            graph.node_store.get_node(NodeIndex(4)),
             None,
         )
         .unwrap()
