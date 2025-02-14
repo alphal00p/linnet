@@ -2,6 +2,7 @@ use std::collections::VecDeque;
 
 use bitvec::vec::BitVec;
 use indexmap::IndexSet;
+use serde::{Deserialize, Serialize};
 
 use super::{
     involution::{Hedge, Involution},
@@ -9,6 +10,7 @@ use super::{
     HedgeGraph, NodeIndex, NodeStorage,
 };
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TraversalTree {
     //a parent pointer structure
     pub traversal: Vec<Hedge>,
@@ -18,7 +20,7 @@ pub struct TraversalTree {
     pub covers: BitVec,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Parent {
     Unset,
     Root,
