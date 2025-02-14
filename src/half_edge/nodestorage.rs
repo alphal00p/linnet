@@ -53,7 +53,7 @@ pub trait NodeStorage: Sized {
         (0..self.node_len()).map(NodeIndex)
     }
     fn iter_nodes(&self) -> impl Iterator<Item = (&HedgeNode, &Self::NodeData)>;
-    fn node_id_ref(&self, hedge: Hedge) -> &NodeIndex;
+    fn node_id_ref(&self, hedge: Hedge) -> NodeIndex;
     fn get_node(&self, node_id: NodeIndex) -> &HedgeNode;
     fn get_node_data(&self, node_id: NodeIndex) -> &Self::NodeData;
     fn get_node_data_mut(&mut self, node_id: NodeIndex) -> &mut Self::NodeData;
@@ -63,7 +63,7 @@ pub trait NodeStorage: Sized {
 pub struct NodeStorageVec<N> {
     pub(crate) node_data: Vec<N>,
     pub(crate) hedge_data: Vec<NodeIndex>,
-    nodes: Vec<HedgeNode>, // Nodes
+    pub(crate) nodes: Vec<HedgeNode>, // Nodes
 }
 
 impl<N> NodeStorage for NodeStorageVec<N> {
@@ -113,8 +113,8 @@ impl<N> NodeStorage for NodeStorageVec<N> {
         self.nodes.iter().zip(self.node_data.iter())
     }
 
-    fn node_id_ref(&self, hedge: Hedge) -> &NodeIndex {
-        &self.hedge_data[hedge.0]
+    fn node_id_ref(&self, hedge: Hedge) -> NodeIndex {
+        self.hedge_data[hedge.0]
     }
 
     fn get_node(&self, node_id: NodeIndex) -> &HedgeNode {

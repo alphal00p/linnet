@@ -196,20 +196,20 @@ impl HedgePair {
         match self {
             HedgePair::Unpaired { hedge, flow } => InvolutiveMapping::<()>::identity_dot(
                 *hedge,
-                graph[*hedge],
+                graph.node_id(*hedge),
                 Some(&attr),
                 orientation,
                 *flow,
             ),
             HedgePair::Paired { source, sink } => InvolutiveMapping::<()>::pair_dot(
-                graph[*source],
-                graph[*sink],
+                graph.node_id(*source),
+                graph.node_id(*sink),
                 Some(&attr),
                 orientation,
             ),
             HedgePair::Split { source, sink, .. } => InvolutiveMapping::<()>::pair_dot(
-                graph[*source],
-                graph[*sink],
+                graph.node_id(*source),
+                graph.node_id(*sink),
                 Some(&attr),
                 orientation,
             ),

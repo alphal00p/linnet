@@ -25,12 +25,12 @@ pub struct BitFilterData<U> {
     pub filter: BitVec,
 }
 
-pub struct UnionFindBitFilter<H, L> {
+pub struct UnionFindBitFilterHL<H, L> {
     pub inner: UnionFind<HLindex>,
     pub heavy_data: Vec<BitFilterData<H>>,
     pub light_data: Vec<BitFilterData<L>>,
 }
-impl<H, L> UnionFindBitFilter<H, L> {
+impl<H, L> UnionFindBitFilterHL<H, L> {
     pub fn new_heavy(data: Vec<H>) -> Self {
         let n = data.len();
         // assert_eq!(n, data.len());
@@ -263,7 +263,7 @@ impl<H, L> UnionFindBitFilter<H, L> {
     }
 }
 
-impl<H, L> Index<HeavyIndex> for UnionFindBitFilter<H, L> {
+impl<H, L> Index<HeavyIndex> for UnionFindBitFilterHL<H, L> {
     type Output = H;
     fn index(&self, index: HeavyIndex) -> &Self::Output {
         self.heavy_data[index.0]
@@ -273,7 +273,7 @@ impl<H, L> Index<HeavyIndex> for UnionFindBitFilter<H, L> {
     }
 }
 
-impl<H, L> IndexMut<HeavyIndex> for UnionFindBitFilter<H, L> {
+impl<H, L> IndexMut<HeavyIndex> for UnionFindBitFilterHL<H, L> {
     fn index_mut(&mut self, index: HeavyIndex) -> &mut Self::Output {
         self.heavy_data[index.0]
             .data
@@ -282,20 +282,20 @@ impl<H, L> IndexMut<HeavyIndex> for UnionFindBitFilter<H, L> {
     }
 }
 
-impl<H, L> Index<&HeavyIndex> for UnionFindBitFilter<H, L> {
+impl<H, L> Index<&HeavyIndex> for UnionFindBitFilterHL<H, L> {
     type Output = BitFilterData<H>;
     fn index(&self, index: &HeavyIndex) -> &Self::Output {
         &self.heavy_data[index.0]
     }
 }
 
-impl<H, L> IndexMut<&HeavyIndex> for UnionFindBitFilter<H, L> {
+impl<H, L> IndexMut<&HeavyIndex> for UnionFindBitFilterHL<H, L> {
     fn index_mut(&mut self, index: &HeavyIndex) -> &mut Self::Output {
         &mut self.heavy_data[index.0]
     }
 }
 
-impl<H, L> Index<LightIndex> for UnionFindBitFilter<H, L> {
+impl<H, L> Index<LightIndex> for UnionFindBitFilterHL<H, L> {
     type Output = L;
     fn index(&self, index: LightIndex) -> &Self::Output {
         self.light_data[index.0]
@@ -305,7 +305,7 @@ impl<H, L> Index<LightIndex> for UnionFindBitFilter<H, L> {
     }
 }
 
-impl<H, L> IndexMut<LightIndex> for UnionFindBitFilter<H, L> {
+impl<H, L> IndexMut<LightIndex> for UnionFindBitFilterHL<H, L> {
     fn index_mut(&mut self, index: LightIndex) -> &mut Self::Output {
         self.light_data[index.0]
             .data
@@ -314,14 +314,14 @@ impl<H, L> IndexMut<LightIndex> for UnionFindBitFilter<H, L> {
     }
 }
 
-impl<H, L> Index<&LightIndex> for UnionFindBitFilter<H, L> {
+impl<H, L> Index<&LightIndex> for UnionFindBitFilterHL<H, L> {
     type Output = BitFilterData<L>;
     fn index(&self, index: &LightIndex) -> &Self::Output {
         &self.light_data[index.0]
     }
 }
 
-impl<H, L> IndexMut<&LightIndex> for UnionFindBitFilter<H, L> {
+impl<H, L> IndexMut<&LightIndex> for UnionFindBitFilterHL<H, L> {
     fn index_mut(&mut self, index: &LightIndex) -> &mut Self::Output {
         &mut self.light_data[index.0]
     }

@@ -470,7 +470,7 @@ impl<E, V, N: NodeStorage<NodeData = V>> HedgeGraph<E, V, N> {
     }
 
     pub fn node_hairs(&self, hedge: Hedge) -> &HedgeNode {
-        self.hairs_from_id(self[hedge])
+        self.hairs_from_id(self.node_id(hedge))
     }
 
     pub fn hairs_from_id(&self, id: NodeIndex) -> &HedgeNode {
@@ -479,7 +479,7 @@ impl<E, V, N: NodeStorage<NodeData = V>> HedgeGraph<E, V, N> {
 
     pub fn id_from_hairs(&self, id: &HedgeNode) -> Option<NodeIndex> {
         let e = id.hairs.included_iter().next()?;
-        Some(self[e])
+        Some(self.node_id(e))
     }
 
     pub fn involved_node_hairs(&self, hedge: Hedge) -> Option<&HedgeNode> {
@@ -492,11 +492,11 @@ impl<E, V, N: NodeStorage<NodeData = V>> HedgeGraph<E, V, N> {
         if invh == hedge {
             return None;
         }
-        Some(self[invh])
+        Some(self.node_id(invh))
     }
 
     pub fn node_id(&self, hedge: Hedge) -> NodeIndex {
-        self[hedge]
+        self.node_store.node_id_ref(hedge)
     }
 
     /// Collect all nodes in the subgraph (all nodes that the hedges are connected to)
@@ -1109,12 +1109,6 @@ impl<E, V, N: NodeStorage<NodeData = V>> HedgeGraph<E, V, N> {
     }
 }
 
-impl<E, V, N: NodeStorage<NodeData = V>> Index<Hedge> for HedgeGraph<E, V, N> {
-    type Output = NodeIndex;
-    fn index(&self, index: Hedge) -> &Self::Output {
-        self.node_store.node_id_ref(index)
-    }
-}
 impl<E, V, N: NodeStorage<NodeData = V>> Index<&Hedge> for HedgeGraph<E, V, N> {
     type Output = EdgeIndex;
     fn index(&self, index: &Hedge) -> &Self::Output {

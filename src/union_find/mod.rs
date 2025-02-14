@@ -3,7 +3,13 @@ use std::{
     ops::{Index, IndexMut},
 };
 
-use crate::half_edge::involution::Hedge;
+use bitvec::vec::BitVec;
+use thiserror::Error;
+
+use crate::half_edge::{
+    involution::Hedge,
+    subgraph::{Inclusion, SubGraph, SubGraphOps},
+};
 
 /// A newtype for a node (index into `self.nodes`).
 // #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -27,6 +33,14 @@ impl From<usize> for SetIndex {
 pub enum UFNode {
     Root { set_data_idx: SetIndex, rank: usize },
     Child(ParentPointer),
+}
+
+#[derive(Debug, Clone, Error)]
+pub enum UnionFindError {
+    #[error("The set of bitvecs does not partion the elements")]
+    DoesNotPartion,
+    #[error("The set of bitvecs does not have the same length")]
+    LengthMismatch,
 }
 
 /// A UnionFind structure that:
@@ -62,6 +76,91 @@ pub fn right<E>(_: E, r: E) -> E {
 }
 
 impl<U> UnionFind<U> {
+    pub fn n_elements(&self) -> usize {
+        self.nodes.len()
+    }
+
+    pub fn n_sets(&self) -> usize {
+        self.set_data.len()
+    }
+
+    pub fn extend(&mut self, mut other: Self) {
+        let shift_nodes = self.set_data.len();
+        let shift_set = self.nodes.len();
+        other.nodes.iter_mut().for_each(|a| match a.get_mut() {
+            UFNode::Child(a) => a.0 += shift_set,
+            UFNode::Root { set_data_idx, .. } => set_data_idx.0 += shift_nodes,
+        });
+        other
+            .set_data
+            .iter_mut()
+            .for_each(|a| a.root_pointer.0 += shift_set);
+        self.set_data.extend(other.set_data);
+    }
+
+    pub fn iter_set_data(&self) -> impl Iterator<Item = (SetIndex, &U)> {
+        self.set_data
+            .iter()
+            .enumerate()
+            .map(|(i, d)| (SetIndex(i), d.data.as_ref().unwrap()))
+    }
+
+    pub fn iter_set_data_mut(&mut self) -> impl Iterator<Item = (SetIndex, &mut U)> {
+        self.set_data
+            .iter_mut()
+            .enumerate()
+            .map(|(i, d)| (SetIndex(i), d.data.as_mut().unwrap()))
+    }
+
+    pub fn drain_set_data(self) -> impl Iterator<Item = (SetIndex, U)> {
+        self.set_data
+            .into_iter()
+            .enumerate()
+            .map(|(i, d)| (SetIndex(i), d.data.unwrap()))
+    }
+
+    pub fn from_bitvec_partition(bitvec_part: Vec<(U, BitVec)>) -> Result<Self, UnionFindError> {
+        let mut nodes = vec![];
+        let mut set_data = vec![];
+        let mut cover: Option<BitVec> = None;
+
+        for (d, set) in bitvec_part {
+            let len = set.len();
+            if let Some(c) = &mut cover {
+                if c.len() != len {
+                    return Err(UnionFindError::LengthMismatch);
+                }
+                if c.intersects(&set) {
+                    return Err(UnionFindError::DoesNotPartion);
+                }
+                c.union_with(&set);
+            } else {
+                cover = Some(BitVec::empty(len));
+                nodes = vec![None; len];
+            }
+            let mut first = None;
+            for i in set.included_iter() {
+                if let Some(root) = first {
+                    nodes[i.0] = Some(Cell::new(UFNode::Child(root)))
+                } else {
+                    first = Some(i);
+                    nodes[i.0] = Some(Cell::new(UFNode::Root {
+                        set_data_idx: SetIndex(set_data.len()),
+                        rank: set.count_ones(),
+                    }))
+                }
+            }
+            set_data.push(SetData {
+                root_pointer: first.unwrap(),
+                data: Some(d),
+            });
+        }
+        Ok(UnionFind {
+            nodes: nodes.into_iter().collect::<Option<_>>().unwrap(),
+            set_data,
+        })
+    }
+
     /// Builds a union-find where each node is its own set, with `rank=0` and `SetIndex(i)` owning
     /// the `i`th slot in `set_data`.
     pub fn new(associated: Vec<U>) -> Self {
@@ -224,6 +323,41 @@ impl<U> UnionFind<U> {
         f(data_ref);
     }
 
+    pub fn map_set_data<V, F>(self, mut f: F) -> UnionFind<V>
+    where
+        F: FnMut(SetIndex, U) -> V,
+    {
+        UnionFind {
+            nodes: self.nodes,
+            set_data: self
+                .set_data
+                .into_iter()
+                .enumerate()
+                .map(|(i, a)| SetData {
+                    data: Some(f(SetIndex(i), a.data.unwrap())),
+                    root_pointer: a.root_pointer,
+                })
+                .collect(),
+        }
+    }
+
+    pub fn map_set_data_ref<'a, F, V>(&'a self, mut f: F) -> UnionFind<V>
+    where
+        F: FnMut(&'a U) -> V,
+    {
+        UnionFind {
+            nodes: self.nodes.clone(),
+            set_data: self
+                .set_data
+                .iter()
+                .map(|d| SetData {
+                    root_pointer: d.root_pointer,
+                    data: d.data.as_ref().map(|d| f(d)),
+                })
+                .collect(),
+        }
+    }
+
     /// Takes ownership of the old data for `x`'s set, applies a function, and replaces it.
     pub fn replace_set_data_of<F>(&mut self, x: ParentPointer, f: F)
     where
@@ -232,6 +366,13 @@ impl<U> UnionFind<U> {
         let idx = self.find_data_index(x);
         let old_data = self[&idx].data.take().expect("no data to replace");
         self[&idx].data.replace(f(old_data));
+    }
+
+    pub fn add_child(&mut self, set_id: SetIndex) -> ParentPointer {
+        let root = self[&set_id].root_pointer;
+        let h = Hedge(self.nodes.len());
+        self.nodes.push(Cell::new(UFNode::Child(root)));
+        h
     }
 }
 

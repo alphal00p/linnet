@@ -44,7 +44,7 @@ fn test_path_compression() {
 fn test_union_find_bit_filter() {
     // Test heavy elements
     let heavy_data = vec![10, 20, 30];
-    let mut uf = UnionFindBitFilter::new_heavy(heavy_data);
+    let mut uf = UnionFindBitFilterHL::new_heavy(heavy_data);
 
     // Test initial state
     assert_eq!(uf[HeavyIndex(0)], 10);
@@ -58,7 +58,7 @@ fn test_union_find_bit_filter() {
 #[test]
 fn test_light_elements() {
     let light_data = vec!["a".to_string(), "b".to_string(), "c".to_string()];
-    let mut uf = UnionFindBitFilter::new_light(light_data);
+    let mut uf = UnionFindBitFilterHL::new_light(light_data);
 
     // Test initial state
     assert_eq!(uf[LightIndex(0)], "a");
@@ -73,7 +73,7 @@ fn test_light_elements() {
 #[should_panic(expected = "Cannot unify a Heavy root with a Light root!")]
 fn test_heavy_light_union_panic() {
     let data_enum = vec![HeavyLight::Heavy(10), HeavyLight::Light("a".to_string())];
-    let mut uf = UnionFindBitFilter::new(data_enum);
+    let mut uf = UnionFindBitFilterHL::new(data_enum);
 
     // This should panic
     uf.union(Hedge(0), Hedge(1), sum_merge, concat_merge);
@@ -87,7 +87,7 @@ fn test_mixed_elements() {
         HeavyLight::Light("a".to_string()),
         HeavyLight::Light("b".to_string()),
     ];
-    let uf = UnionFindBitFilter::new(data_enum);
+    let uf = UnionFindBitFilterHL::new(data_enum);
 
     // Test correct type assignment
     match uf.get(*uf.find_index(Hedge(0))) {
@@ -104,7 +104,7 @@ fn test_mixed_elements() {
 #[test]
 fn test_bitvec_filter() {
     let heavy_data = vec![10, 20, 30];
-    let uf: UnionFindBitFilter<i32, i8> = UnionFindBitFilter::new_heavy(heavy_data);
+    let uf: UnionFindBitFilterHL<i32, i8> = UnionFindBitFilterHL::new_heavy(heavy_data);
 
     // Test initial filter state
     for i in 0..3 {
@@ -123,7 +123,7 @@ fn test_find_from_heavy_light() {
         HeavyLight::Light("a".to_string()),
         HeavyLight::Light("b".to_string()),
     ];
-    let uf = UnionFindBitFilter::new(data_enum);
+    let uf = UnionFindBitFilterHL::new(data_enum);
 
     assert_eq!(uf.find_from_heavy(HeavyIndex(0)), Hedge(0));
     assert_eq!(uf.find_from_light(LightIndex(0)), Hedge(2));

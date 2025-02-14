@@ -141,7 +141,7 @@ impl HedgePair {
             HedgePair::Unpaired { hedge, flow } => {
                 let data = graph.get_edge_data(*hedge);
                 data.geometry.cetz_identity(
-                    graph[*hedge],
+                    graph.node_id(*hedge),
                     decoration(&data.data),
                     label(&data.data),
                 )
@@ -149,8 +149,8 @@ impl HedgePair {
             HedgePair::Paired { source, sink } => {
                 let data = graph.get_edge_data(*source);
                 data.geometry.cetz_pair(
-                    graph[*source],
-                    graph[*sink],
+                    graph.node_id(*source),
+                    graph.node_id(*sink),
                     decoration(&data.data),
                     label(&data.data),
                 )
@@ -158,8 +158,8 @@ impl HedgePair {
             HedgePair::Split { source, sink, .. } => {
                 let data = graph.get_edge_data(*source);
                 data.geometry.cetz_pair(
-                    graph[*source],
-                    graph[*sink],
+                    graph.node_id(*source),
+                    graph.node_id(*sink),
                     decoration(&data.data),
                     label(&data.data),
                 )
