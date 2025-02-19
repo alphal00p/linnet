@@ -356,7 +356,7 @@ impl<V> Iterator for BfsTreeIter<'_, V> {
         // Remove the node at the front (FIFO behavior)
         let node = self.queue.pop_front()?;
         // Enqueue all children of the current node.
-        // We use iter_children(), which (via your neighbor functions)
+        // We use iter_children(), which (via the neighbor functions)
         // returns all of the children in order.
         for child in self.store.iter_children(node) {
             self.queue.push_back(child);

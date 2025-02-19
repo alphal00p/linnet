@@ -4,11 +4,28 @@ use bitvec::vec::BitVec;
 use indexmap::IndexSet;
 use serde::{Deserialize, Serialize};
 
+use crate::tree::{
+    child_pointer::ParentChildStore, child_vec::ChildVecStore, parent_pointer::ParentPointerStore,
+    Forest, ForestNodeStore,
+};
+
 use super::{
     involution::{Hedge, Involution},
+    nodestorage::NodeStorage,
     subgraph::{Cycle, HedgeNode, Inclusion, InternalSubGraph, SubGraph, SubGraphOps},
     HedgeGraph, NodeIndex, NodeStorageOps,
 };
+
+impl<V, P: ForestNodeStore<NodeData = ()>> NodeStorage for Forest<V, P> {
+    type Storage<N> = Forest<N, P>;
+    type NodeData = V;
+}
+
+pub struct HedgeTree<V, P: ForestNodeStore<NodeData = ()>, E> {
+    graph: HedgeGraph<E, V, Forest<V, P>>,
+    tree_subgraph: InternalSubGraph,
+    covers: BitVec,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TraversalTree {
