@@ -6,9 +6,12 @@ use std::{
 use bitvec::vec::BitVec;
 use thiserror::Error;
 
-use crate::half_edge::{
-    involution::Hedge,
-    subgraph::{Inclusion, SubGraph, SubGraphOps},
+use crate::{
+    half_edge::{
+        involution::Hedge,
+        subgraph::{Inclusion, SubGraph, SubGraphOps},
+    },
+    tree::Forest,
 };
 
 /// A newtype for a node (index into `self.nodes`).
@@ -57,6 +60,7 @@ pub struct UnionFind<U> {
     /// For each root, there's exactly one `Some(U)` slot here.
     /// Non–roots may have been swapped out to maintain compactness.
     set_data: Vec<SetData<U>>,
+    // forest:Forest<>
 }
 
 pub struct SetData<U> {

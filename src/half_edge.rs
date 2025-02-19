@@ -88,6 +88,12 @@ pub struct HedgeGraph<E, V, S: NodeStorage<NodeData = V> = NodeStorageVec<V>> {
     node_store: S,
 }
 
+impl<E, V, S: NodeStorage<NodeData = V>> AsRef<Involution> for HedgeGraph<E, V, S> {
+    fn as_ref(&self) -> &Involution {
+        self.edge_store.as_ref()
+    }
+}
+
 impl<E, V: Default, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
     /// Creates a random graph with the given number of nodes and edges.
     pub fn random(nodes: usize, edges: usize, seed: u64) -> HedgeGraph<(), V, N> {
@@ -220,8 +226,9 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
     pub fn is_connected<S: SubGraph>(&self, subgraph: &S) -> bool {
         let n_edges = subgraph.nedges(self);
         if let Some(start) = subgraph.included_iter().next() {
-            TraversalTree::dfs(self, subgraph, self.node_hairs(start), None)
-                .covers()
+            SimpleTraversalTree::depth_first_traverse(self, subgraph, &self.node_id(start), None)
+                .unwrap()
+                .covers
                 .nedges(self)
                 == n_edges
         } else {
@@ -711,8 +718,8 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
         n_hedges - n_nodes + n_components
     }
 
-    pub fn cycle_basis(&self) -> (Vec<Cycle>, TraversalTree) {
-        self.paton_cycle_basis(&self.full_graph(), self.node_hairs(Hedge(0)), None)
+    pub fn cycle_basis(&self) -> (Vec<Cycle>, SimpleTraversalTree) {
+        self.paton_cycle_basis(&self.full_graph(), &self.node_id(Hedge(0)), None)
             .unwrap()
     }
 
@@ -765,33 +772,30 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
     pub fn paton_count_loops(
         &self,
         subgraph: &InternalSubGraph,
-        start: &HedgeNode,
-    ) -> Result<usize, HedgeError> {
-        let tree = TraversalTree::dfs(self, subgraph, start, None);
+        start: &NodeIndex,
+    ) -> Result<usize, HedgeGraphError> {
+        let tree = SimpleTraversalTree::depth_first_traverse(self, subgraph, start, None)?;
 
-        let cuts = subgraph.subtract(&tree.tree);
+        let cuts = subgraph.subtract(&tree.tree_subgraph(self));
         Ok(self.edge_store.involution.n_internals(&cuts))
     }
 
     pub fn paton_cycle_basis(
         &self,
         subgraph: &InternalSubGraph,
-        start: &HedgeNode,
+        start: &NodeIndex,
         included_hedge: Option<Hedge>,
-    ) -> Result<(Vec<Cycle>, TraversalTree), HedgeError> {
-        if !subgraph.intersects(&start.hairs) {
-            return Err(HedgeError::InvalidStart);
-        }
+    ) -> Result<(Vec<Cycle>, SimpleTraversalTree), HedgeGraphError> {
+        let tree =
+            SimpleTraversalTree::depth_first_traverse(self, subgraph, start, included_hedge)?;
 
-        let tree = TraversalTree::dfs(self, subgraph, start, included_hedge);
-
-        let cuts = subgraph.subtract(&tree.tree);
+        let cuts = subgraph.subtract(&tree.tree_subgraph(self));
 
         let mut cycle_basis = Vec::new();
 
         for c in cuts.included_iter() {
             if c > self.inv(c) {
-                cycle_basis.push(tree.cycle(c).unwrap());
+                cycle_basis.push(tree.cycle(c, self).unwrap());
             }
         }
 
@@ -924,8 +928,11 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
                 // Perform DFS to find all reachable edges from this edge
 
                 //
-                let root_node = self.node_hairs(hedge_index);
-                let reachable_edges = TraversalTree::dfs(self, subgraph, root_node, None).covers();
+                let root_node = self.node_id(hedge_index);
+                let reachable_edges =
+                    SimpleTraversalTree::depth_first_traverse(self, subgraph, &root_node, None)
+                        .unwrap()
+                        .covers;
 
                 visited_edges.union_with(&reachable_edges);
 
@@ -943,74 +950,74 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
         }
     }
 
-    pub fn align_to_tree_underlying(&mut self, tree: &TraversalTree) {
-        for (i, p) in tree.parent_iter() {
-            match p {
-                Parent::Root => {
-                    if tree.tree.includes(&i) {
-                        self.edge_store.involution.set_as_sink(i)
-                    } else {
-                        self.edge_store.involution.set_as_source(i)
-                    }
-                }
-                Parent::Hedge {
-                    hedge_to_root,
-                    traversal_order,
-                } => {
-                    if tree.tree.includes(&i) {
-                        if *hedge_to_root == i {
-                            self.edge_store.involution.set_as_source(i)
-                        } else {
-                            self.edge_store.involution.set_as_sink(i)
-                        }
-                    } else {
-                        let tord = traversal_order;
-                        if let Parent::Hedge {
-                            traversal_order, ..
-                        } = tree.connected_parent(i)
-                        {
-                            if tord > traversal_order {
-                                self.edge_store.involution.set_as_sink(i);
-                            }
-                        }
-                    }
-                }
-                Parent::Unset => {
-                    println!("unset{i}");
-                }
-            }
-        }
-    }
+    // pub fn align_to_tree_underlying(&mut self, tree: &TraversalTree) {
+    //     for (i, p) in tree.parent_iter() {
+    //         match p {
+    //             Parent::Root => {
+    //                 if tree.tree.includes(&i) {
+    //                     self.edge_store.involution.set_as_sink(i)
+    //                 } else {
+    //                     self.edge_store.involution.set_as_source(i)
+    //                 }
+    //             }
+    //             Parent::Hedge {
+    //                 hedge_to_root,
+    //                 traversal_order,
+    //             } => {
+    //                 if tree.tree.includes(&i) {
+    //                     if *hedge_to_root == i {
+    //                         self.edge_store.involution.set_as_source(i)
+    //                     } else {
+    //                         self.edge_store.involution.set_as_sink(i)
+    //                     }
+    //                 } else {
+    //                     let tord = traversal_order;
+    //                     if let Parent::Hedge {
+    //                         traversal_order, ..
+    //                     } = tree.connected_parent(i)
+    //                     {
+    //                         if tord > traversal_order {
+    //                             self.edge_store.involution.set_as_sink(i);
+    //                         }
+    //                     }
+    //                 }
+    //             }
+    //             Parent::Unset => {
+    //                 println!("unset{i}");
+    //             }
+    //         }
+    //     }
+    // }
 
-    pub fn align_to_tree_superficial(&mut self, tree: &TraversalTree) {
-        for (i, p) in tree.parent_iter() {
-            match self.edge_store.involution.hedge_data_mut(i) {
-                InvolutiveMapping::Identity { data, .. } => match p {
-                    Parent::Root => {}
-                    Parent::Hedge { hedge_to_root, .. } => {
-                        if *hedge_to_root == i {
-                            data.orientation = Orientation::Default;
-                        } else {
-                            data.orientation = Orientation::Reversed;
-                        }
-                    }
-                    Parent::Unset => {}
-                },
-                InvolutiveMapping::Source { data, .. } => match p {
-                    Parent::Root => {}
-                    Parent::Hedge { hedge_to_root, .. } => {
-                        if *hedge_to_root == i {
-                            data.orientation = Orientation::Default;
-                        } else {
-                            data.orientation = Orientation::Reversed;
-                        }
-                    }
-                    Parent::Unset => {}
-                },
-                _ => {}
-            }
-        }
-    }
+    // pub fn align_to_tree_superficial(&mut self, tree: &TraversalTree) {
+    //     for (i, p) in tree.parent_iter() {
+    //         match self.edge_store.involution.hedge_data_mut(i) {
+    //             InvolutiveMapping::Identity { data, .. } => match p {
+    //                 Parent::Root => {}
+    //                 Parent::Hedge { hedge_to_root, .. } => {
+    //                     if *hedge_to_root == i {
+    //                         data.orientation = Orientation::Default;
+    //                     } else {
+    //                         data.orientation = Orientation::Reversed;
+    //                     }
+    //                 }
+    //                 Parent::Unset => {}
+    //             },
+    //             InvolutiveMapping::Source { data, .. } => match p {
+    //                 Parent::Root => {}
+    //                 Parent::Hedge { hedge_to_root, .. } => {
+    //                     if *hedge_to_root == i {
+    //                         data.orientation = Orientation::Default;
+    //                     } else {
+    //                         data.orientation = Orientation::Reversed;
+    //                     }
+    //                 }
+    //                 Parent::Unset => {}
+    //             },
+    //             _ => {}
+    //         }
+    //     }
+    // }
 }
 
 // Iterators
@@ -1209,7 +1216,7 @@ use subgraph::{
 };
 
 use thiserror::Error;
-use tree::{Parent, TraversalTree};
+use tree::SimpleTraversalTree;
 
 #[derive(Error, Debug)]
 pub enum HedgeError {
@@ -1263,6 +1270,10 @@ pub enum HedgeGraphError {
     NodesDoNotPartition,
     #[error("Invalid node")]
     NoNode,
+    #[error("Invalid hedge {0}")]
+    InvalidHedge(Hedge),
+    #[error("Invalid node {0}")]
+    InvalidNode(NodeIndex),
     #[error("Invalid edge")]
     NoEdge,
     #[error("Dangling Half edge present")]

@@ -4,7 +4,9 @@ use serde::{Deserialize, Serialize};
 use std::hash::Hash;
 use std::ops::Index;
 
-use crate::half_edge::{Hedge, HedgeGraph, InvolutiveMapping, NodeStorageOps, TraversalTree};
+use crate::half_edge::{
+    tree::SimpleTraversalTree, Hedge, HedgeGraph, InvolutiveMapping, NodeStorageOps,
+};
 
 use super::{node::HedgeNode, Cycle, Inclusion, SubGraph, SubGraphOps};
 
@@ -14,6 +16,15 @@ pub struct InternalSubGraph {
     // To represent a hairy subgraph, use a ContractedSubGraph
     pub filter: BitVec,
     pub loopcount: Option<usize>,
+}
+
+impl InternalSubGraph {
+    pub unsafe fn new_unchecked(filter: BitVec) -> Self {
+        InternalSubGraph {
+            filter,
+            loopcount: None,
+        }
+    }
 }
 
 impl Hash for InternalSubGraph {
@@ -279,8 +290,8 @@ impl InternalSubGraph {
     pub fn cycle_basis<E, V, N: NodeStorageOps<NodeData = V>>(
         &self,
         graph: &HedgeGraph<E, V, N>,
-    ) -> (Vec<Cycle>, TraversalTree) {
-        let node = graph.iter_nodes().next().unwrap().0;
-        graph.paton_cycle_basis(self, node, None).unwrap()
+    ) -> (Vec<Cycle>, SimpleTraversalTree) {
+        let node = graph.base_nodes_iter().next().unwrap();
+        graph.paton_cycle_basis(self, &node, None).unwrap()
     }
 }

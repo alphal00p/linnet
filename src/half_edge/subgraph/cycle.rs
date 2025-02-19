@@ -4,9 +4,7 @@ use ahash::AHashSet;
 use bitvec::vec::BitVec;
 use serde::{Deserialize, Serialize};
 
-use crate::half_edge::{
-    nodestorage::NodeStorageOps, Hedge, HedgeGraph, NodeStorage, PowersetIterator,
-};
+use crate::half_edge::{nodestorage::NodeStorageOps, Hedge, HedgeGraph, PowersetIterator};
 
 use super::{Inclusion, InternalSubGraph, SubGraph, SubGraphOps};
 

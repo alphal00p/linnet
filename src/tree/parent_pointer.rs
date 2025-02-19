@@ -1,7 +1,9 @@
 use std::ops::{Index, IndexMut};
 
-use super::{ForestNodeStore, RootId, TreeNodeId};
+use serde::{Deserialize, Serialize};
 
+use super::{ForestNodeStore, RootId, TreeNodeId};
+#[derive(Clone, Debug, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct PPNode<V> {
     pub(crate) parent: ParentId,
     pub(crate) data: V,
@@ -43,14 +45,54 @@ impl<V> PPNode<V> {
     }
 }
 
-#[derive(Clone, Debug, Copy)]
+#[derive(Clone, Debug, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum ParentId {
     Root(RootId),
     Node(TreeNodeId),
 }
 
+impl ParentId {
+    pub fn is_root(&self) -> bool {
+        match self {
+            ParentId::Root(_) => true,
+            ParentId::Node(_) => false,
+        }
+    }
+
+    pub fn is_node(&self) -> bool {
+        !self.is_root()
+    }
+}
+
 pub struct ParentPointerStore<V> {
     pub(crate) nodes: Vec<PPNode<V>>,
+}
+
+impl<V> ParentPointerStore<V> {
+    /// Re–roots the tree at the given node (making it a root).
+    /// Along the chain from new_root to the old root the parent pointers are reversed.
+    pub fn change_root(&mut self, new_root: TreeNodeId) -> RootId {
+        let mut current = new_root;
+        let mut prev = None;
+        loop {
+            // Save the original parent.
+            let orig_parent = self.nodes[current.0].parent;
+            // Update current’s parent pointer: if there is no previous node we want a new Root,
+            // otherwise we point to the previous node.
+            self.nodes[current.0].parent = match prev {
+                None => ParentId::Root(crate::tree::RootId(new_root.0)),
+                Some(p) => ParentId::Node(p),
+            };
+            // If the original parent was a node, move upward.
+            match orig_parent {
+                ParentId::Node(p) => {
+                    prev = Some(current);
+                    current = p;
+                }
+                ParentId::Root(r) => return r,
+            }
+        }
+    }
 }
 
 impl<V> FromIterator<PPNode<V>> for ParentPointerStore<V> {

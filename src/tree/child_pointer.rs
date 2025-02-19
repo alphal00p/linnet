@@ -1,11 +1,13 @@
 use std::collections::VecDeque;
 
+use serde::{Deserialize, Serialize};
+
 use super::{
     child_vec::ChildVecStore,
     parent_pointer::{PPNode, ParentId, ParentPointerStore},
     ForestNodeStore, ForestNodeStoreDown, TreeNodeId,
 };
-
+#[derive(Clone, Debug, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct PCNode<V> {
     pub(crate) parent_pointer: PPNode<V>,
     pub(crate) child: Option<TreeNodeId>, // first child, if any. To get the other children, follow the sibling links of this child

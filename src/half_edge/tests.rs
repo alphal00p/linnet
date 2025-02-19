@@ -23,7 +23,7 @@ fn threeloop() {
         assert_eq!(
             3,
             graph
-                .paton_cycle_basis(&graph.full_graph(), graph.node_hairs(Hedge(i)), None)
+                .paton_cycle_basis(&graph.full_graph(), &graph.node_id(Hedge(i)), None)
                 .unwrap()
                 .0
                 .len()
@@ -74,7 +74,7 @@ fn hairythreeloop() {
         assert_eq!(
             3,
             graph
-                .paton_cycle_basis(&graph.full_graph(), graph.node_hairs(i), None)
+                .paton_cycle_basis(&graph.full_graph(), &graph.node_id(i), None)
                 .unwrap()
                 .0
                 .len()
@@ -293,18 +293,19 @@ fn K33() {
 
     println!("{}", graph.dot(&graph.full_node()));
 
-    let t1 = TraversalTree::dfs(
+    let t1 = SimpleTraversalTree::depth_first_traverse(
         &graph,
         &graph.full_filter(),
-        graph.node_store.get_node(NodeIndex(4)),
+        &NodeIndex(4),
         None,
-    );
+    )
+    .unwrap();
 
     println!(
         "{}",
-        graph.dot(&graph.nesting_node_from_subgraph(t1.tree.clone()))
+        graph.dot(&graph.nesting_node_from_subgraph(t1.tree_subgraph(&graph).clone()))
     );
-    println!("{:?}", t1.traversal);
+    // println!("{:?}", t1.traversal);
 
     // println!(
     //     "{}",
@@ -324,22 +325,21 @@ fn K33() {
     //         &|_| None
     //     )
     // );
-    println!("{}", graph.dot(&graph.nesting_node_from_subgraph(t1.tree)));
+    println!(
+        "{}",
+        graph.dot(&graph.nesting_node_from_subgraph(t1.tree_subgraph(&graph)))
+    );
     println!(
         "{}",
         graph
-            .paton_count_loops(&graph.full_graph(), graph.node_hairs(Hedge(0)))
+            .paton_count_loops(&graph.full_graph(), &graph.node_id(Hedge(0)))
             .unwrap()
     );
 
     println!("{}", graph.cyclotomatic_number(&graph.full_graph()));
 
     let cycles = graph
-        .paton_cycle_basis(
-            &graph.full_graph(),
-            graph.node_store.get_node(NodeIndex(4)),
-            None,
-        )
+        .paton_cycle_basis(&graph.full_graph(), &NodeIndex(4), None)
         .unwrap()
         .0;
 
@@ -568,7 +568,7 @@ fn flower_snark() {
     println!(
         "loop count {}",
         graph
-            .paton_count_loops(&graph.full_graph(), graph.node_hairs(Hedge(0)))
+            .paton_count_loops(&graph.full_graph(), &graph.node_id(Hedge(0)))
             .unwrap()
     );
     if let Some((s, v)) = graph

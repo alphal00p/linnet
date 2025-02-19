@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::half_edge::builder::HedgeNodeBuilder;
 use crate::half_edge::nodestorage::NodeStorageOps;
-use crate::half_edge::{Hedge, HedgeGraph, NodeStorage};
+use crate::half_edge::{Hedge, HedgeGraph};
 
 use super::Inclusion;
 use super::{internal::InternalSubGraph, node::HedgeNode, SubGraph, SubGraphOps};

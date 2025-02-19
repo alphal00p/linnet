@@ -16,7 +16,13 @@ use super::{
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SmartHedgeVec<T> {
     pub(super) data: Vec<(T, HedgePair)>,
-    pub(super) involution: Involution<EdgeIndex>,
+    pub(super) involution: Involution,
+}
+
+impl<T> AsRef<Involution> for SmartHedgeVec<T> {
+    fn as_ref(&self) -> &Involution {
+        &self.involution
+    }
 }
 
 impl<T> SmartHedgeVec<T> {

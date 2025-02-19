@@ -9,10 +9,7 @@ use rand::{rngs::SmallRng, Rng, SeedableRng};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use super::{
-    nodestorage::NodeStorageOps, subgraph::SubGraph, GVEdgeAttrs, HedgeGraph, NodeIndex,
-    NodeStorage,
-};
+use super::{nodestorage::NodeStorageOps, subgraph::SubGraph, GVEdgeAttrs, HedgeGraph, NodeIndex};
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Hedge(pub usize);
@@ -838,6 +835,12 @@ pub enum InvolutionError {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Involution<E = EdgeIndex> {
     pub(super) inv: Vec<InvolutiveMapping<E>>,
+}
+
+impl<E> AsRef<Involution<E>> for Involution<E> {
+    fn as_ref(&self) -> &Involution<E> {
+        self
+    }
 }
 
 impl<E> Default for Involution<E> {

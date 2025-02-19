@@ -1,21 +1,73 @@
 use std::ops::{Index, IndexMut};
 
-use parent_pointer::ParentId;
+use bitvec::vec::BitVec;
+use indexmap::set::Union;
+use parent_pointer::{PPNode, ParentId, ParentPointerStore};
+use serde::{Deserialize, Serialize};
+use thiserror::Error;
+
+use crate::{
+    half_edge::{
+        involution::Hedge,
+        subgraph::{Inclusion, SubGraph, SubGraphOps},
+        NodeIndex,
+    },
+    union_find::UnionFind,
+};
 
 pub mod child_pointer;
 pub mod child_vec;
 pub mod parent_pointer;
 
-#[derive(Clone, Debug, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Clone, Debug, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct TreeNodeId(usize);
+
+impl From<usize> for TreeNodeId {
+    fn from(i: usize) -> Self {
+        TreeNodeId(i)
+    }
+}
+
+impl From<Hedge> for TreeNodeId {
+    fn from(h: Hedge) -> Self {
+        h.0.into()
+    }
+}
+
+impl From<TreeNodeId> for Hedge {
+    fn from(h: TreeNodeId) -> Self {
+        Hedge(h.0)
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RootData<R> {
     data: R,
     root_id: TreeNodeId,
 }
 
-#[derive(Clone, Debug, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Clone, Debug, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct RootId(usize);
 
+impl From<NodeIndex> for RootId {
+    fn from(n: NodeIndex) -> Self {
+        n.0.into()
+    }
+}
+
+impl From<RootId> for NodeIndex {
+    fn from(r: RootId) -> Self {
+        r.0.into()
+    }
+}
+
+impl From<usize> for RootId {
+    fn from(i: usize) -> Self {
+        RootId(i)
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Forest<R, N> {
     nodes: N,
     roots: Vec<RootData<R>>,
@@ -38,6 +90,20 @@ impl<R, N> Index<RootId> for Forest<R, N> {
 impl<R, N> IndexMut<RootId> for Forest<R, N> {
     fn index_mut(&mut self, index: RootId) -> &mut Self::Output {
         &mut self.roots[index.0].data
+    }
+}
+
+impl<R, N: ForestNodeStore> Index<&TreeNodeId> for Forest<R, N> {
+    type Output = ParentId;
+    fn index(&self, index: &TreeNodeId) -> &Self::Output {
+        &self.nodes[index]
+    }
+}
+
+impl<R, N: ForestNodeStore> Index<TreeNodeId> for Forest<R, N> {
+    type Output = N::NodeData;
+    fn index(&self, index: TreeNodeId) -> &Self::Output {
+        &self.nodes[index]
     }
 }
 
@@ -67,6 +133,65 @@ impl<R, N: Default> Forest<R, N> {
         root_id
     }
 }
+
+#[derive(Debug, Clone, Error, Serialize, Deserialize)]
+pub enum ForestError {
+    #[error("Length mismatch")]
+    LengthMismatch,
+    #[error("Does not partition")]
+    DoesNotPartion,
+}
+
+impl<U> Forest<U, ParentPointerStore<()>> {
+    pub fn from_bitvec_partition(bitvec_part: Vec<(U, BitVec)>) -> Result<Self, ForestError> {
+        let mut nodes = vec![];
+        let mut roots = vec![];
+        let mut cover: Option<BitVec> = None;
+
+        for (d, set) in bitvec_part {
+            let len = set.len();
+            if let Some(c) = &mut cover {
+                if c.len() != len {
+                    return Err(ForestError::LengthMismatch);
+                }
+                if c.intersects(&set) {
+                    return Err(ForestError::DoesNotPartion);
+                }
+                c.union_with(&set);
+            } else {
+                cover = Some(BitVec::empty(len));
+                nodes = vec![None; len];
+            }
+            let mut first = None;
+            for i in set.included_iter() {
+                if let Some(root) = first {
+                    nodes[i.0] = Some(PPNode::child((), root))
+                } else {
+                    first = Some(i.into());
+                    nodes[i.0] = Some(PPNode::root((), RootId(roots.len())));
+                }
+            }
+            roots.push(RootData {
+                root_id: first.unwrap(),
+                data: d,
+            });
+        }
+        Ok(Forest {
+            nodes: nodes
+                .into_iter()
+                .collect::<Option<Vec<_>>>()
+                .unwrap()
+                .into_iter()
+                .collect(),
+            roots,
+        })
+    }
+
+    pub fn change_to_root(&mut self, node_id: TreeNodeId) -> RootId {
+        self.nodes.change_root(node_id)
+    }
+}
+
 pub trait ForestNodeStoreDown: ForestNodeStore {
     fn iter_leaves(&self) -> impl Iterator<Item = TreeNodeId>;
 
@@ -101,4 +226,10 @@ pub trait ForestNodeStore:
     fn map_ref<F, U>(&self, transform: F) -> Self::Store<U>
     where
         F: FnMut(&Self::NodeData) -> U;
+}
+
+impl<R, N: ForestNodeStore> Forest<R, N> {
+    pub fn root(&self, nodeid: TreeNodeId) -> RootId {
+        self.nodes.root(nodeid)
+    }
 }
