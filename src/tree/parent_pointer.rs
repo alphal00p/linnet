@@ -50,7 +50,7 @@ pub enum ParentId {
 }
 
 pub struct ParentPointerStore<V> {
-    nodes: Vec<PPNode<V>>,
+    pub(crate) nodes: Vec<PPNode<V>>,
 }
 
 impl<V> FromIterator<PPNode<V>> for ParentPointerStore<V> {
@@ -89,6 +89,10 @@ impl<V> ForestNodeStore for ParentPointerStore<V> {
         let node_id = TreeNodeId(self.nodes.len());
         self.nodes.push(PPNode::root(data, root_id));
         node_id
+    }
+
+    fn iter_node_id(&self) -> impl Iterator<Item = TreeNodeId> {
+        (0..self.nodes.len()).map(TreeNodeId)
     }
 
     fn iter_nodes(&self) -> impl Iterator<Item = (TreeNodeId, &Self::NodeData)> {

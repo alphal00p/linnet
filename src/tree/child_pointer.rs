@@ -1,15 +1,16 @@
 use std::collections::VecDeque;
 
 use super::{
-    parent_pointer::{PPNode, ParentId},
+    child_vec::ChildVecStore,
+    parent_pointer::{PPNode, ParentId, ParentPointerStore},
     ForestNodeStore, ForestNodeStoreDown, TreeNodeId,
 };
 
 pub struct PCNode<V> {
     pub(crate) parent_pointer: PPNode<V>,
-    child: Option<TreeNodeId>, // first child, if any. To get the other children, follow the sibling links of this child
-    neighbor_left: TreeNodeId, // next sibling, if any. Will form a cyclic linked list, if equal to right, then it is the only child
-    neighbor_right: TreeNodeId, // previous sibling, if any. Will form a cyclic linked list, if equal to left, then it is the only child
+    pub(crate) child: Option<TreeNodeId>, // first child, if any. To get the other children, follow the sibling links of this child
+    pub(crate) neighbor_left: TreeNodeId, // next sibling, if any. Will form a cyclic linked list, if equal to right, then it is the only child
+    pub(crate) neighbor_right: TreeNodeId, // previous sibling, if any. Will form a cyclic linked list, if equal to left, then it is the only child
 }
 
 impl<V> PCNode<V> {
@@ -39,7 +40,7 @@ impl<V> PCNode<V> {
 }
 
 pub struct ParentChildStore<V> {
-    nodes: Vec<PCNode<V>>,
+    pub(crate) nodes: Vec<PCNode<V>>,
 }
 
 impl<V> std::ops::Index<&TreeNodeId> for ParentChildStore<V> {
@@ -196,6 +197,10 @@ impl<V> ForestNodeStore for ParentChildStore<V> {
             .iter()
             .enumerate()
             .map(|(i, n)| (TreeNodeId(i), &n.parent_pointer.data))
+    }
+
+    fn iter_node_id(&self) -> impl Iterator<Item = TreeNodeId> {
+        (0..self.nodes.len()).map(TreeNodeId)
     }
 
     fn add_root(&mut self, data: Self::NodeData, root_id: super::RootId) -> TreeNodeId {
@@ -357,6 +362,22 @@ impl<V> Iterator for BfsTreeIter<'_, V> {
             self.queue.push_back(child);
         }
         Some(node)
+    }
+}
+
+impl<V> From<ParentChildStore<V>> for ParentPointerStore<V> {
+    fn from(child_store: ParentChildStore<V>) -> Self {
+        child_store
+            .nodes
+            .into_iter()
+            .map(|pc_node| pc_node.parent_pointer)
+            .collect()
+    }
+}
+
+impl<V> From<ParentPointerStore<V>> for ParentChildStore<V> {
+    fn from(value: ParentPointerStore<V>) -> Self {
+        ChildVecStore::from(value).into()
     }
 }
 

@@ -3,6 +3,7 @@ use std::ops::{Index, IndexMut};
 use parent_pointer::ParentId;
 
 pub mod child_pointer;
+pub mod child_vec;
 pub mod parent_pointer;
 
 #[derive(Clone, Debug, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -86,6 +87,8 @@ pub trait ForestNodeStore:
     }
 
     fn iter_nodes(&self) -> impl Iterator<Item = (TreeNodeId, &Self::NodeData)>;
+
+    fn iter_node_id(&self) -> impl Iterator<Item = TreeNodeId>;
 
     fn add_root(&mut self, data: Self::NodeData, root_id: RootId) -> TreeNodeId;
 
