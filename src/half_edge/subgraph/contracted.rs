@@ -4,6 +4,7 @@ use bitvec::{bitvec, order::Lsb0};
 use serde::{Deserialize, Serialize};
 
 use crate::half_edge::builder::HedgeNodeBuilder;
+use crate::half_edge::nodestorage::NodeStorageOps;
 use crate::half_edge::{Hedge, HedgeGraph, NodeStorage};
 
 use super::Inclusion;
@@ -54,7 +55,7 @@ impl SubGraph for ContractedSubGraph {
         self.allhedges.included()
     }
 
-    fn nedges<E, V, N: NodeStorage<NodeData = V>>(&self, graph: &HedgeGraph<E, V, N>) -> usize {
+    fn nedges<E, V, N: NodeStorageOps<NodeData = V>>(&self, graph: &HedgeGraph<E, V, N>) -> usize {
         self.allhedges.nedges(graph)
     }
 
@@ -80,7 +81,10 @@ impl SubGraph for ContractedSubGraph {
 }
 
 impl SubGraphOps for ContractedSubGraph {
-    fn complement<E, V, N: NodeStorage<NodeData = V>>(&self, graph: &HedgeGraph<E, V, N>) -> Self {
+    fn complement<E, V, N: NodeStorageOps<NodeData = V>>(
+        &self,
+        graph: &HedgeGraph<E, V, N>,
+    ) -> Self {
         let externalhedges = !self.allhedges.clone() & !self.internal_graph.filter.clone();
 
         Self {

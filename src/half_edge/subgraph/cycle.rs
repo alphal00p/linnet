@@ -4,7 +4,9 @@ use ahash::AHashSet;
 use bitvec::vec::BitVec;
 use serde::{Deserialize, Serialize};
 
-use crate::half_edge::{Hedge, HedgeGraph, NodeStorage, PowersetIterator};
+use crate::half_edge::{
+    nodestorage::NodeStorageOps, Hedge, HedgeGraph, NodeStorage, PowersetIterator,
+};
 
 use super::{Inclusion, InternalSubGraph, SubGraph, SubGraphOps};
 
@@ -15,7 +17,7 @@ pub struct SignedCycle {
 }
 
 impl SignedCycle {
-    pub fn from_cycle<V, E, N: NodeStorage<NodeData = V>>(
+    pub fn from_cycle<V, E, N: NodeStorageOps<NodeData = V>>(
         cycle: Cycle,
         according_to: Hedge,
         graph: &HedgeGraph<E, V, N>,
@@ -60,7 +62,7 @@ pub struct Cycle {
     pub loop_count: Option<usize>,
 }
 impl Cycle {
-    pub fn internal_graph<E, V, N: NodeStorage<NodeData = V>>(
+    pub fn internal_graph<E, V, N: NodeStorageOps<NodeData = V>>(
         self,
         graph: &HedgeGraph<E, V, N>,
     ) -> InternalSubGraph {
@@ -72,7 +74,7 @@ impl Cycle {
             loop_count: None,
         }
     }
-    pub fn is_circuit<E, V, N: NodeStorage<NodeData = V>>(
+    pub fn is_circuit<E, V, N: NodeStorageOps<NodeData = V>>(
         &self,
         graph: &HedgeGraph<E, V, N>,
     ) -> bool {
@@ -87,7 +89,7 @@ impl Cycle {
         }
         true
     }
-    pub fn new_circuit<E, V, N: NodeStorage<NodeData = V>>(
+    pub fn new_circuit<E, V, N: NodeStorageOps<NodeData = V>>(
         filter: BitVec,
         graph: &HedgeGraph<E, V, N>,
     ) -> Option<Self> {
@@ -101,7 +103,7 @@ impl Cycle {
             None
         }
     }
-    pub fn new<E, V, N: NodeStorage<NodeData = V>>(
+    pub fn new<E, V, N: NodeStorageOps<NodeData = V>>(
         filter: BitVec,
         graph: &HedgeGraph<E, V, N>,
     ) -> Option<Self> {

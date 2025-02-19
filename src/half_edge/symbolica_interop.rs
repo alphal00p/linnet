@@ -3,7 +3,7 @@ use ahash::AHashMap;
 use super::{
     builder::HedgeGraphBuilder,
     involution::{HedgePair, Orientation},
-    nodestorage::{NodeStorage, NodeStorageVec},
+    nodestorage::{NodeStorage, NodeStorageOps, NodeStorageVec},
     HedgeGraph, HedgeGraphError,
 };
 
@@ -29,7 +29,7 @@ impl<N: Clone, E: Clone> From<symbolica::graph::Graph<N, E>>
     }
 }
 
-impl<N: Clone, E: Clone, S: NodeStorage<NodeData = N>> TryFrom<HedgeGraph<E, N, S>>
+impl<N: Clone, E: Clone, S: NodeStorageOps<NodeData = N>> TryFrom<HedgeGraph<E, N, S>>
     for symbolica::graph::Graph<N, E>
 {
     type Error = HedgeGraphError;

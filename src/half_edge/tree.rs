@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use super::{
     involution::{Hedge, Involution},
     subgraph::{Cycle, HedgeNode, Inclusion, InternalSubGraph, SubGraph, SubGraphOps},
-    HedgeGraph, NodeIndex, NodeStorage,
+    HedgeGraph, NodeIndex, NodeStorageOps,
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -96,7 +96,7 @@ impl TraversalTree {
         &self.parents[hedge.0]
     }
 
-    pub fn leaf_nodes<V, N: NodeStorage<NodeData = V>, E>(
+    pub fn leaf_nodes<V, N: NodeStorageOps<NodeData = V>, E>(
         &self,
         graph: &HedgeGraph<E, V, N>,
     ) -> Vec<NodeIndex> {
@@ -122,7 +122,7 @@ impl TraversalTree {
         leaves.into_iter().collect()
     }
 
-    pub fn parent_node<V, N: NodeStorage<NodeData = V>, E>(
+    pub fn parent_node<V, N: NodeStorageOps<NodeData = V>, E>(
         &self,
         child: NodeIndex,
         graph: &HedgeGraph<E, V, N>,
@@ -141,7 +141,7 @@ impl TraversalTree {
         None
     }
 
-    pub fn child_nodes<V, N: NodeStorage<NodeData = V>, E>(
+    pub fn child_nodes<V, N: NodeStorageOps<NodeData = V>, E>(
         &self,
         parent: NodeIndex,
         graph: &HedgeGraph<E, V, N>,
@@ -206,7 +206,7 @@ impl TraversalTree {
         Some(cycle)
     }
 
-    pub fn bfs<V, N: NodeStorage<NodeData = V>, E, S: SubGraph>(
+    pub fn bfs<V, N: NodeStorageOps<NodeData = V>, E, S: SubGraph>(
         graph: &HedgeGraph<E, V, N>,
         subgraph: &S,
         root_node: &HedgeNode,
@@ -262,7 +262,7 @@ impl TraversalTree {
         TraversalTree::new(graph, traversal, seen, parents)
     }
 
-    pub fn new<V, N: NodeStorage<NodeData = V>, E>(
+    pub fn new<V, N: NodeStorageOps<NodeData = V>, E>(
         graph: &HedgeGraph<E, V, N>,
         traversal: Vec<Hedge>,
         covers: BitVec,
@@ -286,7 +286,7 @@ impl TraversalTree {
         }
     }
 
-    pub fn dfs<V, N: NodeStorage<NodeData = V>, E, S: SubGraph>(
+    pub fn dfs<V, N: NodeStorageOps<NodeData = V>, E, S: SubGraph>(
         graph: &HedgeGraph<E, V, N>,
         subgraph: &S,
         root_node: &HedgeNode,

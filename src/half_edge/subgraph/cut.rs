@@ -1,4 +1,4 @@
-use crate::half_edge::nodestorage::NodeStorageVec;
+use crate::half_edge::nodestorage::{NodeStorageOps, NodeStorageVec};
 use crate::half_edge::{
     involution::SignOrZero, EdgeData, Flow, Hedge, HedgeGraph, HedgeGraphBuilder,
     InvolutiveMapping, NodeStorage, Orientation, PowersetIterator,
@@ -54,7 +54,7 @@ pub enum CutError {
 }
 
 impl OrientedCut {
-    pub fn from_underlying_coerce<E, V, N: NodeStorage<NodeData = V>>(
+    pub fn from_underlying_coerce<E, V, N: NodeStorageOps<NodeData = V>>(
         cut: BitVec,
         graph: &HedgeGraph<E, V, N>,
     ) -> Result<Self, CutError> {
@@ -80,7 +80,7 @@ impl OrientedCut {
         Ok(OrientedCut { reference, sign })
     }
 
-    pub fn from_underlying_strict<E, V, N: NodeStorage<NodeData = V>>(
+    pub fn from_underlying_strict<E, V, N: NodeStorageOps<NodeData = V>>(
         cut: BitVec,
         graph: &HedgeGraph<E, V, N>,
     ) -> Result<Self, CutError> {
@@ -108,7 +108,7 @@ impl OrientedCut {
         Ok(OrientedCut { reference, sign })
     }
 
-    pub fn all_initial_state_cuts<E, V, N: NodeStorage<NodeData = V>>(
+    pub fn all_initial_state_cuts<E, V, N: NodeStorageOps<NodeData = V>>(
         graph: &HedgeGraph<E, V, N>,
     ) -> Vec<Self> {
         let mut all_cuts = Vec::new();
@@ -167,7 +167,7 @@ impl OrientedCut {
 
         winding_number
     }
-    pub fn iter_edges<'a, E, V, N: NodeStorage<NodeData = V>>(
+    pub fn iter_edges<'a, E, V, N: NodeStorageOps<NodeData = V>>(
         &'a self,
         graph: &'a HedgeGraph<E, V, N>,
     ) -> impl Iterator<Item = (Orientation, EdgeData<&'a E>)> {
@@ -176,7 +176,7 @@ impl OrientedCut {
             .map(|i| (self.orientation(i, graph), graph.get_edge_data_full(i)))
     }
 
-    pub fn iter_edges_relative<'a, E, V, N: NodeStorage<NodeData = V>>(
+    pub fn iter_edges_relative<'a, E, V, N: NodeStorageOps<NodeData = V>>(
         &'a self,
         graph: &'a HedgeGraph<E, V, N>,
     ) -> impl Iterator<Item = (Orientation, EdgeData<&'a E>)> {
@@ -339,7 +339,7 @@ impl OrientedCut {
         graph.layout(settings)
     }
 
-    pub fn to_owned_graph<'a, E, V, T, N: NodeStorage<NodeData = V>>(
+    pub fn to_owned_graph<'a, E, V, T, N: NodeStorageOps<NodeData = V>>(
         self,
         graph: &'a HedgeGraph<E, V, N>,
         map: &impl Fn(&E) -> T,

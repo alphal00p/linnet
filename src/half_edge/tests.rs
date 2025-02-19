@@ -615,6 +615,6 @@ fn join() {
 }
 use std::time::Instant;
 
-use nodestorage::NodeStorageVec;
+use nodestorage::{NodeStorageOps, NodeStorageVec};
 
 use super::*;

@@ -9,7 +9,10 @@ use rand::{rngs::SmallRng, Rng, SeedableRng};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use super::{subgraph::SubGraph, GVEdgeAttrs, HedgeGraph, NodeIndex, NodeStorage};
+use super::{
+    nodestorage::NodeStorageOps, subgraph::SubGraph, GVEdgeAttrs, HedgeGraph, NodeIndex,
+    NodeStorage,
+};
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Hedge(pub usize);
@@ -186,7 +189,7 @@ impl HedgePair {
         }
     }
 
-    pub fn dot<E, V, N: NodeStorage<NodeData = V>>(
+    pub fn dot<E, V, N: NodeStorageOps<NodeData = V>>(
         &self,
         graph: &HedgeGraph<E, V, N>,
         orientation: Orientation,

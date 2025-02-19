@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::hash::Hash;
 use std::ops::Index;
 
-use crate::half_edge::{Hedge, HedgeGraph, InvolutiveMapping, NodeStorage, TraversalTree};
+use crate::half_edge::{Hedge, HedgeGraph, InvolutiveMapping, NodeStorageOps, TraversalTree};
 
 use super::{node::HedgeNode, Cycle, Inclusion, SubGraph, SubGraphOps};
 
@@ -81,7 +81,7 @@ impl Inclusion<BitVec> for InternalSubGraph {
 }
 
 impl SubGraph for InternalSubGraph {
-    fn nedges<E, V, N: NodeStorage<NodeData = V>>(&self, _graph: &HedgeGraph<E, V, N>) -> usize {
+    fn nedges<E, V, N: NodeStorageOps<NodeData = V>>(&self, _graph: &HedgeGraph<E, V, N>) -> usize {
         self.nhedges() / 2
     }
 
@@ -136,7 +136,10 @@ impl SubGraphOps for InternalSubGraph {
         (self.filter.clone() | &other.filter).count_ones() == 0
     }
 
-    fn complement<E, V, N: NodeStorage<NodeData = V>>(&self, graph: &HedgeGraph<E, V, N>) -> Self {
+    fn complement<E, V, N: NodeStorageOps<NodeData = V>>(
+        &self,
+        graph: &HedgeGraph<E, V, N>,
+    ) -> Self {
         InternalSubGraph {
             filter: !self.filter.clone() & !graph.external_filter(),
             loopcount: None,
@@ -150,7 +153,7 @@ impl SubGraphOps for InternalSubGraph {
 }
 
 impl InternalSubGraph {
-    fn valid_filter<E, V, N: NodeStorage<NodeData = V>>(
+    fn valid_filter<E, V, N: NodeStorageOps<NodeData = V>>(
         filter: &BitVec,
         graph: &HedgeGraph<E, V, N>,
     ) -> bool {
@@ -162,7 +165,7 @@ impl InternalSubGraph {
         true
     }
 
-    pub fn add_edge<E, V, N: NodeStorage<NodeData = V>>(
+    pub fn add_edge<E, V, N: NodeStorageOps<NodeData = V>>(
         &mut self,
         hedge: Hedge,
         graph: &HedgeGraph<E, V, N>,
@@ -173,7 +176,7 @@ impl InternalSubGraph {
         }
     }
 
-    pub fn remove_edge<E, V, N: NodeStorage<NodeData = V>>(
+    pub fn remove_edge<E, V, N: NodeStorageOps<NodeData = V>>(
         &mut self,
         hedge: Hedge,
         graph: &HedgeGraph<E, V, N>,
@@ -184,7 +187,7 @@ impl InternalSubGraph {
         }
     }
 
-    pub fn try_new<E, V, N: NodeStorage<NodeData = V>>(
+    pub fn try_new<E, V, N: NodeStorageOps<NodeData = V>>(
         filter: BitVec,
         graph: &HedgeGraph<E, V, N>,
     ) -> Option<Self> {
@@ -201,7 +204,7 @@ impl InternalSubGraph {
         })
     }
 
-    pub fn cleaned_filter_optimist<E, V, N: NodeStorage<NodeData = V>>(
+    pub fn cleaned_filter_optimist<E, V, N: NodeStorageOps<NodeData = V>>(
         mut filter: BitVec,
         graph: &HedgeGraph<E, V, N>,
     ) -> Self {
@@ -226,7 +229,7 @@ impl InternalSubGraph {
         }
     }
 
-    pub fn cleaned_filter_pessimist<E, V, N: NodeStorage<NodeData = V>>(
+    pub fn cleaned_filter_pessimist<E, V, N: NodeStorageOps<NodeData = V>>(
         mut filter: BitVec,
         graph: &HedgeGraph<E, V, N>,
     ) -> Self {
@@ -252,25 +255,28 @@ impl InternalSubGraph {
         }
     }
 
-    pub fn valid<E, V, N: NodeStorage<NodeData = V>>(&self, graph: &HedgeGraph<E, V, N>) -> bool {
+    pub fn valid<E, V, N: NodeStorageOps<NodeData = V>>(
+        &self,
+        graph: &HedgeGraph<E, V, N>,
+    ) -> bool {
         Self::valid_filter(&self.filter, graph)
     }
 
-    pub fn to_hairy_subgraph<E, V, N: NodeStorage<NodeData = V>>(
+    pub fn to_hairy_subgraph<E, V, N: NodeStorageOps<NodeData = V>>(
         &self,
         graph: &HedgeGraph<E, V, N>,
     ) -> HedgeNode {
         graph.nesting_node_from_subgraph(self.clone())
     }
 
-    pub fn set_loopcount<E, V, N: NodeStorage<NodeData = V>>(
+    pub fn set_loopcount<E, V, N: NodeStorageOps<NodeData = V>>(
         &mut self,
         graph: &HedgeGraph<E, V, N>,
     ) {
         self.loopcount = Some(graph.cyclotomatic_number(self));
     }
 
-    pub fn cycle_basis<E, V, N: NodeStorage<NodeData = V>>(
+    pub fn cycle_basis<E, V, N: NodeStorageOps<NodeData = V>>(
         &self,
         graph: &HedgeGraph<E, V, N>,
     ) -> (Vec<Cycle>, TraversalTree) {

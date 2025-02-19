@@ -1,5 +1,5 @@
 use crate::half_edge::{
-    nodestorage::{NodeStorage, NodeStorageVec},
+    nodestorage::{NodeStorage, NodeStorageOps, NodeStorageVec},
     subgraph::HedgeNode,
     NodeIndex,
 };
@@ -41,7 +41,9 @@ impl SetIndex {
 impl<V> NodeStorage for UnionFindNodeStore<V> {
     type Storage<N> = UnionFindNodeStore<N>;
     type NodeData = V;
+}
 
+impl<V> NodeStorageOps for UnionFindNodeStore<V> {
     fn hedge_len(&self) -> usize {
         self.nodes.n_elements()
     }

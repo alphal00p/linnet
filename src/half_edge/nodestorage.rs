@@ -8,10 +8,7 @@ use super::{
     HedgeGraph, HedgeGraphError, NodeIndex,
 };
 
-pub trait NodeStorage: Sized {
-    type NodeData;
-    type Storage<N>: NodeStorage<NodeData = N>;
-
+pub trait NodeStorageOps: NodeStorage {
     fn extend(self, other: Self) -> Self;
 
     fn build<I: IntoIterator<Item = HedgeNodeBuilder<Self::NodeData>>>(
@@ -59,6 +56,11 @@ pub trait NodeStorage: Sized {
     fn get_node_data_mut(&mut self, node_id: NodeIndex) -> &mut Self::NodeData;
 }
 
+pub trait NodeStorage: Sized {
+    type NodeData;
+    type Storage<N>: NodeStorage<NodeData = N>;
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct NodeStorageVec<N> {
     pub(crate) node_data: Vec<N>,
@@ -69,7 +71,9 @@ pub struct NodeStorageVec<N> {
 impl<N> NodeStorage for NodeStorageVec<N> {
     type NodeData = N;
     type Storage<M> = NodeStorageVec<M>;
+}
 
+impl<N> NodeStorageOps for NodeStorageVec<N> {
     fn node_len(&self) -> usize {
         self.nodes.len()
     }
