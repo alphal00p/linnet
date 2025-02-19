@@ -1,3 +1,5 @@
+use std::collections::VecDeque;
+
 use super::{
     parent_pointer::{PPNode, ParentId},
     ForestNodeStore, ForestNodeStoreDown, TreeNodeId,
@@ -265,6 +267,13 @@ pub struct PreorderIter<'a, V> {
     current: Option<TreeNodeId>,
 }
 
+impl<V> ParentChildStore<V> {
+    /// Returns a pre–order DFS iterator starting from the given node.
+    pub fn iter_preorder(&self, start: TreeNodeId) -> PreorderIter<V> {
+        PreorderIter::new(self, start)
+    }
+}
+
 impl<'a, V> PreorderIter<'a, V> {
     /// Create a new iterator starting at `start`. Typically `start` is a root node.
     pub fn new(store: &'a ParentChildStore<V>, start: TreeNodeId) -> Self {
@@ -311,6 +320,43 @@ impl<V> PreorderIter<'_, V> {
                 ParentId::Root(_) => return None, // we reached a root; no more nodes in pre–order
             }
         }
+    }
+}
+
+pub struct BfsTreeIter<'a, V> {
+    store: &'a ParentChildStore<V>,
+    queue: VecDeque<TreeNodeId>,
+}
+
+impl<V> ParentChildStore<V> {
+    /// Returns a BFS iterator starting at the given node.
+    pub fn iter_bfs(&self, start: TreeNodeId) -> BfsTreeIter<V> {
+        BfsTreeIter::new(self, start)
+    }
+}
+
+impl<'a, V> BfsTreeIter<'a, V> {
+    /// Create a new BFS iterator starting at `start`.
+    pub fn new(store: &'a ParentChildStore<V>, start: TreeNodeId) -> Self {
+        let mut queue = VecDeque::new();
+        // Start with the root node.
+        queue.push_back(start);
+        BfsTreeIter { store, queue }
+    }
+}
+
+impl<V> Iterator for BfsTreeIter<'_, V> {
+    type Item = TreeNodeId;
+    fn next(&mut self) -> Option<Self::Item> {
+        // Remove the node at the front (FIFO behavior)
+        let node = self.queue.pop_front()?;
+        // Enqueue all children of the current node.
+        // We use iter_children(), which (via your neighbor functions)
+        // returns all of the children in order.
+        for child in self.store.iter_children(node) {
+            self.queue.push_back(child);
+        }
+        Some(node)
     }
 }
 
