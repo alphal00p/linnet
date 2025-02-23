@@ -1,6 +1,8 @@
 use std::ops::{Index, IndexMut};
 
 use bitvec::vec::BitVec;
+use child_pointer::ParentChildStore;
+use child_vec::ChildVecStore;
 use indexmap::set::Union;
 use parent_pointer::{PPNode, ParentId, ParentPointerStore};
 use serde::{Deserialize, Serialize};
@@ -231,5 +233,59 @@ pub trait ForestNodeStore:
 impl<R, N: ForestNodeStore> Forest<R, N> {
     pub fn root(&self, nodeid: TreeNodeId) -> RootId {
         self.nodes.root(nodeid)
+    }
+}
+
+impl<R, V> From<Forest<R, ParentPointerStore<V>>> for Forest<R, ParentChildStore<V>> {
+    fn from(forest: Forest<R, ParentPointerStore<V>>) -> Self {
+        Forest {
+            nodes: forest.nodes.into(),
+            roots: forest.roots,
+        }
+    }
+}
+
+impl<R, V> From<Forest<R, ParentChildStore<V>>> for Forest<R, ParentPointerStore<V>> {
+    fn from(forest: Forest<R, ParentChildStore<V>>) -> Self {
+        Forest {
+            nodes: forest.nodes.into(),
+            roots: forest.roots,
+        }
+    }
+}
+
+impl<R, V> From<Forest<R, ChildVecStore<V>>> for Forest<R, ParentChildStore<V>> {
+    fn from(forest: Forest<R, ChildVecStore<V>>) -> Self {
+        Forest {
+            nodes: forest.nodes.into(),
+            roots: forest.roots,
+        }
+    }
+}
+
+impl<R, V> From<Forest<R, ParentChildStore<V>>> for Forest<R, ChildVecStore<V>> {
+    fn from(forest: Forest<R, ParentChildStore<V>>) -> Self {
+        Forest {
+            nodes: forest.nodes.into(),
+            roots: forest.roots,
+        }
+    }
+}
+
+impl<R, V> From<Forest<R, ChildVecStore<V>>> for Forest<R, ParentPointerStore<V>> {
+    fn from(forest: Forest<R, ChildVecStore<V>>) -> Self {
+        Forest {
+            nodes: forest.nodes.into(),
+            roots: forest.roots,
+        }
+    }
+}
+
+impl<R, V> From<Forest<R, ParentPointerStore<V>>> for Forest<R, ChildVecStore<V>> {
+    fn from(forest: Forest<R, ParentPointerStore<V>>) -> Self {
+        Forest {
+            nodes: forest.nodes.into(),
+            roots: forest.roots,
+        }
     }
 }

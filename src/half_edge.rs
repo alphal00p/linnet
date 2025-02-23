@@ -637,7 +637,7 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
         &self,
         source: NodeIndex,
         target: NodeIndex,
-    ) -> Vec<(InternalSubGraph, OrientedCut, InternalSubGraph)> {
+    ) -> Vec<(HedgeNode, OrientedCut, HedgeNode)> {
         let s = self.hairs_from_id(source);
         let t = self.hairs_from_id(target);
         let mut regions = AHashSet::new();
@@ -646,11 +646,25 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
         let mut cuts = vec![];
 
         for r in regions.drain() {
-            let hairs = self.nesting_node_from_subgraph(r.clone()).hairs;
-            let complement = r.complement(self);
+            let hairs = if r.is_empty() {
+                s.hairs.clone()
+            } else {
+                self.nesting_node_from_subgraph(r.clone()).hairs
+            };
+
+            let s_side = HedgeNode {
+                hairs: hairs.clone(),
+                internal_graph: r,
+            };
+
+            let s_side_covers = s_side.covers(self);
+
+            let t_side_covers = s_side_covers.complement(self);
+            let internal = InternalSubGraph::cleaned_filter_pessimist(t_side_covers, self);
+            let t_side = self.nesting_node_from_subgraph(internal).union(t);
 
             let cut = OrientedCut::from_underlying_coerce(hairs, self).unwrap();
-            cuts.push((r, cut, complement));
+            cuts.push((s_side, cut, t_side));
         }
 
         cuts

@@ -618,3 +618,25 @@ use std::time::Instant;
 use nodestorage::{NodeStorageOps, NodeStorageVec};
 
 use super::*;
+
+#[test]
+fn double_triangle() {
+    let mut builder = HedgeGraphBuilder::new();
+    let a = builder.add_node(());
+    let b = builder.add_node(());
+    let c = builder.add_node(());
+    let d = builder.add_node(());
+
+    builder.add_edge(a, b, (), true);
+    builder.add_edge(b, c, (), true);
+    builder.add_edge(c, d, (), true);
+    builder.add_edge(d, a, (), true);
+    builder.add_edge(b, d, (), true);
+
+    let graph: HedgeGraph<(), ()> = builder.build();
+    let cuts = graph.all_cuts(a, c);
+    assert_eq!(cuts.len(), 4);
+    for cut in cuts {
+        assert!(!(cut.1.is_empty()))
+    }
+}
