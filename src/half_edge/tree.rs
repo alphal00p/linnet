@@ -194,12 +194,7 @@ impl<P: ForestNodeStore<NodeData = ()>> SimpleTraversalTree<P> {
 
 impl SimpleTraversalTree {
     pub fn empty<E, V, N: NodeStorageOps<NodeData = V>>(graph: &HedgeGraph<E, V, N>) -> Self {
-        let nodes: Vec<_> = graph
-            .iter_nodes()
-            .map(|(n, _)| (false, n.hairs.clone()))
-            .collect();
-
-        let forest = Forest::from_bitvec_partition(nodes).unwrap();
+        let forest = graph.node_store.to_forest(|a| false);
         SimpleTraversalTree {
             forest,
             covers: graph.empty_subgraph(),
@@ -243,7 +238,7 @@ impl SimpleTraversalTree {
 
         while let Some(hedge) = stack.pop() {
             // if the hedge is not external get the neighbors of the paired hedge
-            if let Some(cn) = graph.connected_neighbors(subgraph, hedge) {
+            if let Some(cn) = graph.involved_node_hairs(hedge) {
                 let connected = graph.inv(hedge);
 
                 if !seen.includes(&connected) && subgraph.includes(&connected) {
@@ -256,11 +251,14 @@ impl SimpleTraversalTree {
                 }
 
                 // mark the new node as seen
-                seen.union_with(&cn);
+                // seen.union_with(&cn.hairs);
 
-                for i in cn.included_iter() {
-                    if !seen.includes(&graph.inv(i)) && subgraph.includes(&i) {
-                        stack.push(i);
+                for i in cn.hairs.included_iter() {
+                    if subgraph.includes(&i) {
+                        seen.set(i.0, true);
+                        if !seen.includes(&graph.inv(i)) {
+                            stack.push(i);
+                        }
                     }
                 }
             }

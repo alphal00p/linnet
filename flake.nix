@@ -32,6 +32,8 @@
     advisory-db,
     ...
   }:
+
+
     flake-utils.lib.eachDefaultSystem (system: let
       pkgs = nixpkgs.legacyPackages.${system};
 
@@ -41,6 +43,34 @@
         (crane.mkLib nixpkgs.legacyPackages.${system}).overrideToolchain
         fenix.packages.${system}.stable.toolchain;
       src = craneLib.cleanCargoSource (craneLib.path ./.);
+
+
+      iaiCallgrindRunner = pkgs.rustPlatform.buildRustPackage rec {
+          pname = "iai-callgrind-runner";
+          version = "0.14.0";
+
+          src = pkgs.fetchFromGitHub {
+            owner = "iai-callgrind";
+            repo = "iai-callgrind";
+            rev = "v0.14.0";
+            hash = "sha256-NUFbA927Iye8DnmBWAQNiFmEen/a0931XlT+9gAQSV4=";
+          };
+
+          nativeBuildInputs = [
+            pkgs.clang
+            ];
+
+          preConfigure = ''
+              export LIBCLANG_PATH="${pkgs.llvmPackages.libclang.lib}/lib"
+            '';
+
+          subdir = "iai-callgrind-runner";
+
+          cargoHash = "sha256-Fo76fAx5hvomFeWPGyJKdXhsaGtAmmoOU8CauZvu64I=";
+
+          doCheck = false;
+        };
+
 
       # Common arguments can be set here to avoid repeating them later
       commonArgs = {
@@ -163,6 +193,9 @@
         # Extra inputs can be added here; cargo and rustc are provided by default.
         packages = with pkgs; [
           # pkgs.ripgrep
+          #
+          iaiCallgrindRunner
+          valgrind
           cargo-udeps
           cargo-insta
           cargo-deny

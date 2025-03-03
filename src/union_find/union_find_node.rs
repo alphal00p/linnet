@@ -1,7 +1,10 @@
-use crate::half_edge::{
-    nodestorage::{NodeStorage, NodeStorageOps, NodeStorageVec},
-    subgraph::HedgeNode,
-    NodeIndex,
+use crate::{
+    half_edge::{
+        nodestorage::{NodeStorage, NodeStorageOps, NodeStorageVec},
+        subgraph::HedgeNode,
+        NodeIndex,
+    },
+    tree::{parent_pointer::PPNode, Forest, RootData, RootId},
 };
 
 use super::{SetIndex, UnionFind};
@@ -46,6 +49,41 @@ impl<V> NodeStorage for UnionFindNodeStore<V> {
 impl<V> NodeStorageOps for UnionFindNodeStore<V> {
     fn hedge_len(&self) -> usize {
         self.nodes.n_elements()
+    }
+
+    fn to_forest<U>(
+        &self,
+        map_data: impl Fn(&Self::NodeData) -> U,
+    ) -> crate::tree::Forest<U, crate::tree::parent_pointer::ParentPointerStore<()>> {
+        Forest {
+            roots: self
+                .nodes
+                .set_data
+                .iter()
+                .map(|a| RootData {
+                    root_id: a.root_pointer.into(),
+                    data: map_data(&a.data.as_ref().unwrap().data),
+                })
+                .collect(),
+            nodes: self
+                .nodes
+                .nodes
+                .iter()
+                .map(|a| {
+                    let ad = a.get();
+                    let n = match &ad {
+                        super::UFNode::Child(c) => PPNode::child((), (*c).into()),
+                        super::UFNode::Root { set_data_idx, .. } => {
+                            PPNode::root((), RootId(set_data_idx.0))
+                        }
+                    };
+
+                    a.set(ad);
+
+                    n
+                })
+                .collect(),
+        }
     }
 
     fn node_len(&self) -> usize {

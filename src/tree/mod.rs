@@ -44,12 +44,12 @@ impl From<TreeNodeId> for Hedge {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RootData<R> {
-    data: R,
-    root_id: TreeNodeId,
+    pub(crate) data: R,
+    pub(crate) root_id: TreeNodeId,
 }
 
 #[derive(Clone, Debug, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
-pub struct RootId(usize);
+pub struct RootId(pub(crate) usize);
 
 impl From<NodeIndex> for RootId {
     fn from(n: NodeIndex) -> Self {
@@ -71,8 +71,8 @@ impl From<usize> for RootId {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Forest<R, N> {
-    nodes: N,
-    roots: Vec<RootData<R>>,
+    pub(crate) nodes: N,
+    pub(crate) roots: Vec<RootData<R>>,
 }
 
 impl<R, N> Index<&RootId> for Forest<R, N> {

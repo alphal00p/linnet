@@ -1,6 +1,11 @@
 use bitvec::vec::BitVec;
 use serde::{Deserialize, Serialize};
 
+use crate::tree::{
+    parent_pointer::{PPNode, ParentPointerStore},
+    Forest, RootData, RootId,
+};
+
 use super::{
     builder::HedgeNodeBuilder,
     involution::{EdgeIndex, Hedge, Involution},
@@ -10,6 +15,11 @@ use super::{
 
 pub trait NodeStorageOps: NodeStorage {
     fn extend(self, other: Self) -> Self;
+
+    fn to_forest<U>(
+        &self,
+        map_data: impl Fn(&Self::NodeData) -> U,
+    ) -> Forest<U, ParentPointerStore<()>>;
 
     fn build<I: IntoIterator<Item = HedgeNodeBuilder<Self::NodeData>>>(
         nodes: I,
@@ -76,6 +86,39 @@ impl<N> NodeStorage for NodeStorageVec<N> {
 impl<N> NodeStorageOps for NodeStorageVec<N> {
     fn node_len(&self) -> usize {
         self.nodes.len()
+    }
+
+    fn to_forest<U>(
+        &self,
+        map_data: impl Fn(&Self::NodeData) -> U,
+    ) -> Forest<U, ParentPointerStore<()>> {
+        let mut nodes = vec![None; self.hedge_data.len()];
+        let mut roots = vec![];
+
+        for (set, d) in self.nodes.iter().zip(&self.node_data) {
+            let mut first = None;
+            for i in set.hairs.included_iter() {
+                if let Some(root) = first {
+                    nodes[i.0] = Some(PPNode::child((), root))
+                } else {
+                    first = Some(i.into());
+                    nodes[i.0] = Some(PPNode::root((), RootId(roots.len())));
+                }
+            }
+            roots.push(RootData {
+                root_id: first.unwrap(),
+                data: map_data(d),
+            });
+        }
+        Forest {
+            nodes: nodes
+                .into_iter()
+                .collect::<Option<Vec<_>>>()
+                .unwrap()
+                .into_iter()
+                .collect(),
+            roots,
+        }
     }
 
     fn iter(&self) -> impl Iterator<Item = (NodeIndex, &Self::NodeData)> {
