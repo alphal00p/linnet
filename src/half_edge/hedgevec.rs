@@ -510,3 +510,13 @@ impl<T> Index<EdgeIndex> for HedgeVec<T> {
         &self.0[index.0]
     }
 }
+
+impl<T> HedgeVec<T> {
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
