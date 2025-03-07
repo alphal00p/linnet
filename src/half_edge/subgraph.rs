@@ -177,6 +177,7 @@ impl Iterator for SubGraphHedgeIter<'_> {
 pub trait SubGraph:
     Clone + Eq + Hash + Inclusion<Self> + Inclusion<BitVec> + Inclusion<Hedge>
 {
+    /// maximal graph that contains all nodes of the subgraph
     fn covers<E, V, N: NodeStorageOps<NodeData = V>>(&self, graph: &HedgeGraph<E, V, N>) -> BitVec {
         let mut covering = graph.empty_subgraph::<BitVec>();
         for i in self.included_iter() {
