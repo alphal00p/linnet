@@ -519,4 +519,8 @@ impl<T> HedgeVec<T> {
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
+
+    pub fn map_ref<O>(&self, f: &impl Fn(&T) -> O) -> HedgeVec<O> {
+        HedgeVec(self.0.iter().map(f).collect())
+    }
 }
