@@ -667,7 +667,8 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
 
             let t_side_covers = s_side_covers.complement(self);
             let internal = InternalSubGraph::cleaned_filter_pessimist(t_side_covers, self);
-            let t_side = self.nesting_node_from_subgraph(internal).union(t);
+            let mut t_side = self.nesting_node_from_subgraph(internal);
+            t_side.hairs.union_with(&t.hairs);
 
             let cut = OrientedCut::from_underlying_coerce(hairs, self).unwrap();
             cuts.push((s_side, cut, t_side));
