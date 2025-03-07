@@ -68,7 +68,13 @@ impl std::fmt::Display for GVEdgeAttrs {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let out = [
             ("label=", self.label.as_ref()),
-            ("color=", self.color.as_ref()),
+            (
+                "color=",
+                self.color
+                    .as_ref()
+                    .map(|str| format!("\"{}\"", str))
+                    .as_ref(),
+            ),
             ("", self.other.as_ref()),
         ]
         .iter()

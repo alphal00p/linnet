@@ -186,7 +186,7 @@ pub trait SubGraph:
     }
 
     fn background_color(&self, hedge_pair: Option<HedgePair>) -> Option<String> {
-        let color = "\"gray\"".to_string();
+        let color = "gray".to_string();
 
         if let Some(p) = hedge_pair {
             if let HedgePair::Split { .. } = p {
