@@ -923,7 +923,7 @@ impl<E> Involution<E> {
     /// returns the pair of hedges: (source, sink)
     pub fn add_pair(&mut self, data: E, directed: impl Into<Orientation>) -> (Hedge, Hedge) {
         let orientation = directed.into();
-        let source = self.add_identity(data, orientation, Flow::Sink);
+        let source = self.add_identity(data, orientation, Flow::Source);
         let sink = self.connect_to_identity(source).unwrap();
         (source, sink)
     }
