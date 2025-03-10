@@ -1,4 +1,4 @@
-use std::{collections::VecDeque, ops::Index};
+use std::{collections::VecDeque, convert, ops::Index, rc::Rc};
 
 use bitvec::vec::BitVec;
 use indexmap::IndexSet;
@@ -49,24 +49,64 @@ pub struct TraversalTreeRef<
     tree_subgraph: InternalSubGraph,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SimpleTraversalTree<P: ForestNodeStore<NodeData = ()> = ParentPointerStore<()>> {
-    forest: Forest<bool, P>,
-    pub covers: BitVec,
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub enum TTRoot {
+    Child,
+    Root,
+    None,
 }
 
-impl<P: ForestNodeStore<NodeData = ()>> SimpleTraversalTree<P> {
-    pub fn internal<I: AsRef<Involution>>(&self, hedge: Hedge, inv: I) -> bool {
-        let treeid = TreeNodeId::from(hedge);
-        let invtreeid = TreeNodeId::from(inv.as_ref().inv(hedge));
-        self.forest[self.forest.root(treeid)] && self.forest[self.forest.root(invtreeid)] && {
-            self.forest[&treeid].is_root() || self.forest[&invtreeid].is_root()
+impl TTRoot {
+    pub fn includes(&self) -> bool {
+        match self {
+            TTRoot::Child => true,
+            TTRoot::Root => true,
+            TTRoot::None => false,
         }
     }
 
+    pub fn is_root(&self) -> bool {
+        match self {
+            TTRoot::Child => false,
+            TTRoot::Root => true,
+            TTRoot::None => false,
+        }
+    }
+
+    pub fn is_child(&self) -> bool {
+        match self {
+            TTRoot::Child => true,
+            TTRoot::Root => false,
+            TTRoot::None => false,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SimpleTraversalTree<P: ForestNodeStore<NodeData = ()> = ParentPointerStore<()>> {
+    forest: Forest<TTRoot, P>,
+    pub tree_subgraph: BitVec,
+}
+
+impl<P: ForestNodeStore<NodeData = ()>> SimpleTraversalTree<P> {
+    pub fn covers(&self) -> BitVec {
+        let mut covers = BitVec::empty(self.tree_subgraph.nhedges());
+
+        for i in 0..self.tree_subgraph.nhedges() {
+            if self.forest[self.forest.root(i.into())].includes() {
+                covers.set(i, true);
+            }
+        }
+
+        covers
+    }
+    pub fn internal<I: AsRef<Involution>>(&self, hedge: Hedge, inv: I) -> bool {
+        self.tree_subgraph.includes(&hedge)
+    }
+
     pub fn tree_subgraph<I: AsRef<Involution>>(&self, inv: I) -> InternalSubGraph {
-        let mut tree = BitVec::empty(self.covers.len());
-        for i in self.covers.included_iter() {
+        let mut tree = BitVec::empty(self.tree_subgraph.len());
+        for i in self.tree_subgraph.included_iter() {
             if self.internal(i, inv.as_ref()) {
                 tree.set(i.0, true);
             }
@@ -75,7 +115,7 @@ impl<P: ForestNodeStore<NodeData = ()>> SimpleTraversalTree<P> {
     }
 
     pub fn cycle<I: AsRef<Involution>>(&self, cut: Hedge, inv: &I) -> Option<Cycle> {
-        if !self.internal(cut, inv) {
+        if self.internal(cut, inv) {
             return None;
         }
         let mut cycle = self.path_to_root(cut, inv);
@@ -93,7 +133,7 @@ impl<P: ForestNodeStore<NodeData = ()>> SimpleTraversalTree<P> {
     pub fn node_parent<I: AsRef<Involution>>(&self, from: NodeIndex, inv: I) -> Option<NodeIndex> {
         let root = RootId::from(from);
 
-        if self.forest[root] {
+        if self.forest[root].includes() {
             let involved = inv.as_ref().inv(self.forest[&root].into());
             Some(self.node_id(involved))
         } else {
@@ -102,7 +142,7 @@ impl<P: ForestNodeStore<NodeData = ()>> SimpleTraversalTree<P> {
     }
 
     fn path_to_root<I: AsRef<Involution>>(&self, start: Hedge, inv: I) -> BitVec {
-        let mut path = BitVec::empty(self.covers.len());
+        let mut path = BitVec::empty(self.tree_subgraph.len());
 
         self.ancestor_iter_hedge(start, inv.as_ref())
             .for_each(|a| path.set(a.0, true));
@@ -110,18 +150,22 @@ impl<P: ForestNodeStore<NodeData = ()>> SimpleTraversalTree<P> {
     }
 
     pub fn hedge_parent<I: AsRef<Involution>>(&self, from: Hedge, inv: I) -> Option<Hedge> {
-        let root = self.forest.root(from.into());
+        let root = self.forest.root(from.into()); //Get "NodeId/RootId"
 
-        if self.forest[root] {
-            let roothedge = self.forest[&root].into();
+        match self.forest[root] {
+            TTRoot::Child => {
+                let roothedge = self.forest[&root].into(); //Get "chosen" root among node hairs
 
-            if from == roothedge {
-                Some(inv.as_ref().inv(from))
-            } else {
-                Some(roothedge)
+                if from == roothedge {
+                    //if it is the same as the input, go to the involved hedge
+                    Some(inv.as_ref().inv(from))
+                } else {
+                    // else go to the "chosen" hedge
+                    Some(roothedge)
+                }
             }
-        } else {
-            None
+            TTRoot::None => None,
+            TTRoot::Root => None, // if it is attached to the root node, it has no parent
         }
     }
 }
@@ -194,10 +238,10 @@ impl<P: ForestNodeStore<NodeData = ()>> SimpleTraversalTree<P> {
 
 impl SimpleTraversalTree {
     pub fn empty<E, V, N: NodeStorageOps<NodeData = V>>(graph: &HedgeGraph<E, V, N>) -> Self {
-        let forest = graph.node_store.to_forest(|a| false);
+        let forest = graph.node_store.to_forest(|a| TTRoot::None);
         SimpleTraversalTree {
             forest,
-            covers: graph.empty_subgraph(),
+            tree_subgraph: graph.empty_subgraph(),
         }
     }
 
@@ -235,8 +279,10 @@ impl SimpleTraversalTree {
         }
 
         let mut init = Self::empty(graph);
+        init.forest[RootId(root_node.0)] = TTRoot::Root;
 
         while let Some(hedge) = stack.pop() {
+            // println!("Processing hedge: {:?}", hedge);
             // if the hedge is not external get the neighbors of the paired hedge
             if let Some(cn) = graph.involved_node_hairs(hedge) {
                 let connected = graph.inv(hedge);
@@ -244,8 +290,10 @@ impl SimpleTraversalTree {
                 if !seen.includes(&connected) && subgraph.includes(&connected) {
                     // if this new hedge hasn't been seen before, it means the node it belongs to
                     // is a new node in the traversal
+                    init.tree_subgraph.set(connected.0, true);
+                    init.tree_subgraph.set(hedge.0, true);
                     let node_id = init.forest.change_to_root(connected.into());
-                    init.forest[node_id] = true;
+                    init.forest[node_id] = TTRoot::Child;
                 } else {
                     continue;
                 }
@@ -264,7 +312,7 @@ impl SimpleTraversalTree {
             }
         }
 
-        init.covers = seen;
+        // init.tree_subgraph = tree_subgraph;
         Ok(init)
     }
 
@@ -296,6 +344,7 @@ impl SimpleTraversalTree {
 
         let mut init = Self::empty(graph);
 
+        init.forest[RootId(root_node.0)] = TTRoot::Root;
         while let Some(hedge) = queue.pop_front() {
             // if the hedge is not external get the neighbors of the paired hedge
             if let Some(cn) = graph.connected_neighbors(subgraph, hedge) {
@@ -304,8 +353,11 @@ impl SimpleTraversalTree {
                 if !seen.includes(&connected) && subgraph.includes(&connected) {
                     // if this new hedge hasn't been seen before, it means the node it belongs to
                     //  a new node in the traversal
+                    //
+                    init.tree_subgraph.set(connected.0, true);
+                    init.tree_subgraph.set(hedge.0, true);
                     let node_id = init.forest.change_to_root(connected.into());
-                    init.forest[node_id] = true;
+                    init.forest[node_id] = TTRoot::Child;
                 } else {
                     continue;
                 }
@@ -321,7 +373,6 @@ impl SimpleTraversalTree {
                 }
             }
         }
-        init.covers = seen;
         Ok(init)
     }
 }

@@ -33,7 +33,7 @@ impl SignedCycle {
         let mut current_hedge = according_to;
 
         loop {
-            if cycle.filter.includes(&current_hedge) {
+            if filter.includes(&current_hedge) {
                 break;
             }
             filter.set(current_hedge.0, true);

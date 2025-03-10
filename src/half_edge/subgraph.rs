@@ -15,7 +15,9 @@ use super::{
 const BASE62_ALPHABET: &[u8; 62] =
     b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 
-pub trait SubGraphOps: SubGraph {
+pub trait SubGraphOps<Other: SubGraph = Self>: SubGraph {
+    // type Other = Self;
+
     fn all_pairwise_ops(
         left: &mut AHashSet<Self>,
         right: &[Self],
@@ -175,8 +177,12 @@ impl Iterator for SubGraphHedgeIter<'_> {
     }
 }
 pub trait SubGraph:
-    Clone + Eq + Hash + Inclusion<Self> + Inclusion<BitVec> + Inclusion<Hedge>
+    Clone + Eq + Hash + Inclusion<Self> + Inclusion<Self::Base> + Inclusion<Hedge>
 {
+    type Base: SubGraph;
+    type BaseIter<'a>: Iterator<Item = Hedge>
+    where
+        Self: 'a;
     /// maximal graph that contains all nodes of the subgraph
     fn covers<E, V, N: NodeStorageOps<NodeData = V>>(&self, graph: &HedgeGraph<E, V, N>) -> BitVec {
         let mut covering = graph.empty_subgraph::<BitVec>();
@@ -201,12 +207,13 @@ pub trait SubGraph:
     }
 
     fn string_label(&self) -> String;
-    fn included_iter(&self) -> SubGraphHedgeIter {
-        SubGraphHedgeIter {
-            iter: self.included().iter_ones().map(Hedge),
-        }
-    }
-    fn included(&self) -> &BitSlice;
+    fn included_iter(&self) -> Self::BaseIter<'_>;
+    // SubGraphHedgeIter {
+    //     SubGraphHedgeIter {
+    //         iter: self.included().iter_ones().map(Hedge),
+    //     }
+    // }
+    fn included(&self) -> &Self::Base;
     // fn includes(&self, i: InvolutionIdx) -> bool;
     fn nhedges(&self) -> usize;
     fn nedges<E, V, N: NodeStorageOps<NodeData = V>>(&self, graph: &HedgeGraph<E, V, N>) -> usize; //not counting unpaired hedges
@@ -279,8 +286,16 @@ impl Inclusion<Hedge> for BitVec {
 }
 
 impl SubGraph for BitVec {
-    fn included(&self) -> &BitSlice {
-        self.as_bitslice()
+    type Base = BitVec;
+    type BaseIter<'a> = SubGraphHedgeIter<'a>;
+    fn included(&self) -> &BitVec {
+        &self
+    }
+
+    fn included_iter(&self) -> Self::BaseIter<'_> {
+        SubGraphHedgeIter {
+            iter: self.iter_ones().map(Hedge),
+        }
     }
     fn nedges<E, V, N: NodeStorageOps<NodeData = V>>(&self, graph: &HedgeGraph<E, V, N>) -> usize {
         let mut count = 0;

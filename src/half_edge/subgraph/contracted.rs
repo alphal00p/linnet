@@ -7,8 +7,8 @@ use crate::half_edge::builder::HedgeNodeBuilder;
 use crate::half_edge::nodestorage::NodeStorageOps;
 use crate::half_edge::{Hedge, HedgeGraph};
 
-use super::Inclusion;
 use super::{internal::InternalSubGraph, node::HedgeNode, SubGraph, SubGraphOps};
+use super::{Inclusion, SubGraphHedgeIter};
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct ContractedSubGraph {
@@ -47,12 +47,18 @@ impl Inclusion<BitVec> for ContractedSubGraph {
 }
 
 impl SubGraph for ContractedSubGraph {
+    type Base = BitVec;
+    type BaseIter<'a> = SubGraphHedgeIter<'a>;
     fn nhedges(&self) -> usize {
         self.allhedges.nhedges()
     }
 
-    fn included(&self) -> &BitSlice {
+    fn included(&self) -> &BitVec {
         self.allhedges.included()
+    }
+
+    fn included_iter(&self) -> Self::BaseIter<'_> {
+        self.allhedges.included_iter()
     }
 
     fn nedges<E, V, N: NodeStorageOps<NodeData = V>>(&self, graph: &HedgeGraph<E, V, N>) -> usize {

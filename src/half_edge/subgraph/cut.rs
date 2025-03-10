@@ -11,7 +11,7 @@ use std::{
 };
 use thiserror::Error;
 
-use super::{Cycle, Inclusion, SubGraph, SubGraphOps};
+use super::{Cycle, Inclusion, SubGraph, SubGraphHedgeIter, SubGraphOps};
 #[cfg(feature = "layout")]
 use crate::half_edge::layout::{
     LayoutEdge, LayoutIters, LayoutParams, LayoutSettings, LayoutVertex,
@@ -242,12 +242,19 @@ impl Inclusion<OrientedCut> for OrientedCut {
 }
 
 impl SubGraph for OrientedCut {
+    type Base = BitVec;
+
+    type BaseIter<'a> = SubGraphHedgeIter<'a>;
     fn nedges<E, V, N: NodeStorage<NodeData = V>>(&self, _graph: &HedgeGraph<E, V, N>) -> usize {
         self.nhedges()
     }
 
-    fn included(&self) -> &bitvec::prelude::BitSlice {
+    fn included(&self) -> &BitVec {
         self.reference.included()
+    }
+
+    fn included_iter(&self) -> Self::BaseIter<'_> {
+        self.reference.included_iter()
     }
 
     fn nhedges(&self) -> usize {

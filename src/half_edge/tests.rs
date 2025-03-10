@@ -640,3 +640,16 @@ fn double_triangle() {
         assert!(!(cut.1.is_empty()))
     }
 }
+
+#[test]
+fn double_self_loop() {
+    let mut builder = HedgeGraphBuilder::new();
+    let a = builder.add_node(());
+
+    builder.add_edge(a, a, (), true);
+    builder.add_edge(a, a, (), true);
+
+    let graph: HedgeGraph<(), ()> = builder.build();
+    let (loops, tree) = graph.cycle_basis();
+    assert_eq!(loops.len(), 2);
+}

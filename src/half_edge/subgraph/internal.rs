@@ -8,7 +8,7 @@ use crate::half_edge::{
     tree::SimpleTraversalTree, Hedge, HedgeGraph, InvolutiveMapping, NodeStorageOps,
 };
 
-use super::{node::HedgeNode, Cycle, Inclusion, SubGraph, SubGraphOps};
+use super::{node::HedgeNode, Cycle, Inclusion, SubGraph, SubGraphHedgeIter, SubGraphOps};
 
 #[derive(Clone, Debug, Serialize, Deserialize, Eq)]
 pub struct InternalSubGraph {
@@ -92,8 +92,14 @@ impl Inclusion<BitVec> for InternalSubGraph {
 }
 
 impl SubGraph for InternalSubGraph {
+    type Base = BitVec;
+    type BaseIter<'a> = SubGraphHedgeIter<'a>;
     fn nedges<E, V, N: NodeStorageOps<NodeData = V>>(&self, _graph: &HedgeGraph<E, V, N>) -> usize {
         self.nhedges() / 2
+    }
+
+    fn included_iter(&self) -> Self::BaseIter<'_> {
+        self.filter.included_iter()
     }
 
     fn nhedges(&self) -> usize {
@@ -111,7 +117,7 @@ impl SubGraph for InternalSubGraph {
         node.hairs.intersection(&self.filter)
     }
 
-    fn included(&self) -> &BitSlice {
+    fn included(&self) -> &BitVec {
         self.filter.included()
     }
 

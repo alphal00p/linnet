@@ -115,6 +115,12 @@ impl<R, N: Default> Default for Forest<R, N> {
     }
 }
 
+impl<R, N: ForestNodeStore> Forest<R, N> {
+    pub fn iter_roots(&self) -> impl Iterator<Item = (&R, &TreeNodeId)> {
+        self.roots.iter().map(|r| (&r.data, &r.root_id))
+    }
+}
+
 impl<R, N: Default> Forest<R, N> {
     pub fn new() -> Self {
         Forest {

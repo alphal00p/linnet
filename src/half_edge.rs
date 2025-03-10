@@ -234,7 +234,7 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
         if let Some(start) = subgraph.included_iter().next() {
             SimpleTraversalTree::depth_first_traverse(self, subgraph, &self.node_id(start), None)
                 .unwrap()
-                .covers
+                .covers()
                 .nedges(self)
                 == n_edges
         } else {
@@ -371,7 +371,7 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
 
 // Counts
 impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
-    pub fn count_internal_edges(&self, subgraph: &InternalSubGraph) -> usize {
+    pub fn count_internal_edges<S: SubGraph>(&self, subgraph: &S) -> usize {
         let mut internal_edge_count = 0;
         // Iterate over all half-edges in the subgraph
         for hedge_index in subgraph.included_iter() {
@@ -408,7 +408,7 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
     //     self.nodes.iter().filter(|n| n.is_node()).count()
     // }
 
-    pub fn number_of_nodes_in_subgraph(&self, subgraph: &InternalSubGraph) -> usize {
+    pub fn number_of_nodes_in_subgraph<S: SubGraph>(&self, subgraph: &S) -> usize {
         self.iter_node_data(subgraph).count()
     }
 
@@ -723,7 +723,7 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
 
 // Cycles
 impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
-    pub fn cyclotomatic_number(&self, subgraph: &InternalSubGraph) -> usize {
+    pub fn cyclotomatic_number<S: SubGraph>(&self, subgraph: &S) -> usize {
         let n_hedges = self.count_internal_edges(subgraph);
         // println!("n_hedges: {}", n_hedges);
         let n_nodes = self.number_of_nodes_in_subgraph(subgraph);
@@ -796,21 +796,21 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
         Ok(self.edge_store.involution.n_internals(&cuts))
     }
 
-    pub fn paton_cycle_basis(
+    pub fn paton_cycle_basis<S: SubGraph<Base = BitVec>>(
         &self,
-        subgraph: &InternalSubGraph,
+        subgraph: &S,
         start: &NodeIndex,
         included_hedge: Option<Hedge>,
     ) -> Result<(Vec<Cycle>, SimpleTraversalTree), HedgeGraphError> {
         let tree =
             SimpleTraversalTree::depth_first_traverse(self, subgraph, start, included_hedge)?;
 
-        let cuts = subgraph.subtract(&tree.tree_subgraph(self));
+        let cuts = subgraph.included().subtract(&tree.tree_subgraph);
 
         let mut cycle_basis = Vec::new();
 
         for c in cuts.included_iter() {
-            if c > self.inv(c) {
+            if c > self.inv(c) && subgraph.includes(&self.inv(c)) {
                 cycle_basis.push(tree.cycle(c, self).unwrap());
             }
         }
@@ -948,7 +948,7 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
                 let reachable_edges =
                     SimpleTraversalTree::depth_first_traverse(self, subgraph, &root_node, None)
                         .unwrap()
-                        .covers;
+                        .covers();
 
                 visited_edges.union_with(&reachable_edges);
 
@@ -1046,7 +1046,10 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
         self.node_store.iter_node_id()
     }
 
-    pub fn iter_edge_id<'a, S: SubGraph>(&'a self, subgraph: &'a S) -> EdgeIter<'a, E, V, S, N> {
+    pub fn iter_edge_id<'a, S: SubGraph>(
+        &'a self,
+        subgraph: &'a S,
+    ) -> EdgeIter<'a, E, V, S, N, S::BaseIter<'a>> {
         EdgeIter::new(self, subgraph)
     }
 
@@ -1240,12 +1243,12 @@ pub enum HedgeError {
     InvalidStart,
 }
 
-pub struct EdgeIter<'a, E, V, S, N: NodeStorage<NodeData = V>> {
+pub struct EdgeIter<'a, E, V, S, N: NodeStorage<NodeData = V>, I: Iterator<Item = Hedge> + 'a> {
     graph: &'a HedgeGraph<E, V, N>,
-    included_iter: SubGraphHedgeIter<'a>,
+    included_iter: I,
     subgraph: &'a S,
 }
-impl<'a, E, V, S, N: NodeStorage<NodeData = V>> EdgeIter<'a, E, V, S, N>
+impl<'a, E, V, S, N: NodeStorage<NodeData = V>> EdgeIter<'a, E, V, S, N, S::BaseIter<'a>>
 where
     S: SubGraph,
 {
@@ -1258,7 +1261,8 @@ where
     }
 }
 
-impl<'a, E, V, S, N: NodeStorage<NodeData = V>> Iterator for EdgeIter<'a, E, V, S, N>
+impl<'a, E, V, S, N: NodeStorage<NodeData = V>> Iterator
+    for EdgeIter<'a, E, V, S, N, S::BaseIter<'a>>
 where
     S: SubGraph,
 {
