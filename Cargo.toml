@@ -51,6 +51,7 @@ roaring = { version = "0.10.10" }
 hi_sparse_bitset = { version = "0.6.1", features = ["simd"] }
 hibitset = "0.6.4"
 fixedbitset = "0.5.7"
+dot-parser = "0.3.3"
 
 [features]
 symbolica = ["dep:symbolica"]

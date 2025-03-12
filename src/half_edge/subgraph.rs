@@ -218,10 +218,10 @@ pub trait SubGraph:
     fn nhedges(&self) -> usize;
     fn nedges<E, V, N: NodeStorageOps<NodeData = V>>(&self, graph: &HedgeGraph<E, V, N>) -> usize; //not counting unpaired hedges
 
-    fn dot<E, V, N: NodeStorageOps<NodeData = V>>(
+    fn dot<E, V, N: NodeStorageOps<NodeData = V>, Str: AsRef<str>>(
         &self,
         graph: &HedgeGraph<E, V, N>,
-        graph_info: String,
+        graph_info: Str,
         edge_attr: &impl Fn(&E) -> Option<String>,
         node_attr: &impl Fn(&V) -> Option<String>,
     ) -> String {
@@ -230,7 +230,7 @@ pub trait SubGraph:
             "  node [shape=circle,height=0.1,label=\"\"];  overlap=\"scale\"; layout=\"neato\";\n ",
         );
 
-        out.push_str(graph_info.as_str());
+        out.push_str(graph_info.as_ref());
 
         for (n, v) in graph.iter_node_data(self) {
             if let Some(a) = node_attr(v) {

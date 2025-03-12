@@ -269,10 +269,10 @@ impl SubGraph for OrientedCut {
         }
     }
 
-    fn dot<E, V, N: NodeStorage<NodeData = V>>(
+    fn dot<E, V, N: NodeStorage<NodeData = V>, Str: AsRef<str>>(
         &self,
         _graph: &crate::half_edge::HedgeGraph<E, V, N>,
-        _graph_info: String,
+        _graph_info: Str,
         _edge_attr: &impl Fn(&E) -> Option<String>,
         _node_attr: &impl Fn(&V) -> Option<String>,
     ) -> String {

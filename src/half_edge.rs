@@ -1,4 +1,5 @@
 use core::panic;
+use std::error;
 use std::hash::Hash;
 use std::num::TryFromIntError;
 use std::ops::{Index, IndexMut, Neg};
@@ -8,6 +9,7 @@ use bitvec::prelude::*;
 use bitvec::{slice::IterOnes, vec::BitVec};
 use builder::HedgeGraphBuilder;
 use derive_more::{From, Into};
+use dot_parser::ast::{GraphFromFileError, PestError};
 use hedgevec::{HedgeVec, SmartHedgeVec};
 use indexmap::IndexSet;
 use involution::{
@@ -1128,10 +1130,10 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
 
 // Display
 impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
-    pub fn dot_impl<S: SubGraph>(
+    pub fn dot_impl<S: SubGraph, Str1: AsRef<str>>(
         &self,
         node_as_graph: &S,
-        graph_info: String,
+        graph_info: Str1,
         edge_attr: &impl Fn(&E) -> Option<String>,
         node_attr: &impl Fn(&V) -> Option<String>,
     ) -> String {
@@ -1296,7 +1298,7 @@ where
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, Error)]
+#[derive(Debug, Error)]
 pub enum HedgeGraphError {
     #[error("Nodes do not partition")]
     NodesDoNotPartition,
@@ -1316,6 +1318,10 @@ pub enum HedgeGraphError {
     InvolutionError(#[from] InvolutionError),
     #[error("Data length mismatch")]
     DataLengthMismatch,
+    #[error("From file error: {0}")]
+    FromFileError(#[from] GraphFromFileError),
+    #[error("Parse error: {0}")]
+    ParseError(#[from] PestError),
 }
 
 pub mod hedgevec;
