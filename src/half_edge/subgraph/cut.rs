@@ -22,7 +22,9 @@ use by_address::ByAddress;
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct OrientedCut {
+    ///gives the hedges actually "in" the cut
     pub reference: BitVec,
+    ///gives the orientation of the hedges
     pub sign: BitVec,
 }
 
@@ -62,17 +64,17 @@ impl OrientedCut {
         let mut sign = graph.empty_subgraph::<BitVec>();
 
         for i in cut.included_iter() {
-            if sign.includes(&i) {
+            if reference.includes(&i) {
                 return Err(CutError::CutEdgeAlreadySet);
             } else {
-                sign.set(i.0, true);
+                reference.set(i.0, true);
             }
             match graph.edge_store.involution.hedge_data(i) {
                 InvolutiveMapping::Source { .. } => {
-                    reference.set(i.0, true);
+                    sign.set(i.0, true);
                 }
                 InvolutiveMapping::Sink { source_idx } => {
-                    reference.set(source_idx.0, true);
+                    sign.set(source_idx.0, true);
                 }
                 _ => {}
             }

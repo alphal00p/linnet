@@ -6,12 +6,9 @@ use std::{
 use bitvec::vec::BitVec;
 use thiserror::Error;
 
-use crate::{
-    half_edge::{
-        involution::Hedge,
-        subgraph::{Inclusion, SubGraph, SubGraphOps},
-    },
-    tree::Forest,
+use crate::half_edge::{
+    involution::Hedge,
+    subgraph::{Inclusion, SubGraph, SubGraphOps},
 };
 
 /// A newtype for a node (index into `self.nodes`).

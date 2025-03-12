@@ -137,7 +137,7 @@ impl HedgePair {
         orientation: Orientation,
     ) -> String {
         match self {
-            HedgePair::Unpaired { hedge, flow } => {
+            HedgePair::Unpaired { hedge, .. } => {
                 let data = graph.get_edge_data(*hedge);
                 data.geometry.cetz_identity(
                     graph.node_id(*hedge),

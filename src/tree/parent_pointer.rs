@@ -2,7 +2,7 @@ use std::ops::{Index, IndexMut};
 
 use serde::{Deserialize, Serialize};
 
-use super::{ForestNodeStore, RootId, TreeNodeId};
+use super::{Forest, ForestNodeStore, RootId, TreeNodeId};
 #[derive(Clone, Debug, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct PPNode<V> {
     pub(crate) parent: ParentId,
@@ -64,8 +64,17 @@ impl ParentId {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, Default)]
 pub struct ParentPointerStore<V> {
     pub(crate) nodes: Vec<PPNode<V>>,
+}
+
+impl<V, R> Forest<R, ParentPointerStore<V>> {
+    pub fn change_to_root(&mut self, new_root: TreeNodeId) -> RootId {
+        let root_id = self.nodes.change_root(new_root);
+        self.roots[root_id.0].root_id = new_root;
+        root_id
+    }
 }
 
 impl<V> ParentPointerStore<V> {
@@ -73,20 +82,19 @@ impl<V> ParentPointerStore<V> {
     /// Along the chain from new_root to the old root the parent pointers are reversed.
     pub fn change_root(&mut self, new_root: TreeNodeId) -> RootId {
         let mut current = new_root;
+        let root_id = self.root(new_root);
         let mut prev = None;
+
         loop {
-            // Save the original parent.
-            let orig_parent = self.nodes[current.0].parent;
-            // Update current’s parent pointer: if there is no previous node we want a new Root,
-            // otherwise we point to the previous node.
+            let orig_parent = self[&current];
             self.nodes[current.0].parent = match prev {
-                None => ParentId::Root(crate::tree::RootId(new_root.0)),
+                None => ParentId::Root(root_id),
                 Some(p) => ParentId::Node(p),
             };
-            // If the original parent was a node, move upward.
+            prev = Some(current);
+
             match orig_parent {
                 ParentId::Node(p) => {
-                    prev = Some(current);
                     current = p;
                 }
                 ParentId::Root(r) => return r,
@@ -168,5 +176,26 @@ impl<V> ForestNodeStore for ParentPointerStore<V> {
             .iter()
             .map(|n| n.map_ref(&mut transform))
             .collect()
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::tree::Forest;
+
+    use super::ParentPointerStore;
+
+    #[test]
+    fn reroot() {
+        let mut tree: Forest<i8, ParentPointerStore<i8>> = Forest::new();
+
+        let (a, _) = tree.add_root(1, 1);
+        let b = tree.add_child(a, 2);
+        let c = tree.add_child(b, 3);
+        let d = tree.add_child(c, 4);
+
+        assert_eq!(tree[&tree.root(d)], a);
+        tree.change_to_root(d);
+        assert_eq!(tree[&tree.root(a)], d);
     }
 }

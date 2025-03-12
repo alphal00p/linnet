@@ -38,7 +38,7 @@ impl<T> SmartHedgeVec<T> {
         SmartHedgeVec { data, involution }
     }
 
-    pub(crate) fn fix_hedge_pairs(&mut self) {
+    pub(crate) fn _fix_hedge_pairs(&mut self) {
         for (i, d) in self.involution.iter_edge_data() {
             let hedge_pair = self.involution.hedge_pair(i);
             self.data[d.data.0].1 = hedge_pair;
@@ -298,7 +298,8 @@ impl<T> SmartHedgeVec<T> {
                     .push((merge_data.data, HedgePair::Paired { source, sink }));
 
                 g.involution
-                    .connect_identities(source, sink, |_, _, _, _| (merge_flow, new_edge_data));
+                    .connect_identities(source, sink, |_, _, _, _| (merge_flow, new_edge_data))
+                    .unwrap();
 
                 for (_, d) in g.involution.iter_mut() {
                     match d {

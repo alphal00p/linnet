@@ -445,6 +445,20 @@ pub enum Orientation {
     Undirected,
 }
 
+impl Mul for Orientation {
+    type Output = Orientation;
+
+    fn mul(self, other: Orientation) -> Self::Output {
+        match (self, other) {
+            (Orientation::Default, _) => other,
+            (Orientation::Undirected, _) => Orientation::Undirected,
+            (_, Orientation::Default) => self,
+            (_, Orientation::Undirected) => Orientation::Undirected,
+            (Orientation::Reversed, Orientation::Reversed) => Orientation::Default,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, Copy, PartialEq, Eq, Hash)]
 pub enum Flow {
     Source, // outgoing
@@ -945,7 +959,7 @@ impl<E> Involution<E> {
         self.len().checked_sub(1).map(Hedge)
     }
 
-    fn validate(&self) -> bool {
+    fn _validate(&self) -> bool {
         self.iter_idx().all(|h| {
             let pair = self.inv(h);
             if h == pair {
@@ -1104,7 +1118,7 @@ impl<E> Involution<E> {
         }
     }
 
-    fn smart_data_mut<S: SubGraph>(
+    fn _smart_data_mut<S: SubGraph>(
         &mut self,
         hedge: Hedge,
         subgraph: &S,

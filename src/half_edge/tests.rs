@@ -30,7 +30,8 @@ fn threeloop() {
         );
     }
 
-    let cycles = graph.cycle_basis().0;
+    let (cycles, tree) = graph.cycle_basis();
+    assert_eq!(tree.covers(), graph.full_filter());
 
     assert_eq!(3, cycles.len());
 
@@ -559,14 +560,10 @@ fn flower_snark() {
     println!("{}", graph.base_dot());
 
     // assert_eq!(graph.all_spinneys().len(), graph.all_spinneys_alt().len());
-
-    println!(
-        "loop count {}",
-        graph.cyclotomatic_number(&graph.full_graph())
-    );
+    assert_eq!(11, graph.cyclotomatic_number(&graph.full_graph()));
     println!("cycle count {}", graph.all_cycles().len());
-    println!(
-        "loop count {}",
+    assert_eq!(
+        11,
         graph
             .paton_count_loops(&graph.full_graph(), &graph.node_id(Hedge(0)))
             .unwrap()
@@ -615,7 +612,7 @@ fn join() {
 }
 use std::time::Instant;
 
-use nodestorage::{NodeStorageOps, NodeStorageVec};
+use nodestorage::NodeStorageVec;
 
 use super::*;
 
@@ -650,6 +647,31 @@ fn double_self_loop() {
     builder.add_edge(a, a, (), true);
 
     let graph: HedgeGraph<(), ()> = builder.build();
-    let (loops, tree) = graph.cycle_basis();
+    let (loops, _) = graph.cycle_basis();
     assert_eq!(loops.len(), 2);
+}
+
+#[test]
+fn self_energy_cut() {
+    let mut epem_builder = HedgeGraphBuilder::new();
+    let nodes = (0..4)
+        .map(|_| epem_builder.add_node(()))
+        .collect::<Vec<_>>();
+
+    epem_builder.add_edge(nodes[0], nodes[1], (), true);
+    epem_builder.add_edge(nodes[1], nodes[2], (), true);
+    epem_builder.add_edge(nodes[1], nodes[2], (), true);
+    epem_builder.add_edge(nodes[2], nodes[3], (), true);
+
+    epem_builder.add_external_edge(nodes[0], (), true, Flow::Sink);
+    epem_builder.add_external_edge(nodes[0], (), true, Flow::Sink);
+    epem_builder.add_external_edge(nodes[3], (), true, Flow::Source);
+    epem_builder.add_external_edge(nodes[3], (), true, Flow::Source);
+
+    let epem = epem_builder.build::<NodeStorageVec<()>>();
+    println!("{}", epem.dot(&epem.full_filter()));
+
+    let cuts = epem.all_cuts(nodes[0], nodes[3]);
+
+    assert_eq!(cuts.len(), 3);
 }

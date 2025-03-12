@@ -1,8 +1,7 @@
 use std::ops::ControlFlow;
 
-use bit_vec::BitVec;
 use fixedbitset::FixedBitSet;
-use hi_sparse_bitset::{BitSet, BitSetInterface};
+use hi_sparse_bitset::BitSet;
 use iai_callgrind::{black_box, library_benchmark, library_benchmark_group, main};
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
@@ -377,9 +376,9 @@ fn setup_hiset_pair(
 #[bench::with_setup_small_dense(args = [(46, 0.9)], setup = setup_hiset, teardown = print_true_vals)]
 #[bench::with_setup_dense(args = [(100000, 0.9)], setup = setup_hiset, teardown = print_true_vals)]
 fn bench_hiset(bitmap: BitSet<hi_sparse_bitset::config::_64bit>) -> usize {
-    let mut iter = bitmap.iter();
+    let iter = bitmap.iter();
     let mut count = 0;
-    iter.traverse(|a| {
+    iter.traverse(|_| {
         count += 1;
         ControlFlow::Continue(())
     });
@@ -399,7 +398,7 @@ fn bench_hiset_union(
         BitSet<hi_sparse_bitset::config::_64bit>,
     ),
 ) -> usize {
-    let (mut a, b) = pair;
+    let (a, b) = pair;
     (&a | &b).iter().count()
 }
 
@@ -415,7 +414,7 @@ fn bench_hiset_intersection(
         BitSet<hi_sparse_bitset::config::_64bit>,
     ),
 ) -> usize {
-    let (mut a, b) = pair;
+    let (a, b) = pair;
     (&a & &b).iter().count()
 }
 
@@ -465,8 +464,8 @@ fn bench_hibitset(bitmap: hibitset::BitSet) -> usize {
 #[bench::with_setup_small_dense(args = [(46, 0.9)], setup = setup_hibitset_pair)]
 #[bench::with_setup_dense(args = [(100000, 0.9)], setup = setup_hibitset_pair)]
 fn bench_hibitset_union(pair: (hibitset::BitSet, hibitset::BitSet)) -> usize {
-    let (mut a, b) = pair;
-    hibitset::BitSetLike::iter((&a | &b)).count()
+    let (a, b) = pair;
+    hibitset::BitSetLike::iter(&a | &b).count()
 }
 
 #[library_benchmark]
@@ -476,8 +475,8 @@ fn bench_hibitset_union(pair: (hibitset::BitSet, hibitset::BitSet)) -> usize {
 #[bench::with_setup_small_dense(args = [(46, 0.9)], setup = setup_hibitset_pair)]
 #[bench::with_setup_dense(args = [(100000, 0.9)], setup = setup_hibitset_pair)]
 fn bench_hibitset_intersection(pair: (hibitset::BitSet, hibitset::BitSet)) -> usize {
-    let (mut a, b) = pair;
-    hibitset::BitSetLike::iter((&a & &b)).count()
+    let (a, b) = pair;
+    hibitset::BitSetLike::iter(&a & &b).count()
 }
 
 fn setup_vecbitset((size, density): (usize, f64)) -> Vec<usize> {

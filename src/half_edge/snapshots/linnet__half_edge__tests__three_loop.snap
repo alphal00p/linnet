@@ -3,10 +3,136 @@ source: src/half_edge/tests.rs
 expression: graph
 ---
 HedgeGraph(
-  nodes: [
-    HedgeNode(
-      internal_graph: InternalSubGraph(
-        filter: BitSeq(
+  edge_store: SmartHedgeVec(
+    data: [
+      ((), Paired(
+        source: Hedge(0),
+        sink: Hedge(1),
+      )),
+      ((), Paired(
+        source: Hedge(2),
+        sink: Hedge(3),
+      )),
+      ((), Paired(
+        source: Hedge(4),
+        sink: Hedge(5),
+      )),
+      ((), Paired(
+        source: Hedge(6),
+        sink: Hedge(7),
+      )),
+      ((), Paired(
+        source: Hedge(8),
+        sink: Hedge(9),
+      )),
+      ((), Paired(
+        source: Hedge(10),
+        sink: Hedge(11),
+      )),
+    ],
+    involution: Involution(
+      inv: [
+        Source(
+          data: EdgeData(
+            orientation: Undirected,
+            data: EdgeIndex(0),
+          ),
+          sink_idx: Hedge(1),
+        ),
+        Sink(
+          source_idx: Hedge(0),
+        ),
+        Source(
+          data: EdgeData(
+            orientation: Undirected,
+            data: EdgeIndex(1),
+          ),
+          sink_idx: Hedge(3),
+        ),
+        Sink(
+          source_idx: Hedge(2),
+        ),
+        Source(
+          data: EdgeData(
+            orientation: Undirected,
+            data: EdgeIndex(2),
+          ),
+          sink_idx: Hedge(5),
+        ),
+        Sink(
+          source_idx: Hedge(4),
+        ),
+        Source(
+          data: EdgeData(
+            orientation: Undirected,
+            data: EdgeIndex(3),
+          ),
+          sink_idx: Hedge(7),
+        ),
+        Sink(
+          source_idx: Hedge(6),
+        ),
+        Source(
+          data: EdgeData(
+            orientation: Undirected,
+            data: EdgeIndex(4),
+          ),
+          sink_idx: Hedge(9),
+        ),
+        Sink(
+          source_idx: Hedge(8),
+        ),
+        Source(
+          data: EdgeData(
+            orientation: Undirected,
+            data: EdgeIndex(5),
+          ),
+          sink_idx: Hedge(11),
+        ),
+        Sink(
+          source_idx: Hedge(10),
+        ),
+      ],
+    ),
+  ),
+  node_store: NodeStorageVec(
+    node_data: [
+      (),
+      (),
+      (),
+      (),
+    ],
+    hedge_data: [
+      NodeIndex(0),
+      NodeIndex(1),
+      NodeIndex(1),
+      NodeIndex(0),
+      NodeIndex(0),
+      NodeIndex(1),
+      NodeIndex(1),
+      NodeIndex(2),
+      NodeIndex(2),
+      NodeIndex(3),
+      NodeIndex(3),
+      NodeIndex(0),
+    ],
+    nodes: [
+      HedgeNode(
+        internal_graph: InternalSubGraph(
+          filter: BitSeq(
+            order: "bitvec::order::Lsb0",
+            head: BitIdx(
+              width: 64,
+              index: 0,
+            ),
+            bits: 12,
+            data: [
+              0,
+            ],
+          ),
+          loopcount: Some(0),
+        ),
+        hairs: BitSeq(
           order: "bitvec::order::Lsb0",
           head: BitIdx(
             width: 64,
@@ -14,26 +140,26 @@ HedgeGraph(
           ),
           bits: 12,
           data: [
-            0,
+            2073,
           ],
         ),
-        loopcount: Some(0),
       ),
-      hairs: BitSeq(
-        order: "bitvec::order::Lsb0",
-        head: BitIdx(
-          width: 64,
-          index: 0,
+      HedgeNode(
+        internal_graph: InternalSubGraph(
+          filter: BitSeq(
+            order: "bitvec::order::Lsb0",
+            head: BitIdx(
+              width: 64,
+              index: 0,
+            ),
+            bits: 12,
+            data: [
+              0,
+            ],
+          ),
+          loopcount: Some(0),
         ),
-        bits: 12,
-        data: [
-          2073,
-        ],
-      ),
-    ),
-    HedgeNode(
-      internal_graph: InternalSubGraph(
-        filter: BitSeq(
+        hairs: BitSeq(
           order: "bitvec::order::Lsb0",
           head: BitIdx(
             width: 64,
@@ -41,26 +167,26 @@ HedgeGraph(
           ),
           bits: 12,
           data: [
-            0,
+            102,
           ],
         ),
-        loopcount: Some(0),
       ),
-      hairs: BitSeq(
-        order: "bitvec::order::Lsb0",
-        head: BitIdx(
-          width: 64,
-          index: 0,
+      HedgeNode(
+        internal_graph: InternalSubGraph(
+          filter: BitSeq(
+            order: "bitvec::order::Lsb0",
+            head: BitIdx(
+              width: 64,
+              index: 0,
+            ),
+            bits: 12,
+            data: [
+              0,
+            ],
+          ),
+          loopcount: Some(0),
         ),
-        bits: 12,
-        data: [
-          102,
-        ],
-      ),
-    ),
-    HedgeNode(
-      internal_graph: InternalSubGraph(
-        filter: BitSeq(
+        hairs: BitSeq(
           order: "bitvec::order::Lsb0",
           head: BitIdx(
             width: 64,
@@ -68,26 +194,26 @@ HedgeGraph(
           ),
           bits: 12,
           data: [
-            0,
+            384,
           ],
         ),
-        loopcount: Some(0),
       ),
-      hairs: BitSeq(
-        order: "bitvec::order::Lsb0",
-        head: BitIdx(
-          width: 64,
-          index: 0,
+      HedgeNode(
+        internal_graph: InternalSubGraph(
+          filter: BitSeq(
+            order: "bitvec::order::Lsb0",
+            head: BitIdx(
+              width: 64,
+              index: 0,
+            ),
+            bits: 12,
+            data: [
+              0,
+            ],
+          ),
+          loopcount: Some(0),
         ),
-        bits: 12,
-        data: [
-          384,
-        ],
-      ),
-    ),
-    HedgeNode(
-      internal_graph: InternalSubGraph(
-        filter: BitSeq(
+        hairs: BitSeq(
           order: "bitvec::order::Lsb0",
           head: BitIdx(
             width: 64,
@@ -95,133 +221,10 @@ HedgeGraph(
           ),
           bits: 12,
           data: [
-            0,
+            1536,
           ],
         ),
-        loopcount: Some(0),
-      ),
-      hairs: BitSeq(
-        order: "bitvec::order::Lsb0",
-        head: BitIdx(
-          width: 64,
-          index: 0,
-        ),
-        bits: 12,
-        data: [
-          1536,
-        ],
-      ),
-    ),
-  ],
-  involution: Involution(
-    inv: [
-      Sink(
-        source_idx: Hedge(1),
-      ),
-      Source(
-        data: EdgeData(
-          orientation: Undirected,
-          data: EdgeIndex(0),
-        ),
-        sink_idx: Hedge(0),
-      ),
-      Sink(
-        source_idx: Hedge(3),
-      ),
-      Source(
-        data: EdgeData(
-          orientation: Undirected,
-          data: EdgeIndex(1),
-        ),
-        sink_idx: Hedge(2),
-      ),
-      Sink(
-        source_idx: Hedge(5),
-      ),
-      Source(
-        data: EdgeData(
-          orientation: Undirected,
-          data: EdgeIndex(2),
-        ),
-        sink_idx: Hedge(4),
-      ),
-      Sink(
-        source_idx: Hedge(7),
-      ),
-      Source(
-        data: EdgeData(
-          orientation: Undirected,
-          data: EdgeIndex(3),
-        ),
-        sink_idx: Hedge(6),
-      ),
-      Sink(
-        source_idx: Hedge(9),
-      ),
-      Source(
-        data: EdgeData(
-          orientation: Undirected,
-          data: EdgeIndex(4),
-        ),
-        sink_idx: Hedge(8),
-      ),
-      Sink(
-        source_idx: Hedge(11),
-      ),
-      Source(
-        data: EdgeData(
-          orientation: Undirected,
-          data: EdgeIndex(5),
-        ),
-        sink_idx: Hedge(10),
       ),
     ],
   ),
-  base_nodes: 4,
-  node_data: [
-    (),
-    (),
-    (),
-    (),
-  ],
-  edge_data: [
-    ((), Paired(
-      source: Hedge(1),
-      sink: Hedge(0),
-    )),
-    ((), Paired(
-      source: Hedge(3),
-      sink: Hedge(2),
-    )),
-    ((), Paired(
-      source: Hedge(5),
-      sink: Hedge(4),
-    )),
-    ((), Paired(
-      source: Hedge(7),
-      sink: Hedge(6),
-    )),
-    ((), Paired(
-      source: Hedge(9),
-      sink: Hedge(8),
-    )),
-    ((), Paired(
-      source: Hedge(11),
-      sink: Hedge(10),
-    )),
-  ],
-  hedge_data: [
-    NodeIndex(0),
-    NodeIndex(1),
-    NodeIndex(1),
-    NodeIndex(0),
-    NodeIndex(0),
-    NodeIndex(1),
-    NodeIndex(1),
-    NodeIndex(2),
-    NodeIndex(2),
-    NodeIndex(3),
-    NodeIndex(3),
-    NodeIndex(0),
-  ],
 )

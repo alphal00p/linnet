@@ -5,7 +5,7 @@ use std::{
 };
 
 use ahash::AHashSet;
-use bitvec::{bitvec, order::Lsb0, slice::BitSlice, vec::BitVec};
+use bitvec::{bitvec, order::Lsb0, vec::BitVec};
 
 use super::{
     involution::HedgePair, nodestorage::NodeStorageOps, GVEdgeAttrs, Hedge, HedgeGraph,
@@ -289,7 +289,7 @@ impl SubGraph for BitVec {
     type Base = BitVec;
     type BaseIter<'a> = SubGraphHedgeIter<'a>;
     fn included(&self) -> &BitVec {
-        &self
+        self
     }
 
     fn included_iter(&self) -> Self::BaseIter<'_> {

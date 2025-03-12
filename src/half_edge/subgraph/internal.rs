@@ -1,4 +1,3 @@
-use bitvec::slice::BitSlice;
 use bitvec::vec::BitVec;
 use serde::{Deserialize, Serialize};
 use std::hash::Hash;
@@ -19,6 +18,11 @@ pub struct InternalSubGraph {
 }
 
 impl InternalSubGraph {
+    /// Create a new subgraph from a filter.
+    ///
+    /// # Safety
+    ///
+    /// The filter must be valid, i.e. it must always have paired hedges.
     pub unsafe fn new_unchecked(filter: BitVec) -> Self {
         InternalSubGraph {
             filter,

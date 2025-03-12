@@ -3,18 +3,14 @@ use std::ops::{Index, IndexMut};
 use bitvec::vec::BitVec;
 use child_pointer::ParentChildStore;
 use child_vec::ChildVecStore;
-use indexmap::set::Union;
 use parent_pointer::{PPNode, ParentId, ParentPointerStore};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::{
-    half_edge::{
-        involution::Hedge,
-        subgraph::{Inclusion, SubGraph, SubGraphOps},
-        NodeIndex,
-    },
-    union_find::UnionFind,
+use crate::half_edge::{
+    involution::Hedge,
+    subgraph::{Inclusion, SubGraph, SubGraphOps},
+    NodeIndex,
 };
 
 pub mod child_pointer;
@@ -128,17 +124,27 @@ impl<R, N: Default> Forest<R, N> {
             roots: Vec::new(),
         }
     }
+}
 
-    pub fn add_root<T>(&mut self, node_data: T, tree_data: R) -> TreeNodeId
+impl<R, N> Forest<R, N> {
+    pub fn add_root<T>(&mut self, node_data: T, tree_data: R) -> (TreeNodeId, RootId)
     where
         N: ForestNodeStore<NodeData = T>,
     {
-        let root_id = self.nodes.add_root(node_data, RootId(self.roots.len()));
+        let root_id = RootId(self.roots.len());
+        let root_node_id = self.nodes.add_root(node_data, root_id);
         self.roots.push(RootData {
             data: tree_data,
-            root_id,
+            root_id: root_node_id,
         });
-        root_id
+        (root_node_id, root_id)
+    }
+
+    pub fn add_child<T>(&mut self, parent_id: TreeNodeId, node_data: T) -> TreeNodeId
+    where
+        N: ForestNodeStore<NodeData = T>,
+    {
+        self.nodes.add_child(node_data, parent_id)
     }
 }
 
@@ -194,10 +200,6 @@ impl<U> Forest<U, ParentPointerStore<()>> {
             roots,
         })
     }
-
-    pub fn change_to_root(&mut self, node_id: TreeNodeId) -> RootId {
-        self.nodes.change_root(node_id)
-    }
 }
 
 pub trait ForestNodeStoreDown: ForestNodeStore {
@@ -213,6 +215,7 @@ pub trait ForestNodeStore:
     type Store<T>: ForestNodeStore<NodeData = T>;
 
     fn root(&self, nodeid: TreeNodeId) -> RootId {
+        // println!("root");
         match self[&nodeid] {
             ParentId::Root(root) => root,
             ParentId::Node(node) => self.root(node),

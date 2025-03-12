@@ -90,7 +90,7 @@ impl<V> NodeStorageOps for UnionFindNodeStore<V> {
         self.nodes.n_sets()
     }
 
-    fn set_hedge_data(&mut self, hedge: crate::half_edge::involution::Hedge, nodeid: NodeIndex) {
+    fn set_hedge_data(&mut self, _hedge: crate::half_edge::involution::Hedge, _nodeid: NodeIndex) {
         panic!("should not need to set")
     }
 
@@ -197,7 +197,7 @@ impl<V> NodeStorageOps for UnionFindNodeStore<V> {
         source: NodeIndex,
     ) -> Result<Self, crate::half_edge::HedgeGraphError> {
         let setid = SetIndex(source.0);
-        let p = self.nodes.add_child(setid);
+        let _ = self.nodes.add_child(setid);
         self.nodes.iter_set_data_mut().for_each(|(s, n)| {
             if s == setid {
                 n.node.hairs.push(true);

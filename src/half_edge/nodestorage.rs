@@ -50,7 +50,7 @@ pub trait NodeStorageOps: NodeStorage {
         ) -> V2,
     ) -> Self::Storage<V2>;
 
-    fn map_data_graph<'a, V2>(
+    fn map_data_graph<V2>(
         self,
         involution: &Involution<EdgeIndex>,
         f: impl FnMut(&Involution<EdgeIndex>, &HedgeNode, NodeIndex, Self::NodeData) -> V2,

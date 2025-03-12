@@ -1,4 +1,3 @@
-use bitvec::slice::BitSlice;
 use bitvec::vec::BitVec;
 use bitvec::{bitvec, order::Lsb0};
 use serde::{Deserialize, Serialize};

@@ -1,21 +1,15 @@
-use std::{collections::VecDeque, convert, ops::Index, rc::Rc};
+use std::collections::VecDeque;
 
 use bitvec::vec::BitVec;
-use indexmap::IndexSet;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 
-use crate::tree::{
-    child_pointer::ParentChildStore,
-    child_vec::ChildVecStore,
-    parent_pointer::{ParentId, ParentPointerStore},
-    Forest, ForestNodeStore, RootId, TreeNodeId,
-};
+use crate::tree::{parent_pointer::ParentPointerStore, Forest, ForestNodeStore, RootId};
 
 use super::{
     involution::{Hedge, Involution},
     nodestorage::NodeStorage,
-    subgraph::{Cycle, HedgeNode, Inclusion, InternalSubGraph, SubGraph, SubGraphOps},
+    subgraph::{Cycle, Inclusion, InternalSubGraph, SubGraph, SubGraphOps},
     HedgeGraph, HedgeGraphError, NodeIndex, NodeStorageOps,
 };
 
@@ -36,18 +30,18 @@ impl<V, P: ForestNodeStore<NodeData = ()>> NodeStorage for Forest<V, P> {
 //     }
 // }
 
-#[derive(Debug, Clone)]
-pub struct TraversalTreeRef<
-    'a,
-    E,
-    V,
-    N: NodeStorage<NodeData = V>,
-    P: ForestNodeStore<NodeData = ()>,
-> {
-    graph: &'a HedgeGraph<E, V, N>,
-    simple: SimpleTraversalTree<P>,
-    tree_subgraph: InternalSubGraph,
-}
+// #[derive(Debug, Clone)]
+// pub struct TraversalTreeRef<
+//     'a,
+//     E,
+//     V,
+//     N: NodeStorage<NodeData = V>,
+//     P: ForestNodeStore<NodeData = ()>,
+// > {
+//     graph: &'a HedgeGraph<E, V, N>,
+//     simple: SimpleTraversalTree<P>,
+//     tree_subgraph: InternalSubGraph,
+// }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum TTRoot {
@@ -90,17 +84,25 @@ pub struct SimpleTraversalTree<P: ForestNodeStore<NodeData = ()> = ParentPointer
 
 impl<P: ForestNodeStore<NodeData = ()>> SimpleTraversalTree<P> {
     pub fn covers(&self) -> BitVec {
-        let mut covers = BitVec::empty(self.tree_subgraph.nhedges());
+        // println!("calculating covers..");
+        let mut covers = BitVec::empty(self.tree_subgraph.len());
 
-        for i in 0..self.tree_subgraph.nhedges() {
-            if self.forest[self.forest.root(i.into())].includes() {
+        // self.tree_subgraph.covers(graph)
+
+        for i in 0..self.tree_subgraph.len() {
+            if self.node_data(self.node_id(Hedge(i))).includes() {
                 covers.set(i, true);
             }
         }
 
         covers
     }
-    pub fn internal<I: AsRef<Involution>>(&self, hedge: Hedge, inv: I) -> bool {
+
+    pub fn node_data(&self, node: NodeIndex) -> &TTRoot {
+        &self.forest[RootId(node.0)]
+    }
+
+    pub fn internal<I: AsRef<Involution>>(&self, hedge: Hedge, _inv: I) -> bool {
         self.tree_subgraph.includes(&hedge)
     }
 
@@ -176,12 +178,12 @@ pub struct TraversalTreeAncestorHedgeIterator<'a, P: ForestNodeStore<NodeData = 
     current: Option<Hedge>,
 }
 
-impl<'a, P: ForestNodeStore<NodeData = ()>> Iterator for TraversalTreeAncestorHedgeIterator<'a, P> {
+impl<P: ForestNodeStore<NodeData = ()>> Iterator for TraversalTreeAncestorHedgeIterator<'_, P> {
     type Item = Hedge;
 
     fn next(&mut self) -> Option<Self::Item> {
         if let Some(c) = self.current {
-            self.current = self.tt.hedge_parent(c, &self.inv);
+            self.current = self.tt.hedge_parent(c, self.inv);
             Some(c)
         } else {
             None
@@ -209,12 +211,12 @@ pub struct TraversalTreeAncestorNodeIterator<'a, P: ForestNodeStore<NodeData = (
     current: Option<NodeIndex>,
 }
 
-impl<'a, P: ForestNodeStore<NodeData = ()>> Iterator for TraversalTreeAncestorNodeIterator<'a, P> {
+impl<P: ForestNodeStore<NodeData = ()>> Iterator for TraversalTreeAncestorNodeIterator<'_, P> {
     type Item = NodeIndex;
 
     fn next(&mut self) -> Option<Self::Item> {
         if let Some(c) = self.current {
-            self.current = self.tt.node_parent(c, &self.inv);
+            self.current = self.tt.node_parent(c, self.inv);
             Some(c)
         } else {
             None
@@ -238,7 +240,7 @@ impl<P: ForestNodeStore<NodeData = ()>> SimpleTraversalTree<P> {
 
 impl SimpleTraversalTree {
     pub fn empty<E, V, N: NodeStorageOps<NodeData = V>>(graph: &HedgeGraph<E, V, N>) -> Self {
-        let forest = graph.node_store.to_forest(|a| TTRoot::None);
+        let forest = graph.node_store.to_forest(|_| TTRoot::None);
         SimpleTraversalTree {
             forest,
             tree_subgraph: graph.empty_subgraph(),

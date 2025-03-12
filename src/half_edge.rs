@@ -121,7 +121,6 @@ impl<E, V: Default, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
         }
 
         assert_eq!(sources.len(), sinks.len());
-        let n_internals = sources.len();
 
         while !externals.is_empty() {
             if rng.gen_bool(0.5) {
@@ -275,7 +274,7 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
         self.nesting_node_fix(subgraph);
     }
 
-    fn set_hedge_data(&mut self, hedge: Hedge, nodeid: NodeIndex) {
+    fn _set_hedge_data(&mut self, hedge: Hedge, nodeid: NodeIndex) {
         self.node_store.set_hedge_data(hedge, nodeid);
     }
 }
@@ -350,6 +349,17 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
             hairs: !(!hairs | &internal_graph.filter),
             internal_graph,
         }
+    }
+
+    pub fn remove_internal_hedges(&self, subgraph: &BitVec) -> BitVec {
+        let mut hairs = subgraph.clone();
+        for i in subgraph.included_iter() {
+            if subgraph.includes(&self.inv(i)) {
+                hairs.set(i.0, false);
+                hairs.set(self.inv(i).0, false);
+            }
+        }
+        hairs
     }
 
     fn nesting_node_fix(&self, node: &mut HedgeNode) {
@@ -664,8 +674,13 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
             // let internal = InternalSubGraph::cleaned_filter_pessimist(t_side_covers, self);
             // let mut t_side = self.nesting_node_from_subgraph(internal);
             // t_side.hairs.union_with(&t.hairs);
+            //
 
-            let cut = OrientedCut::from_underlying_coerce(hairs, self).unwrap();
+            let cut = OrientedCut::from_underlying_coerce(
+                self.remove_internal_hedges(&s_side_covers),
+                self,
+            )
+            .unwrap();
             cuts.push((s_side_covers, cut, t_side_covers));
         }
 
@@ -1229,10 +1244,7 @@ impl<'a, E, V, I: Iterator<Item = Hedge>, N: NodeStorageOps<NodeData = V>> Itera
 #[cfg(feature = "symbolica")]
 pub mod symbolica_interop;
 
-use subgraph::{
-    Cycle, HedgeNode, Inclusion, InternalSubGraph, OrientedCut, SubGraph, SubGraphHedgeIter,
-    SubGraphOps,
-};
+use subgraph::{Cycle, HedgeNode, Inclusion, InternalSubGraph, OrientedCut, SubGraph, SubGraphOps};
 
 use thiserror::Error;
 use tree::SimpleTraversalTree;

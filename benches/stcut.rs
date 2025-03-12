@@ -95,17 +95,17 @@ fn k33_for_tree_sym() -> (Graph<(), ()>, usize) {
     let e = k33.add_node(());
     let f = k33.add_node(());
 
-    k33.add_edge(a, d, false, ());
-    k33.add_edge(a, e, false, ());
-    k33.add_edge(a, f, false, ());
+    k33.add_edge(a, d, false, ()).unwrap();
+    k33.add_edge(a, e, false, ()).unwrap();
+    k33.add_edge(a, f, false, ()).unwrap();
 
-    k33.add_edge(b, d, false, ());
-    k33.add_edge(b, e, false, ());
-    k33.add_edge(b, f, false, ());
+    k33.add_edge(b, d, false, ()).unwrap();
+    k33.add_edge(b, e, false, ()).unwrap();
+    k33.add_edge(b, f, false, ()).unwrap();
 
-    k33.add_edge(c, d, false, ());
-    k33.add_edge(c, e, false, ());
-    k33.add_edge(c, f, false, ());
+    k33.add_edge(c, d, false, ()).unwrap();
+    k33.add_edge(c, e, false, ()).unwrap();
+    k33.add_edge(c, f, false, ()).unwrap();
     (k33, a)
 }
 
@@ -113,11 +113,7 @@ fn k33_for_tree_sym() -> (Graph<(), ()>, usize) {
 #[bench::k33st(setup=k33)]
 fn bench_stcut(
     graph_st: (HedgeGraph<(), ()>, [NodeIndex; 2]),
-) -> Vec<(
-    linnet::half_edge::subgraph::HedgeNode,
-    linnet::half_edge::subgraph::OrientedCut,
-    linnet::half_edge::subgraph::HedgeNode,
-)> {
+) -> Vec<(BitVec, linnet::half_edge::subgraph::OrientedCut, BitVec)> {
     black_box(graph_st.0.all_cuts(graph_st.1[0], graph_st.1[1]))
 }
 
