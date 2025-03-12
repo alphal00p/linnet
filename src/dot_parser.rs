@@ -44,6 +44,7 @@ impl DotEdgeData {
             })
             .collect();
 
+        println!("{}->{}", edge.from, edge.to);
         let source = map[&edge.from].clone();
         let target = map[&edge.to].clone();
 
@@ -69,6 +70,7 @@ impl DotEdgeData {
                 NodeIdOrDangling::Id(source),
             ) => {
                 statements.extend(states);
+                orientation = orientation.reverse();
                 (source, Either::Right(-flow))
             }
             _ => panic!("Cannot connect an edge to two external nodes"),
@@ -187,8 +189,9 @@ pub mod test {
     #[test]
     fn test_from_string() {
         let s = "digraph G {
-            A -> B [label=\"Hello\"];
-            B -> C [label=\"World\"];
+            A[flow=sink]
+            A-> B [label=\"Hello\"];
+            B -> C [label=\"World\"dir=none];
         }";
         let graph: HedgeGraph<crate::dot_parser::DotEdgeData, crate::dot_parser::DotVertexData> =
             HedgeGraph::from_string(s).unwrap();
