@@ -14,6 +14,7 @@ use super::{
 };
 
 pub trait NodeStorageOps: NodeStorage {
+    type OpStorage<N>: NodeStorageOps<NodeData = N>;
     fn extend(self, other: Self) -> Self;
 
     fn to_forest<U>(
@@ -48,13 +49,13 @@ pub trait NodeStorageOps: NodeStorage {
             &'a Self::NodeData,
             &'a HedgeNode,
         ) -> V2,
-    ) -> Self::Storage<V2>;
+    ) -> Self::OpStorage<V2>;
 
     fn map_data_graph<V2>(
         self,
         involution: &Involution<EdgeIndex>,
         f: impl FnMut(&Involution<EdgeIndex>, &HedgeNode, NodeIndex, Self::NodeData) -> V2,
-    ) -> Self::Storage<V2>;
+    ) -> Self::OpStorage<V2>;
 
     fn iter_node_id(&self) -> impl Iterator<Item = NodeIndex> {
         (0..self.node_len()).map(NodeIndex)
@@ -68,7 +69,7 @@ pub trait NodeStorageOps: NodeStorage {
 
 pub trait NodeStorage: Sized {
     type NodeData;
-    type Storage<N>: NodeStorage<NodeData = N>;
+    type Storage<N>;
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -84,6 +85,8 @@ impl<N> NodeStorage for NodeStorageVec<N> {
 }
 
 impl<N> NodeStorageOps for NodeStorageVec<N> {
+    type OpStorage<A> = Self::Storage<A>;
+
     fn node_len(&self) -> usize {
         self.nodes.len()
     }

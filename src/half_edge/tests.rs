@@ -614,6 +614,8 @@ use std::time::Instant;
 
 use nodestorage::NodeStorageVec;
 
+use crate::dot;
+
 use super::*;
 
 #[test]
@@ -674,4 +676,56 @@ fn self_energy_cut() {
     let cuts = epem.all_cuts(nodes[0], nodes[3]);
 
     assert_eq!(cuts.len(), 3);
+}
+
+#[test]
+fn double_pentagon_all_cuts() {
+    let graph: HedgeGraph<crate::dot_parser::DotEdgeData, crate::dot_parser::DotVertexData> = dot!(
+        digraph {
+    node [shape=circle,height=0.1,label=""];  overlap="scale"; layout="neato";
+    00 -> 07[ dir=none,label="a"];
+    00 -> 12[ dir=forward,label="d"];
+    01 -> 00[ dir=forward,label="d"];
+    01 -> 03[ dir=none,label="a"];
+    02 -> 01[ dir=forward,label="d"];
+    02 -> 06[ dir=none,label="a"];
+    03 -> 13[ dir=forward,label="d"];
+    04 -> 03[ dir=forward,label="d"];
+    04 -> 05[ dir=none,label="g"];
+    05 -> 02[ dir=forward,label="d"];
+    06 -> 07[ dir=forward,label="e-"];
+    07 -> 11[ dir=forward,label="e-"];
+    08 -> 06[ dir=forward,label="e-"];
+    09 -> 04[ dir=forward,label="d"];
+    10 -> 05[ dir=forward,label="d"];
+    }
+    )
+    .unwrap();
+
+    // println!(
+    //     "{}",
+    //     graph.dot_impl(&graph.full_filter(), "", &|a| None, &|n| Some(format!(
+    //         "label=\"{}\"",
+    //         n.id
+    //     )))
+    // );
+
+    let cuts = graph.all_cuts(NodeIndex(10), NodeIndex(9));
+
+    assert_eq!(cuts.len(), 9);
+
+    let cuts = graph.all_cuts(NodeIndex(10), NodeIndex(13));
+
+    assert_eq!(cuts.len(), 14);
+
+    let cuts = graph.all_cuts(NodeIndex(1), NodeIndex(2));
+
+    assert_eq!(cuts.len(), 16);
+
+    // for (l, c, r) in cuts {
+    //     assert_eq!("//cut:\n{}", graph.dot(&c.reference));
+    // }
+    // let cuts = graph.all_cuts(NodeIndex(10), NodeIndex(13));
+
+    // println!("All cuts: {}", cuts.len());
 }

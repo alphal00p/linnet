@@ -1,8 +1,8 @@
-use std::path::Path;
+use std::{collections::BTreeMap, path::Path};
 
 use ahash::AHashMap;
 use dot_parser::ast::{GraphFromFileError, PestError};
-use itertools::Either;
+use itertools::{Either, Itertools};
 
 use crate::half_edge::{
     builder::HedgeGraphBuilder,
@@ -12,11 +12,11 @@ use crate::half_edge::{
 };
 
 pub struct DotEdgeData {
-    statements: AHashMap<String, String>,
+    pub statements: AHashMap<String, String>,
 }
 pub struct DotVertexData {
-    id: String,
-    statements: AHashMap<String, String>,
+    pub id: String,
+    pub statements: AHashMap<String, String>,
 }
 
 impl DotEdgeData {
@@ -44,7 +44,6 @@ impl DotEdgeData {
             })
             .collect();
 
-        println!("{}->{}", edge.from, edge.to);
         let source = map[&edge.from].clone();
         let target = map[&edge.to].clone();
 
@@ -151,7 +150,9 @@ impl<S: NodeStorageOps<NodeData = DotVertexData>>
         let mut g = HedgeGraphBuilder::new();
         let mut map = AHashMap::new();
 
-        for (id, n) in value.nodes.set {
+        let nodes = BTreeMap::from_iter(value.nodes.set);
+
+        for (id, n) in nodes {
             let idorstatements = match DotVertexData::from_parser(n) {
                 Either::Left(d) => NodeIdOrDangling::Id(g.add_node(d)),
                 Either::Right((flow, statements)) => {
@@ -182,6 +183,13 @@ impl<S: NodeStorageOps<NodeData = DotVertexData>>
     }
 }
 
+#[macro_export]
+macro_rules! dot {
+    ($($t:tt)*) => {
+        HedgeGraph::from_string(stringify!($($t)*))
+    };
+}
+
 #[cfg(test)]
 pub mod test {
     use crate::half_edge::HedgeGraph;
@@ -189,8 +197,8 @@ pub mod test {
     #[test]
     fn test_from_string() {
         let s = "digraph G {
-            A[flow=sink]
-            A-> B [label=\"Hello\"];
+            A      [flow=sink]
+            A -> B [label=\"Hello\"];
             B -> C [label=\"World\"dir=none];
         }";
         let graph: HedgeGraph<crate::dot_parser::DotEdgeData, crate::dot_parser::DotVertexData> =
@@ -204,7 +212,31 @@ pub mod test {
                 &|b| Some(format!("label={}", b.id))
             )
         );
-        assert_eq!(graph.n_nodes(), 3);
-        assert_eq!(graph.n_internals(), 2);
+        assert_eq!(graph.n_nodes(), 2);
+        assert_eq!(graph.n_internals(), 1);
+    }
+
+    #[test]
+    fn test_macro() {
+        let graph: HedgeGraph<crate::dot_parser::DotEdgeData, crate::dot_parser::DotVertexData> =
+            dot!( digraph {
+               node [shape=circle,height=0.1,label=""];  overlap="scale"; layout="neato";
+             0 -> 7[ dir=none color="red:blue;0.5",label="a"];
+            0 -> 12[ dir=forward color="red:blue;0.5",label="d"];
+            1 -> 0[ dir=forward color="red:blue;0.5",label="d"];
+            1 -> 3[ dir=none color="red:blue;0.5",label="a"];
+            2 -> 1[ dir=forward color="red:blue;0.5",label="d"];
+            2 -> 6[ dir=none color="red:blue;0.5",label="a"];
+            3 -> 13[ dir=forward color="red:blue;0.5",label="d"];
+            4 -> 3[ dir=forward color="red:blue;0.5",label="d"];
+            4 -> 5[ dir=none color="red:blue;0.5",label="g"];
+            5 -> 2[ dir=forward color="red:blue;0.5",label="d"];
+            6 -> 7[ dir=forward color="red:blue;0.5",label="e-"];
+            7 -> 11[ dir=forward color="red:blue;0.5",label="e-"];
+            8 -> 6[ dir=forward color="red:blue;0.5",label="e-"];
+            9 -> 4[ dir=forward color="red:blue;0.5",label="d"];
+            10 -> 5[ dir=forward color="red:blue;0.5",label="d"];
+            })
+            .unwrap();
     }
 }

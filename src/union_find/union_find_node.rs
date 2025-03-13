@@ -47,6 +47,7 @@ impl<V> NodeStorage for UnionFindNodeStore<V> {
 }
 
 impl<V> NodeStorageOps for UnionFindNodeStore<V> {
+    type OpStorage<A> = Self::Storage<A>;
     fn hedge_len(&self) -> usize {
         self.nodes.n_elements()
     }

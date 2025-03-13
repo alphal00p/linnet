@@ -229,6 +229,28 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
         Ok((hedge, g))
     }
 
+    /// Adds a paired edge to the specified nodes with the given data and superficial orientation.
+    pub fn add_pair(
+        self,
+        source: NodeIndex,
+        sink: NodeIndex,
+        data: E,
+        orientation: impl Into<Orientation>,
+    ) -> Result<(Hedge, Hedge, Self), HedgeGraphError> {
+        let (edge_store, sourceh, sinkh) = self.edge_store.add_paired(data, orientation);
+        let mut g = HedgeGraph {
+            edge_store,
+            node_store: self
+                .node_store
+                .add_dangling_edge(source)?
+                .add_dangling_edge(sink)?,
+        };
+
+        g.node_store.check_and_set_nodes()?;
+
+        Ok((sourceh, sinkh, g))
+    }
+
     /// Is the graph connected?
     pub fn is_connected<S: SubGraph>(&self, subgraph: &S) -> bool {
         let n_edges = subgraph.nedges(self);
@@ -547,7 +569,7 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
         &'a self,
         node_map: &impl Fn(&'a Self, &'a V, &'a HedgeNode) -> V2,
         edge_map: &impl Fn(&'a Self, HedgePair, EdgeData<&'a E>) -> EdgeData<E2>,
-    ) -> HedgeGraph<E2, V2, N::Storage<V2>> {
+    ) -> HedgeGraph<E2, V2, N::OpStorage<V2>> {
         HedgeGraph {
             node_store: self.node_store.map_data_ref_graph(self, node_map),
             edge_store: self.edge_store.map_data_ref(self, edge_map),
@@ -557,14 +579,14 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
     pub fn map_nodes_ref<V2>(
         &self,
         f: &impl Fn(&Self, &V, &HedgeNode) -> V2,
-    ) -> HedgeGraph<&E, V2, N::Storage<V2>> {
+    ) -> HedgeGraph<&E, V2, N::OpStorage<V2>> {
         self.map_data_ref(f, &|_, _, e| e)
     }
     pub fn map<E2, V2>(
         self,
         f: impl FnMut(&Involution<EdgeIndex>, &HedgeNode, NodeIndex, V) -> V2,
         g: impl FnMut(&Involution<EdgeIndex>, &N, HedgePair, EdgeData<E>) -> EdgeData<E2>,
-    ) -> HedgeGraph<E2, V2, N::Storage<V2>> {
+    ) -> HedgeGraph<E2, V2, N::OpStorage<V2>> {
         let edge_store = self.edge_store.map_data(&self.node_store, g);
         HedgeGraph {
             node_store: self.node_store.map_data_graph(&edge_store.involution, f),
@@ -651,26 +673,62 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
         set
     }
 
+    // pub fn backtracking_cut_set(
+    //     &self,
+    //     source: HedgeNode,
+    //     target: HedgeNode,
+    // ) -> Vec<InternalSubGraph> {
+    // }
+
+    pub fn non_bridges(&self) -> BitVec {
+        let (c, _) = self.cycle_basis();
+        let mut cycle_cover: BitVec = self.empty_subgraph();
+        for cycle in c {
+            cycle_cover.union_with(&cycle.filter);
+        }
+
+        cycle_cover
+    }
+
+    pub fn bridges(&self) -> BitVec {
+        self.non_bridges().complement(self)
+    }
+
     pub fn all_cuts(
         &self,
         source: NodeIndex,
         target: NodeIndex,
-    ) -> Vec<(BitVec, OrientedCut, BitVec)> {
+    ) -> Vec<(BitVec, OrientedCut, BitVec)>
+    where
+        N: NodeStorageOps,
+    {
         let s = self.hairs_from_id(source);
+
+        let augmented: HedgeGraph<(), (), N::OpStorage<()>> =
+            self.map_data_ref(&|_, _, _| (), &|_, _, d| d.map(|_| ()));
+        let (_, _, augmented) = augmented.add_pair(source, target, (), false).unwrap();
+        let mut non_bridges = augmented.non_bridges();
+        non_bridges.pop();
+        non_bridges.pop();
+
         let t = self.hairs_from_id(target);
         let mut regions = AHashSet::new();
-        self.all_s_t_cuts_impl(s, t, &mut regions);
+        self.all_s_t_cuts_impl(&non_bridges, s, t, &mut regions);
 
         let mut cuts = vec![];
 
         for r in regions.drain() {
-            let hairs = if r.is_empty() {
+            let disconnected = r.complement(self);
+
+            let mut s_side_covers = if s.hairs.intersects(&r) {
                 s.hairs.clone()
             } else {
-                r.filter
+                SimpleTraversalTree::depth_first_traverse(self, &disconnected, &source, None)
+                    .unwrap()
+                    .covers()
             };
+            s_side_covers.union_with(&r);
 
-            let s_side_covers = hairs.covers(self);
             let t_side_covers = s_side_covers.complement(self);
 
             // let internal = InternalSubGraph::cleaned_filter_pessimist(t_side_covers, self);
@@ -678,61 +736,76 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
             // t_side.hairs.union_with(&t.hairs);
             //
 
-            let cut = OrientedCut::from_underlying_coerce(
-                self.remove_internal_hedges(&s_side_covers),
-                self,
-            )
-            .unwrap();
+            let cut = OrientedCut::from_underlying_coerce(r, self).unwrap();
             cuts.push((s_side_covers, cut, t_side_covers));
         }
 
         cuts
     }
 
-    pub fn all_s_t_cuts_impl(
+    pub fn all_s_t_cuts_impl<S: SubGraph<Base = BitVec>>(
         &self,
+        subgraph: &S,
         s: &HedgeNode,
         t: &HedgeNode,
-        regions: &mut AHashSet<InternalSubGraph>,
+        regions: &mut AHashSet<BitVec>,
     ) {
+        // println!("regions size:{}", regions.len());
         let mut new_internals = vec![];
+
+        // ensure only actual hairs on the source
         for h in s.hairs.included_iter() {
             let invh = self.inv(h);
 
-            if h > invh && s.hairs.includes(&self.inv(h)) {
+            if h > invh && s.hairs.includes(&invh) {
                 new_internals.push(h);
             }
         }
 
-        let mut new_node = s.clone();
+        let mut cleaned_s = s.clone();
 
         for h in new_internals {
-            new_node.hairs.set(h.0, false);
-            new_node.hairs.set(self.inv(h).0, false);
-            new_node.internal_graph.filter.set(h.0, true);
-            new_node.internal_graph.filter.set(self.inv(h).0, true);
+            cleaned_s.hairs.set(h.0, false);
+            cleaned_s.hairs.set(self.inv(h).0, false);
+            cleaned_s.internal_graph.filter.set(h.0, true);
+            cleaned_s.internal_graph.filter.set(self.inv(h).0, true);
         }
 
-        let hairy = new_node.internal_graph.filter.union(&new_node.hairs);
-        let complement = hairy.complement(self);
+        let hairy = cleaned_s.internal_graph.filter.union(&cleaned_s.hairs);
+        let mut complement = hairy.complement(self);
+        complement.intersect_with(subgraph.included());
+        // println!("new_node\n{}", self.dot(&new_node));
+
         let count = self.count_connected_components(&complement);
+        // println!("{count} connected components:\n{}", self.dot(&complement));
 
-        if count == 1 && !regions.insert(new_node.internal_graph.clone()) {
-            return;
-        }
+        if count == 1 {
+            let mut region: BitVec = self.empty_subgraph();
+            for h in subgraph.included_iter() {
+                if cleaned_s.hairs.includes(&h) {
+                    region.set(h.0, true);
+                }
+            }
 
-        for h in new_node.included_iter() {
-            let invh = self.inv(h);
+            if !regions.insert(region) {
+                return;
+            }
 
-            if invh != h && !t.hairs.includes(&invh) {
-                let mut new_node = s.clone();
-                new_node.hairs.union_with(&self.node_hairs(invh).hairs);
+            for h in cleaned_s.hairs.included_iter() {
+                let invh = self.inv(h);
 
-                new_node.hairs.set(h.0, false);
-                new_node.hairs.set(invh.0, false);
-                new_node.internal_graph.filter.set(h.0, true);
-                new_node.internal_graph.filter.set(invh.0, true);
-                self.all_s_t_cuts_impl(&new_node, t, regions);
+                if invh != h && !t.hairs.includes(&invh) && subgraph.includes(&invh) {
+                    let mut new_node = cleaned_s.clone();
+
+                    new_node.hairs.union_with(&self.node_hairs(invh).hairs);
+                    new_node.hairs.intersect_with(subgraph.included());
+
+                    new_node.hairs.set(h.0, false);
+                    new_node.hairs.set(invh.0, false);
+                    new_node.internal_graph.filter.set(h.0, true);
+                    new_node.internal_graph.filter.set(invh.0, true);
+                    self.all_s_t_cuts_impl(subgraph, &new_node, t, regions);
+                }
             }
         }
     }

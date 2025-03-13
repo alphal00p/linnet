@@ -167,6 +167,29 @@ impl<T> SmartHedgeVec<T> {
         )
     }
 
+    pub(crate) fn add_paired(
+        self,
+        data: T,
+        orientation: impl Into<Orientation>,
+    ) -> (Self, Hedge, Hedge) {
+        let mut involution = self.involution;
+        let o = orientation.into();
+
+        let mut edge_data = self.data;
+        let edge_index = EdgeIndex(edge_data.len());
+        let (source, sink) = involution.add_pair(edge_index, o);
+        edge_data.push((data, HedgePair::Paired { source, sink }));
+
+        (
+            SmartHedgeVec {
+                data: edge_data,
+                involution,
+            },
+            source,
+            sink,
+        )
+    }
+
     pub(crate) fn join(
         self,
         other: Self,
