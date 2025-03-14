@@ -1,5 +1,4 @@
 use core::panic;
-use std::error;
 use std::hash::Hash;
 use std::num::TryFromIntError;
 use std::ops::{Index, IndexMut, Neg};
@@ -9,7 +8,6 @@ use bitvec::prelude::*;
 use bitvec::{slice::IterOnes, vec::BitVec};
 use builder::HedgeGraphBuilder;
 use derive_more::{From, Into};
-use dot_parser::ast::{GraphFromFileError, PestError};
 use hedgevec::{HedgeVec, SmartHedgeVec};
 use indexmap::IndexSet;
 use involution::{
@@ -386,6 +384,24 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
         hairs
     }
 
+    pub fn split_hairs_and_internal_hedges(
+        &self,
+        mut subgraph: BitVec,
+    ) -> (BitVec, InternalSubGraph) {
+        let mut internal: InternalSubGraph = self.empty_subgraph();
+        for i in subgraph.included_iter() {
+            let invh = self.inv(i);
+            if subgraph.includes(&invh) {
+                internal.filter.set(i.0, true);
+                internal.filter.set(invh.0, true);
+            }
+        }
+        for i in internal.filter.included_iter() {
+            subgraph.set(i.0, false);
+        }
+        (subgraph, internal)
+    }
+
     fn nesting_node_fix(&self, node: &mut HedgeNode) {
         let mut externalhedges = bitvec![usize, Lsb0; 0; self.n_hedges()];
 
@@ -694,40 +710,123 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
         self.non_bridges().complement(self)
     }
 
-    pub fn all_cuts(
+    pub fn combine_to_single_hedgenode(&self, source: &[NodeIndex]) -> HedgeNode {
+        let s: BitVec = source
+            .iter()
+            .map(|a| self.hairs_from_id(*a))
+            .fold(self.empty_subgraph(), |acc, e| acc.union(&e.hairs));
+
+        let (hairs, internal_graph) = self.split_hairs_and_internal_hedges(s);
+
+        HedgeNode {
+            internal_graph,
+            hairs,
+        }
+    }
+
+    pub fn all_cuts_from_ids(
         &self,
-        source: NodeIndex,
-        target: NodeIndex,
+        source: &[NodeIndex],
+        target: &[NodeIndex],
     ) -> Vec<(BitVec, OrientedCut, BitVec)>
     where
         N: NodeStorageOps,
     {
-        let s = self.hairs_from_id(source);
+        let source = self.combine_to_single_hedgenode(source);
+        let target = self.combine_to_single_hedgenode(target);
+        self.all_cuts(source, target)
+    }
+
+    pub fn all_cuts(
+        &self,
+        source: HedgeNode,
+        target: HedgeNode,
+    ) -> Vec<(BitVec, OrientedCut, BitVec)>
+    where
+        N: NodeStorageOps,
+    {
+        // println!("//Source\n{}", self.dot(&source.hairs));
+        // println!("//Target\n{}", self.dot(&target.hairs));
+
+        let full_source = source.internal_and_hairs();
+        let full_target = target.internal_and_hairs();
+        let s_connectivity = self.count_connected_components(&full_source);
+
+        let t_connectivity = self.count_connected_components(&full_target);
 
         let augmented: HedgeGraph<(), (), N::OpStorage<()>> =
             self.map_data_ref(&|_, _, _| (), &|_, _, d| d.map(|_| ()));
-        let (_, _, augmented) = augmented.add_pair(source, target, (), false).unwrap();
-        let mut non_bridges = augmented.non_bridges();
-        non_bridges.pop();
-        non_bridges.pop();
+        let s_nodes = self
+            .iter_node_data(&source)
+            .map(|a| self.id_from_hairs(a.0).unwrap())
+            .collect::<Vec<_>>();
+        let t_nodes = self
+            .iter_node_data(&target)
+            .map(|a| self.id_from_hairs(a.0).unwrap())
+            .collect::<Vec<_>>();
 
-        let t = self.hairs_from_id(target);
+        let t_node = t_nodes[0];
+        let s_node = s_nodes[0];
+
+        let augmented = s_nodes.iter().fold(augmented, |aug, n| {
+            let (_, _, augmented) = aug.add_pair(*n, t_node, (), false).unwrap();
+            augmented
+        });
+
+        let augmented = t_nodes.iter().fold(augmented, |aug, n| {
+            let (_, _, augmented) = aug.add_pair(s_node, *n, (), false).unwrap();
+            augmented
+        });
+
+        let mut non_bridges = augmented.non_bridges();
+
+        for n in &s_nodes {
+            non_bridges.pop();
+            non_bridges.pop();
+        }
+        for n in &t_nodes {
+            non_bridges.pop();
+            non_bridges.pop();
+        }
+
+        // println!("//non_bridges:\n{}", self.dot(&non_bridges));
+
+        non_bridges.union_with(&source.hairs);
+        non_bridges.union_with(&target.hairs);
+
+        // println!("//non_bridges:\n{}", self.dot(&non_bridges));
+
         let mut regions = AHashSet::new();
-        self.all_s_t_cuts_impl(&non_bridges, s, t, &mut regions);
+        self.all_s_t_cuts_impl(
+            &non_bridges,
+            s_connectivity,
+            source,
+            &target,
+            t_connectivity,
+            &mut regions,
+        );
 
         let mut cuts = vec![];
+        let bridges = non_bridges.complement(self);
 
-        for r in regions.drain() {
-            let disconnected = r.complement(self);
+        for mut r in regions.drain() {
+            // let disconnected = r.complement(self);
 
-            let mut s_side_covers = if s.hairs.intersects(&r) {
-                s.hairs.clone()
-            } else {
-                SimpleTraversalTree::depth_first_traverse(self, &disconnected, &source, None)
-                    .unwrap()
-                    .covers()
-            };
-            s_side_covers.union_with(&r);
+            // let mut s_side_covers = if s.hairs.intersects(&r) {
+            //     s.hairs.clone()
+            // } else {
+            //     SimpleTraversalTree::depth_first_traverse(self, &disconnected, &source, None)
+            //         .unwrap()
+            //         .covers()
+            // };
+            let cut = OrientedCut::from_underlying_coerce(r.hairs.clone(), self).unwrap();
+            r.add_all_hairs(self);
+            let mut s_side_covers = r.internal_and_hairs();
+            for i in bridges.included_iter() {
+                if s_side_covers.includes(&self.inv(i)) {
+                    s_side_covers.set(i.0, true);
+                }
+            }
 
             let t_side_covers = s_side_covers.complement(self);
 
@@ -736,7 +835,6 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
             // t_side.hairs.union_with(&t.hairs);
             //
 
-            let cut = OrientedCut::from_underlying_coerce(r, self).unwrap();
             cuts.push((s_side_covers, cut, t_side_covers));
         }
 
@@ -746,66 +844,50 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
     pub fn all_s_t_cuts_impl<S: SubGraph<Base = BitVec>>(
         &self,
         subgraph: &S,
-        s: &HedgeNode,
+        s_connectivity: usize,
+        s: HedgeNode, // will grow
         t: &HedgeNode,
-        regions: &mut AHashSet<BitVec>,
+        t_connectivity: usize,
+        regions: &mut AHashSet<HedgeNode>,
     ) {
         // println!("regions size:{}", regions.len());
-        let mut new_internals = vec![];
+        //
 
-        // ensure only actual hairs on the source
-        for h in s.hairs.included_iter() {
-            let invh = self.inv(h);
-
-            if h > invh && s.hairs.includes(&invh) {
-                new_internals.push(h);
-            }
-        }
-
-        let mut cleaned_s = s.clone();
-
-        for h in new_internals {
-            cleaned_s.hairs.set(h.0, false);
-            cleaned_s.hairs.set(self.inv(h).0, false);
-            cleaned_s.internal_graph.filter.set(h.0, true);
-            cleaned_s.internal_graph.filter.set(self.inv(h).0, true);
-        }
-
-        let hairy = cleaned_s.internal_graph.filter.union(&cleaned_s.hairs);
+        let hairy = s.internal_graph.filter.union(&s.hairs);
         let mut complement = hairy.complement(self);
         complement.intersect_with(subgraph.included());
-        // println!("new_node\n{}", self.dot(&new_node));
+        if !complement.includes(&t.hairs) {
+            return;
+        }
 
-        let count = self.count_connected_components(&complement);
-        // println!("{count} connected components:\n{}", self.dot(&complement));
+        let t_count = self.count_connected_components(&complement);
+        let s_count = self.count_connected_components(&hairy);
 
-        if count == 1 {
-            let mut region: BitVec = self.empty_subgraph();
-            for h in subgraph.included_iter() {
-                if cleaned_s.hairs.includes(&h) {
-                    region.set(h.0, true);
-                }
-            }
-
-            if !regions.insert(region) {
+        if t_count <= t_connectivity && s_count <= s_connectivity {
+            if regions.get(&s).is_some() {
                 return;
-            }
+            } else {
+                for h in s.hairs.included_iter() {
+                    let invh = self.inv(h);
 
-            for h in cleaned_s.hairs.included_iter() {
-                let invh = self.inv(h);
+                    if invh != h && !t.hairs.includes(&invh) && subgraph.includes(&invh) {
+                        let mut new_node = s.clone();
 
-                if invh != h && !t.hairs.includes(&invh) && subgraph.includes(&invh) {
-                    let mut new_node = cleaned_s.clone();
+                        new_node.hairs.union_with(&self.node_hairs(invh).hairs);
+                        new_node.hairs.intersect_with(subgraph.included());
 
-                    new_node.hairs.union_with(&self.node_hairs(invh).hairs);
-                    new_node.hairs.intersect_with(subgraph.included());
-
-                    new_node.hairs.set(h.0, false);
-                    new_node.hairs.set(invh.0, false);
-                    new_node.internal_graph.filter.set(h.0, true);
-                    new_node.internal_graph.filter.set(invh.0, true);
-                    self.all_s_t_cuts_impl(subgraph, &new_node, t, regions);
+                        new_node.fix(self);
+                        self.all_s_t_cuts_impl(
+                            subgraph,
+                            s_connectivity,
+                            new_node,
+                            t,
+                            t_connectivity,
+                            regions,
+                        );
+                    }
                 }
+                regions.insert(s);
             }
         }
     }
@@ -1391,10 +1473,10 @@ pub enum HedgeGraphError {
     InvolutionError(#[from] InvolutionError),
     #[error("Data length mismatch")]
     DataLengthMismatch,
-    #[error("From file error: {0}")]
-    FromFileError(#[from] GraphFromFileError),
-    #[error("Parse error: {0}")]
-    ParseError(#[from] PestError),
+    // #[error("From file error: {0}")]
+    // FromFileError(#[from] GraphFromFileError),
+    // #[error("Parse error: {0}")]
+    // ParseError(#[from] PestError),
 }
 
 pub mod hedgevec;

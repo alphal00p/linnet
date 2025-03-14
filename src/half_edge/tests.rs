@@ -633,7 +633,7 @@ fn double_triangle() {
     builder.add_edge(b, d, (), true);
 
     let graph: HedgeGraph<(), ()> = builder.build();
-    let cuts = graph.all_cuts(a, c);
+    let cuts = graph.all_cuts_from_ids(&[a], &[c]);
     assert_eq!(cuts.len(), 4);
     for cut in cuts {
         assert!(!(cut.1.is_empty()))
@@ -673,7 +673,7 @@ fn self_energy_cut() {
     let epem = epem_builder.build::<NodeStorageVec<()>>();
     println!("{}", epem.dot(&epem.full_filter()));
 
-    let cuts = epem.all_cuts(nodes[0], nodes[3]);
+    let cuts = epem.all_cuts_from_ids(&nodes[0..=0], &nodes[3..=3]);
 
     assert_eq!(cuts.len(), 3);
 }
@@ -710,15 +710,24 @@ fn double_pentagon_all_cuts() {
     //     )))
     // );
 
-    let cuts = graph.all_cuts(NodeIndex(10), NodeIndex(9));
+    let cuts = graph.all_cuts(
+        graph.hairs_from_id(NodeIndex(10)).clone(),
+        graph.hairs_from_id(NodeIndex(9)).clone(),
+    );
 
     assert_eq!(cuts.len(), 9);
 
-    let cuts = graph.all_cuts(NodeIndex(10), NodeIndex(13));
+    let cuts = graph.all_cuts(
+        graph.hairs_from_id(NodeIndex(10)).clone(),
+        graph.hairs_from_id(NodeIndex(13)).clone(),
+    );
 
     assert_eq!(cuts.len(), 14);
 
-    let cuts = graph.all_cuts(NodeIndex(1), NodeIndex(2));
+    let cuts = graph.all_cuts(
+        graph.hairs_from_id(NodeIndex(1)).clone(),
+        graph.hairs_from_id(NodeIndex(2)).clone(),
+    );
 
     assert_eq!(cuts.len(), 16);
 
@@ -728,4 +737,97 @@ fn double_pentagon_all_cuts() {
     // let cuts = graph.all_cuts(NodeIndex(10), NodeIndex(13));
 
     // println!("All cuts: {}", cuts.len());
+}
+
+#[test]
+fn box_all_cuts_multiple() {
+    let graph: HedgeGraph<crate::dot_parser::DotEdgeData, crate::dot_parser::DotVertexData> = dot!(
+        digraph G {
+         00->01
+         01->02
+         02->03
+         03->00
+         10->00
+         11->01
+         12->02
+         13->03
+        }
+    )
+    .unwrap();
+
+    // println!(
+    //     "{}",
+    //     graph.dot_impl(&graph.full_filter(), "", &|a| None, &|n| Some(format!(
+    //         "label=\"{}\"",
+    //         n.id
+    //     )))
+    // );
+
+    let cuts =
+        graph.all_cuts_from_ids(&[NodeIndex(4), NodeIndex(6)], &[NodeIndex(5), NodeIndex(7)]);
+
+    // for (l, c, r) in &cuts {
+    //     println!(
+    //         "//cut:\n{}",
+    //         graph.dot_impl(l, "start=2;\n", &|a| None, &|n| Some(format!(
+    //             "label=\"{}\"",
+    //             n.id
+    //         )))
+    //     );
+    // }
+    // let cuts = graph.all_cuts(NodeIndex(10), NodeIndex(13));
+
+    assert_eq!(11, cuts.len());
+}
+
+#[test]
+fn self_energy_box() {
+    let mut self_energy_builder = HedgeGraphBuilder::new();
+    let nodes = (0..8)
+        .map(|_| self_energy_builder.add_node(()))
+        .collect::<Vec<_>>();
+
+    self_energy_builder.add_edge(nodes[0], nodes[2], (), true);
+    self_energy_builder.add_edge(nodes[2], nodes[1], (), true);
+    self_energy_builder.add_edge(nodes[1], nodes[7], (), true);
+    self_energy_builder.add_edge(nodes[7], nodes[5], (), true);
+    self_energy_builder.add_edge(nodes[5], nodes[6], (), true);
+    self_energy_builder.add_edge(nodes[6], nodes[0], (), true);
+    self_energy_builder.add_edge(nodes[3], nodes[2], (), true);
+    self_energy_builder.add_edge(nodes[4], nodes[5], (), true);
+    self_energy_builder.add_edge(nodes[3], nodes[4], (), true);
+    self_energy_builder.add_edge(nodes[4], nodes[3], (), true);
+
+    self_energy_builder.add_external_edge(nodes[0], (), true, Flow::Sink);
+    self_energy_builder.add_external_edge(nodes[1], (), true, Flow::Sink);
+    self_energy_builder.add_external_edge(nodes[6], (), true, Flow::Source);
+    self_energy_builder.add_external_edge(nodes[7], (), true, Flow::Source);
+
+    let mut cut_to_look_for = vec![
+        EdgeIndex::from(5),
+        EdgeIndex::from(2),
+        EdgeIndex::from(8),
+        EdgeIndex::from(9),
+    ];
+
+    cut_to_look_for.sort();
+
+    let self_energy = self_energy_builder.build::<NodeStorageVec<()>>();
+
+    let cuts = self_energy.all_cuts_from_ids(&[nodes[0]], &[nodes[7]]);
+
+    for (left, cut, right) in cuts.iter() {
+        let mut edges_in_cut: Vec<_> = self_energy
+            .iter_edges(cut)
+            .map(|(_, edge, _)| edge)
+            .collect();
+
+        edges_in_cut.sort();
+
+        if cut_to_look_for == edges_in_cut {
+            insta::assert_ron_snapshot!(left);
+            insta::assert_ron_snapshot!(right);
+            insta::assert_ron_snapshot!(cut.reference);
+        }
+    }
 }

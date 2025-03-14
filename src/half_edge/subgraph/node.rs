@@ -199,11 +199,51 @@ impl HedgeNode {
         self.internal_graph.is_empty()
     }
 
+    /// Fixes the node by ensuring that all hairs are true hairs and not internal, and if they are move them to the internal graph. ! Also moves dangling edges to the internal graph.// not sure if this is kosher
+    pub fn fix<E, V, N: NodeStorageOps<NodeData = V>>(&mut self, graph: &HedgeGraph<E, V, N>) {
+        for i in self.hairs.included_iter() {
+            let invh = graph.inv(i);
+            if self.hairs.includes(&invh) {
+                self.internal_graph.filter.set(i.0, true);
+                self.internal_graph.filter.set(invh.0, true);
+            }
+        }
+        self.hairs.subtract_with(&self.internal_graph.filter);
+    }
+
+    /// adds all hairs possible
+    pub fn add_all_hairs<E, V, N: NodeStorageOps<NodeData = V>>(
+        &mut self,
+        graph: &HedgeGraph<E, V, N>,
+    ) {
+        let mut hairs = bitvec![usize, Lsb0; 0; graph.n_hedges()];
+
+        for i in self.internal_graph.included_iter() {
+            hairs |= &graph.node_hairs(i).hairs;
+        }
+
+        for i in self.hairs.included_iter() {
+            hairs |= &graph.node_hairs(i).hairs;
+        }
+
+        self.hairs = !(!hairs | &self.internal_graph.filter);
+    }
+
     pub fn valid<E, V, N: NodeStorageOps<NodeData = V>>(
         &self,
-        _graph: &HedgeGraph<E, V, N>,
+        graph: &HedgeGraph<E, V, N>,
     ) -> bool {
+        for i in self.hairs.included_iter() {
+            let invh = graph.inv(i);
+            if self.hairs.includes(&invh) {
+                return false;
+            }
+        }
         true
+    }
+
+    pub fn internal_and_hairs(&self) -> BitVec {
+        self.internal_graph.filter.union(&self.hairs)
     }
 
     pub fn is_subgraph(&self) -> bool {

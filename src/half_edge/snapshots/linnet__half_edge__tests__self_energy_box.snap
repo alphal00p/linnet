@@ -1,0 +1,15 @@
+---
+source: src/half_edge/tests.rs
+expression: left
+---
+BitSeq(
+  order: "bitvec::order::Lsb0",
+  head: BitIdx(
+    width: 64,
+    index: 0,
+  ),
+  bits: 24,
+  data: [
+    3749919,
+  ],
+)

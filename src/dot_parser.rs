@@ -2,13 +2,13 @@ use std::{collections::BTreeMap, path::Path};
 
 use ahash::AHashMap;
 use dot_parser::ast::{GraphFromFileError, PestError};
-use itertools::{Either, Itertools};
+use itertools::Either;
 
 use crate::half_edge::{
     builder::HedgeGraphBuilder,
     involution::{Flow, Orientation},
     nodestorage::NodeStorageOps,
-    HedgeGraph, HedgeGraphError, NodeIndex,
+    HedgeGraph, NodeIndex,
 };
 
 pub struct DotEdgeData {
@@ -218,7 +218,7 @@ pub mod test {
 
     #[test]
     fn test_macro() {
-        let graph: HedgeGraph<crate::dot_parser::DotEdgeData, crate::dot_parser::DotVertexData> =
+        let _: HedgeGraph<crate::dot_parser::DotEdgeData, crate::dot_parser::DotVertexData> =
             dot!( digraph {
                node [shape=circle,height=0.1,label=""];  overlap="scale"; layout="neato";
              0 -> 7[ dir=none color="red:blue;0.5",label="a"];
