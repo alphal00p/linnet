@@ -1,5 +1,6 @@
 use std::ops::ControlFlow;
 
+use bitvec::store::BitStore;
 use fixedbitset::FixedBitSet;
 use hi_sparse_bitset::BitSet;
 use iai_callgrind::{black_box, library_benchmark, library_benchmark_group, main};
@@ -91,7 +92,19 @@ fn bench_vob_intersection(pair: (vob::Vob, vob::Vob)) -> vob::Vob {
 
 // ----- Bitvec (from the bitvec crate) -----
 // Setup: create a bitvec::vec::BitVec with the given size and density.
-fn setup_bitvec((size, density): (usize, f64)) -> bitvec::vec::BitVec {
+fn setup_bitvec_large((size, density): (usize, f64)) -> bitvec::vec::BitVec {
+    setup_bitvec((size, density))
+}
+
+fn setup_bitvec_small((size, density): (usize, f64)) -> bitvec::vec::BitVec<u8> {
+    setup_bitvec((size, density))
+}
+
+// fn setup_vers_bitvec((size, density): (usize, f64)) -> vers-vecs::bitvec::BitVec {}
+
+// ----- Bitvec (from the bitvec crate) -----
+// Setup: create a bitvec::vec::BitVec with the given size and density.
+fn setup_bitvec<T: BitStore>((size, density): (usize, f64)) -> bitvec::vec::BitVec<T> {
     let mut rng = StdRng::seed_from_u64(42);
     let mut bits = bitvec::vec::BitVec::repeat(false, size);
     for i in 0..size {
@@ -102,7 +115,9 @@ fn setup_bitvec((size, density): (usize, f64)) -> bitvec::vec::BitVec {
     bits
 }
 
-fn setup_bitvec_pair((size, density): (usize, f64)) -> (bitvec::vec::BitVec, bitvec::vec::BitVec) {
+fn setup_bitvec_pair<T: BitStore>(
+    (size, density): (usize, f64),
+) -> (bitvec::vec::BitVec<T>, bitvec::vec::BitVec<T>) {
     let (mut rng1, mut rng2) = new_rng_pair(42, 43);
     let mut a = bitvec::vec::BitVec::repeat(false, size);
     let mut b = bitvec::vec::BitVec::repeat(false, size);
@@ -117,12 +132,24 @@ fn setup_bitvec_pair((size, density): (usize, f64)) -> (bitvec::vec::BitVec, bit
     (a, b)
 }
 
+fn setup_bitvec_pair_u64(
+    (size, density): (usize, f64),
+) -> (bitvec::vec::BitVec<u64>, bitvec::vec::BitVec<u64>) {
+    setup_bitvec_pair((size, density))
+}
+
+fn setup_bitvec_pair_u8(
+    (size, density): (usize, f64),
+) -> (bitvec::vec::BitVec<u8>, bitvec::vec::BitVec<u8>) {
+    setup_bitvec_pair((size, density))
+}
+
 #[library_benchmark]
-#[bench::with_setup_small(args = [(46, 0.1)], setup = setup_bitvec, teardown = print_true_vals)]
-#[bench::with_setup(args = [(100000, 0.1)], setup = setup_bitvec, teardown = print_true_vals)]
-#[bench::with_setup_small_dense(args = [(46, 0.9)], setup = setup_bitvec, teardown = print_true_vals)]
-#[bench::with_setup_dense(args = [(100000, 0.9)], setup = setup_bitvec, teardown = print_true_vals)]
-fn bench_bitvec(bits: bitvec::vec::BitVec) -> usize {
+#[bench::with_setup_small(args = [(46, 0.1)], setup = setup_bitvec_small, teardown = print_true_vals)]
+#[bench::with_setup(args = [(100000, 0.1)], setup = setup_bitvec_large, teardown = print_true_vals)]
+#[bench::with_setup_small_dense(args = [(46, 0.9)], setup = setup_bitvec_small, teardown = print_true_vals)]
+#[bench::with_setup_dense(args = [(100000, 0.9)], setup = setup_bitvec_large, teardown = print_true_vals)]
+fn bench_bitvec<T: BitStore>(bits: bitvec::vec::BitVec<T>) -> usize {
     let count = bits.iter_ones().count();
     black_box(count);
     count
@@ -130,11 +157,13 @@ fn bench_bitvec(bits: bitvec::vec::BitVec) -> usize {
 
 #[library_benchmark]
 // Bitvec union benchmark.
-#[bench::with_setup_small(args = [(46, 0.1)], setup = setup_bitvec_pair)]
-#[bench::with_setup(args = [(100000, 0.1)], setup = setup_bitvec_pair)]
-#[bench::with_setup_small_dense(args = [(46, 0.9)], setup = setup_bitvec_pair)]
-#[bench::with_setup_dense(args = [(100000, 0.9)], setup = setup_bitvec_pair)]
-fn bench_bitvec_union(pair: (bitvec::vec::BitVec, bitvec::vec::BitVec)) -> bitvec::vec::BitVec {
+#[bench::with_setup_small(args = [(46, 0.1)], setup = setup_bitvec_pair_u64)]
+#[bench::with_setup(args = [(100000, 0.1)], setup = setup_bitvec_pair_u64)]
+#[bench::with_setup_small_dense(args = [(46, 0.9)], setup = setup_bitvec_pair_u64)]
+#[bench::with_setup_dense(args = [(100000, 0.9)], setup = setup_bitvec_pair_u64)]
+fn bench_bitvec_union<T: BitStore>(
+    pair: (bitvec::vec::BitVec<T>, bitvec::vec::BitVec<T>),
+) -> bitvec::vec::BitVec<T> {
     let (mut a, b) = pair;
     a &= &b;
     // let count = inter.iter_ones().count();
@@ -144,13 +173,13 @@ fn bench_bitvec_union(pair: (bitvec::vec::BitVec, bitvec::vec::BitVec)) -> bitve
 
 #[library_benchmark]
 // Bitvec intersection benchmark.
-#[bench::with_setup_small(args = [(46, 0.1)], setup = setup_bitvec_pair)]
-#[bench::with_setup(args = [(100000, 0.1)], setup = setup_bitvec_pair)]
-#[bench::with_setup_small_dense(args = [(46, 0.9)], setup = setup_bitvec_pair)]
-#[bench::with_setup_dense(args = [(100000, 0.9)], setup = setup_bitvec_pair)]
-fn bench_bitvec_intersection(
-    pair: (bitvec::vec::BitVec, bitvec::vec::BitVec),
-) -> bitvec::vec::BitVec {
+#[bench::with_setup_small(args = [(46, 0.1)], setup = setup_bitvec_pair_u64)]
+#[bench::with_setup(args = [(100000, 0.1)], setup = setup_bitvec_pair_u64)]
+#[bench::with_setup_small_dense(args = [(46, 0.9)], setup = setup_bitvec_pair_u64)]
+#[bench::with_setup_dense(args = [(100000, 0.9)], setup = setup_bitvec_pair_u64)]
+fn bench_bitvec_intersection<T: BitStore>(
+    pair: (bitvec::vec::BitVec<T>, bitvec::vec::BitVec<T>),
+) -> bitvec::vec::BitVec<T> {
     let (mut a, b) = pair;
     a &= &b;
     // let count = inter.iter_ones().count();
@@ -572,6 +601,6 @@ library_benchmark_group!(
 // Run the benchmark harness.
 main!(
     library_benchmark_groups = bitvec_iter_group,
-    // bitvec_union_group,
-    // bitvec_intersection_group
+    bitvec_union_group,
+    bitvec_intersection_group
 );

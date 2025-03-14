@@ -634,6 +634,7 @@ dependencies = [
  "smallbitvec",
  "symbolica",
  "thiserror 2.0.12",
+ "vers-vecs",
  "vob",
 ]
 
@@ -1264,6 +1265,12 @@ name = "unicode-ident"
 version = "1.0.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5a5f39404a5da50712a4c1eecf25e90dd62b613502b7e925fd4e4d19b5c96512"
+
+[[package]]
+name = "vers-vecs"
+version = "1.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c980c5ad910b15edff6cac29ae622108b0057939b7f43f1a65217de10933da00"
 
 [[package]]
 name = "version_check"
