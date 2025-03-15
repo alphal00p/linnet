@@ -17,9 +17,9 @@ lto = true
 [[bench]]
 name = "stcut"
 harness = false
-[[bench]]
-name = "iterbv"
-harness = false
+# [[bench]]
+# name = "iterbv"
+# harness = false
 
 
 
@@ -43,16 +43,8 @@ symbolica = { version = "0.15.1", optional = true }
 thiserror = "2.0.11"
 derive_more = "0.99.17"
 proptest = "1.6.0"
-vob = "3.0.3"
-smallbitvec = "2.6.0"
-bit-vec = "0.8.0"
-roaring = { version = "0.10.10" }
 # hibit_tree = "0.1.0-alpha.3"
-hi_sparse_bitset = { version = "0.6.1", features = ["simd"] }
-hibitset = "0.6.4"
-fixedbitset = "0.5.7"
 dot-parser = "0.3.3"
-vers-vecs = { version = "1.6.1", features = ["simd"] }
 
 [features]
 symbolica = ["dep:symbolica"]
@@ -60,4 +52,12 @@ drawing = ["dep:cgmath", "layout"]
 layout = ["dep:argmin"]
 
 [dev-dependencies]
+# vers-vecs = { version = "1.6.1", features = ["simd"] }
+# vob = "3.0.3"
+# smallbitvec = "2.6.0"
+# bit-vec = "0.8.0"
+# roaring = { version = "0.10.10" }
+# hi_sparse_bitset = { version = "0.6.1", features = ["simd"] }
+# hibitset = "0.6.4"
+# fixedbitset = "0.5.7"
 iai-callgrind = "0.14.0"

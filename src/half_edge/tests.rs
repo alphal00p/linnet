@@ -31,7 +31,7 @@ fn threeloop() {
     }
 
     let (cycles, tree) = graph.cycle_basis();
-    assert_eq!(tree.covers(), graph.full_filter());
+    assert_eq!(tree.covers(&graph.full_filter()), graph.full_filter());
 
     assert_eq!(3, cycles.len());
 
@@ -830,4 +830,26 @@ fn self_energy_box() {
             insta::assert_ron_snapshot!(cut.reference);
         }
     }
+}
+
+#[test]
+fn tadpoles() {
+    let graph: HedgeGraph<crate::dot_parser::DotEdgeData, crate::dot_parser::DotVertexData> = dot!(
+        digraph{
+            a->b->c
+            b->aa->d
+            aa->ab
+            ab->ab
+
+            e->d->f
+        }
+    )
+    .unwrap();
+
+    let tads = graph.tadpoles(&[NodeIndex(0), NodeIndex(4), NodeIndex(6), NodeIndex(7)]);
+
+    for t in tads {
+        println!("//Tadpole: \n{}", graph.dot(&t));
+    }
+    println!("Graph: {}", graph.base_dot());
 }

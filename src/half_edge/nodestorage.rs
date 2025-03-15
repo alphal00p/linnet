@@ -9,13 +9,18 @@ use crate::tree::{
 use super::{
     builder::HedgeNodeBuilder,
     involution::{EdgeIndex, Hedge, Involution},
-    subgraph::{HedgeNode, Inclusion, SubGraph, SubGraphOps},
+    subgraph::{HedgeNode, Inclusion, InternalSubGraph, SubGraph, SubGraphOps},
     HedgeGraph, HedgeGraphError, NodeIndex,
 };
 
 pub trait NodeStorageOps: NodeStorage {
     type OpStorage<N>: NodeStorageOps<NodeData = N>;
     fn extend(self, other: Self) -> Self;
+
+    /// Identifies nodes, essentially turning them into a single node
+    /// Invalidates all previous NodeIndex values
+    fn identify_nodes(&mut self, nodes: &[NodeIndex], node_data_merge: Self::NodeData)
+        -> NodeIndex;
 
     fn to_forest<U>(
         &self,
@@ -89,6 +94,66 @@ impl<N> NodeStorageOps for NodeStorageVec<N> {
 
     fn node_len(&self) -> usize {
         self.nodes.len()
+    }
+
+    fn identify_nodes(
+        &mut self,
+        nodes: &[NodeIndex],
+        node_data_merge: Self::NodeData,
+    ) -> NodeIndex {
+        let mut removed = BitVec::empty(self.nodes.len());
+        let mut full_nodes = BitVec::empty(self.hedge_len());
+
+        let empty_internal = InternalSubGraph {
+            filter: BitVec::empty(self.hedge_len()),
+            loopcount: None,
+        };
+        for n in nodes {
+            removed.set(n.0, true);
+            full_nodes.union_with(&self.nodes[n.0].hairs);
+        }
+
+        let full_node = HedgeNode {
+            hairs: full_nodes,
+            internal_graph: empty_internal,
+        };
+
+        let replacement = NodeIndex(removed.iter_ones().next().unwrap());
+        println!("{}", replacement);
+        for r in removed.iter_ones().skip(1).rev() {
+            println!("Processing node {}", r);
+            let last_index = self.nodes.len() - 1;
+
+            // Before doing anything, update any hedge pointers that point to the node being removed.
+            for hedge in self.hedge_data.iter_mut() {
+                if *hedge == NodeIndex(r) {
+                    *hedge = replacement;
+                }
+            }
+
+            if r != last_index {
+                // Swap the target with the last element in both vectors.
+                self.nodes.swap(r, last_index);
+                self.node_data.swap(r, last_index);
+
+                // After swapping, update any hedge pointer that pointed to the moved element.
+                // It used to be at last_index, now it is at r.
+                for hedge in self.hedge_data.iter_mut() {
+                    if *hedge == NodeIndex(last_index) {
+                        *hedge = NodeIndex(r);
+                    }
+                }
+            }
+            // Remove the (now last) element.
+
+            self.nodes.pop();
+            self.node_data.pop();
+        }
+
+        self.nodes[replacement.0] = full_node;
+        self.node_data[replacement.0] = node_data_merge;
+
+        replacement
     }
 
     fn to_forest<U>(

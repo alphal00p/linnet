@@ -255,7 +255,7 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
         if let Some(start) = subgraph.included_iter().next() {
             SimpleTraversalTree::depth_first_traverse(self, subgraph, &self.node_id(start), None)
                 .unwrap()
-                .covers()
+                .covers(subgraph)
                 .nedges(self)
                 == n_edges
         } else {
@@ -572,6 +572,10 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
         nodes.into_iter().collect()
     }
 
+    pub fn identify_nodes(&mut self, nodes: &[NodeIndex], node_data_merge: V) -> NodeIndex {
+        self.node_store.identify_nodes(nodes, node_data_merge)
+    }
+
     /// Collect all edges in the subgraph
     /// (This is without double counting, i.e. if two half-edges are part of the same edge, only one `EdgeIndex` will be collected)
     pub fn edges<S: SubGraph>(&self, subgraph: &S) -> Vec<EdgeIndex> {
@@ -735,6 +739,38 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
         let source = self.combine_to_single_hedgenode(source);
         let target = self.combine_to_single_hedgenode(target);
         self.all_cuts(source, target)
+    }
+
+    pub fn tadpoles(&self, externals: &[NodeIndex]) -> Vec<BitVec> {
+        let mut identified: HedgeGraph<(), (), N::OpStorage<()>> =
+            self.map_data_ref(&|_, _, _| (), &|_, _, d| d.map(|_| ()));
+
+        let n = identified.identify_nodes(externals, ());
+        let hairs = identified
+            .hairs_from_id(n)
+            .hairs
+            .included_iter()
+            .next()
+            .unwrap();
+
+        let non_bridges = identified.non_bridges();
+        identified
+            .connected_components(&non_bridges)
+            .into_iter()
+            .filter_map(|mut a| {
+                if !a.includes(&hairs) {
+                    let full = a.covers(self);
+
+                    for i in full.included_iter() {
+                        a.set(i.0, true);
+                        a.set(self.inv(i).0, true);
+                    }
+                    Some(a)
+                } else {
+                    None
+                }
+            })
+            .collect()
     }
 
     pub fn all_cuts(
@@ -983,7 +1019,7 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
 
         for c in cuts.included_iter() {
             if c > self.inv(c) && subgraph.includes(&self.inv(c)) {
-                cycle_basis.push(tree.cycle(c, self).unwrap());
+                cycle_basis.push(tree.get_cycle(c, self).unwrap());
             }
         }
 
@@ -1106,7 +1142,7 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
     }
 
     pub fn connected_components<S: SubGraph>(&self, subgraph: &S) -> Vec<BitVec> {
-        let mut visited_edges = self.empty_subgraph::<BitVec>();
+        let mut visited_edges: BitVec = self.empty_subgraph();
 
         let mut components = vec![];
 
@@ -1120,7 +1156,7 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
                 let reachable_edges =
                     SimpleTraversalTree::depth_first_traverse(self, subgraph, &root_node, None)
                         .unwrap()
-                        .covers();
+                        .covers(subgraph);
 
                 visited_edges.union_with(&reachable_edges);
 

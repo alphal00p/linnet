@@ -83,14 +83,14 @@ pub struct SimpleTraversalTree<P: ForestNodeStore<NodeData = ()> = ParentPointer
 }
 
 impl<P: ForestNodeStore<NodeData = ()>> SimpleTraversalTree<P> {
-    pub fn covers(&self) -> BitVec {
+    pub fn covers<S: SubGraph>(&self, subgraph: &S) -> BitVec {
         // println!("calculating covers..");
         let mut covers = BitVec::empty(self.tree_subgraph.len());
 
         // self.tree_subgraph.covers(graph)
 
         for i in 0..self.tree_subgraph.len() {
-            if self.node_data(self.node_id(Hedge(i))).includes() {
+            if self.node_data(self.node_id(Hedge(i))).includes() && subgraph.includes(&Hedge(i)) {
                 covers.set(i, true);
             }
         }
@@ -116,7 +116,7 @@ impl<P: ForestNodeStore<NodeData = ()>> SimpleTraversalTree<P> {
         unsafe { InternalSubGraph::new_unchecked(tree) }
     }
 
-    pub fn cycle<I: AsRef<Involution>>(&self, cut: Hedge, inv: &I) -> Option<Cycle> {
+    pub fn get_cycle<I: AsRef<Involution>>(&self, cut: Hedge, inv: &I) -> Option<Cycle> {
         if self.internal(cut, inv) {
             return None;
         }

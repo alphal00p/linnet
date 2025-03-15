@@ -1,5 +1,6 @@
 use crate::{
     half_edge::{
+        involution::Hedge,
         nodestorage::{NodeStorage, NodeStorageOps, NodeStorageVec},
         subgraph::HedgeNode,
         NodeIndex,
@@ -46,10 +47,37 @@ impl<V> NodeStorage for UnionFindNodeStore<V> {
     type NodeData = V;
 }
 
+impl<V> UnionFindNodeStore<V> {
+    fn root_hedge(&self, node: NodeIndex) -> Hedge {
+        self.nodes[&SetIndex(node.0)].root_pointer
+    }
+}
+
 impl<V> NodeStorageOps for UnionFindNodeStore<V> {
     type OpStorage<A> = Self::Storage<A>;
     fn hedge_len(&self) -> usize {
         self.nodes.n_elements()
+    }
+
+    fn identify_nodes(
+        &mut self,
+        nodes: &[NodeIndex],
+        node_data_merge: Self::NodeData,
+    ) -> NodeIndex {
+        let hedges = nodes
+            .iter()
+            .map(|n| self.root_hedge(*n))
+            .collect::<Vec<_>>();
+
+        let n_init_root = hedges[0];
+        for n in hedges.iter().skip(1) {
+            self.nodes.union(n_init_root, *n, |a, _| a);
+        }
+        self.nodes.replace_set_data_of(n_init_root, |mut a| {
+            a.data = node_data_merge;
+            a
+        });
+        NodeIndex(self.nodes.find_data_index(n_init_root).0)
     }
 
     fn to_forest<U>(

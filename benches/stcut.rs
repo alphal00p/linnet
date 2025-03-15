@@ -114,7 +114,11 @@ fn k33_for_tree_sym() -> (Graph<(), ()>, usize) {
 fn bench_stcut(
     graph_st: (HedgeGraph<(), ()>, [NodeIndex; 2]),
 ) -> Vec<(BitVec, linnet::half_edge::subgraph::OrientedCut, BitVec)> {
-    black_box(graph_st.0.all_cuts(graph_st.1[0], graph_st.1[1]))
+    black_box(
+        graph_st
+            .0
+            .all_cuts_from_ids(&[graph_st.1[0]], &[graph_st.1[1]]),
+    )
 }
 
 #[library_benchmark]
