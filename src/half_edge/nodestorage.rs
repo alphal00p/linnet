@@ -119,9 +119,8 @@ impl<N> NodeStorageOps for NodeStorageVec<N> {
         };
 
         let replacement = NodeIndex(removed.iter_ones().next().unwrap());
-        println!("{}", replacement);
+
         for r in removed.iter_ones().skip(1).rev() {
-            println!("Processing node {}", r);
             let last_index = self.nodes.len() - 1;
 
             // Before doing anything, update any hedge pointers that point to the node being removed.

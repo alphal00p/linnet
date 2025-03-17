@@ -284,7 +284,6 @@ impl SimpleTraversalTree {
         init.forest[RootId(root_node.0)] = TTRoot::Root;
 
         while let Some(hedge) = stack.pop() {
-            // println!("Processing hedge: {:?}", hedge);
             // if the hedge is not external get the neighbors of the paired hedge
             if let Some(cn) = graph.involved_node_hairs(hedge) {
                 let connected = graph.inv(hedge);
