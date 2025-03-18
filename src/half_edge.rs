@@ -1,15 +1,16 @@
 use core::panic;
+use std::cmp::Ordering;
 use std::fmt::Display;
 use std::hash::Hash;
 use std::num::TryFromIntError;
-use std::ops::{Index, IndexMut, Neg};
+use std::ops::{Index, IndexMut};
 
 use ahash::{AHashMap, AHashSet};
 use bitvec::prelude::*;
 use bitvec::{slice::IterOnes, vec::BitVec};
 use builder::HedgeGraphBuilder;
 use derive_more::{From, Into};
-use hedgevec::{HedgeVec, SmartHedgeVec};
+use hedgevec::{Accessors, HedgeVec, SmartHedgeVec};
 use indexmap::IndexSet;
 use involution::{
     EdgeData, EdgeIndex, Flow, Hedge, HedgePair, Involution, InvolutionError, InvolutiveMapping,
@@ -319,8 +320,8 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
     pub fn external_filter(&self) -> BitVec {
         let mut filter = bitvec![usize, Lsb0; 0; self.n_hedges()];
 
-        for (i, edge) in self.edge_store.involution.inv.iter().enumerate() {
-            if edge.is_identity() {
+        for (i, edge) in self.iter_all_edges().enumerate() {
+            if edge.0.is_unpaired() {
                 filter.set(i, true);
             }
         }
@@ -480,6 +481,28 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
     }
 }
 
+pub trait EdgeAccessors<Index> {
+    fn orientation(&self, index: Index) -> Orientation;
+}
+
+impl<E, V, N: NodeStorageOps<NodeData = V>> EdgeAccessors<Hedge> for HedgeGraph<E, V, N> {
+    fn orientation(&self, index: Hedge) -> Orientation {
+        self.edge_store.orientation(index)
+    }
+}
+
+impl<E, V, N: NodeStorageOps<NodeData = V>> EdgeAccessors<HedgePair> for HedgeGraph<E, V, N> {
+    fn orientation(&self, index: HedgePair) -> Orientation {
+        self.edge_store.orientation(index)
+    }
+}
+
+impl<E, V, N: NodeStorageOps<NodeData = V>> EdgeAccessors<EdgeIndex> for HedgeGraph<E, V, N> {
+    fn orientation(&self, index: EdgeIndex) -> Orientation {
+        self.edge_store.orientation(index)
+    }
+}
+
 // Accessors
 impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
     /// including pos
@@ -503,33 +526,17 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
         EdgeData::new(&self[self[&hedge]], orientation)
     }
 
-    pub fn orientation(&self, hedge_pair: HedgePair) -> Orientation {
-        self.edge_store.orientation(hedge_pair.any_hedge())
-    }
-
     /// Gives the underlying orientation of this half-edge.
     pub fn flow(&self, hedge: Hedge) -> Flow {
         self.edge_store.flow(hedge)
     }
 
     pub fn superficial_hedge_orientation(&self, hedge: Hedge) -> Option<Flow> {
-        match self.edge_store.involution.hedge_data(hedge) {
-            InvolutiveMapping::Identity { data, underlying } => {
-                data.orientation.relative_to(*underlying).try_into().ok()
-            }
-            InvolutiveMapping::Sink { source_idx } => self
-                .superficial_hedge_orientation(*source_idx)
-                .map(Neg::neg),
-            InvolutiveMapping::Source { data, .. } => data.orientation.try_into().ok(),
-        }
+        self.edge_store.superficial_hedge_orientation(hedge)
     }
 
     pub fn underlying_hedge_orientation(&self, hedge: Hedge) -> Flow {
-        match self.edge_store.involution.hedge_data(hedge) {
-            InvolutiveMapping::Identity { underlying, .. } => *underlying,
-            InvolutiveMapping::Sink { .. } => Flow::Sink,
-            InvolutiveMapping::Source { .. } => Flow::Source,
-        }
+        self.edge_store.underlying_hedge_orientation(hedge)
     }
 
     pub fn node_hairs(&self, hedge: Hedge) -> &HedgeNode {
@@ -597,6 +604,10 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
         }
     }
 
+    pub fn just_structure(&self) -> HedgeGraph<(), (), N::OpStorage<()>> {
+        self.map_data_ref(&|_, _, _| (), &|_, _, d| d.map(|_| ()))
+    }
+
     pub fn map_nodes_ref<V2>(
         &self,
         f: &impl Fn(&Self, &V, &HedgeNode) -> V2,
@@ -605,12 +616,12 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
     }
     pub fn map<E2, V2>(
         self,
-        f: impl FnMut(&Involution<EdgeIndex>, &HedgeNode, NodeIndex, V) -> V2,
-        g: impl FnMut(&Involution<EdgeIndex>, &N, HedgePair, EdgeData<E>) -> EdgeData<E2>,
+        f: impl FnMut(&Involution, &HedgeNode, NodeIndex, V) -> V2,
+        g: impl FnMut(&Involution, &N, HedgePair, EdgeData<E>) -> EdgeData<E2>,
     ) -> HedgeGraph<E2, V2, N::OpStorage<V2>> {
         let edge_store = self.edge_store.map_data(&self.node_store, g);
         HedgeGraph {
-            node_store: self.node_store.map_data_graph(&edge_store.involution, f),
+            node_store: self.node_store.map_data_graph(edge_store.as_ref(), f),
             edge_store,
         }
     }
@@ -934,7 +945,7 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
         let n_nodes = self.number_of_nodes_in_subgraph(subgraph);
         // println!("n_nodes: {}", n_nodes);
         let n_components = self.count_connected_components(subgraph);
-        // println!("n_components: {}", n_components);
+        println!("n_components: {}", n_components);
 
         n_hedges - n_nodes + n_components
     }
@@ -998,7 +1009,7 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
         let tree = SimpleTraversalTree::depth_first_traverse(self, subgraph, start, None)?;
 
         let cuts = subgraph.subtract(&tree.tree_subgraph(self));
-        Ok(self.edge_store.involution.n_internals(&cuts))
+        Ok(self.edge_store.n_internals(&cuts))
     }
 
     pub fn paton_cycle_basis<S: SubGraph<Base = BitVec>>(
@@ -1163,52 +1174,116 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
         components
     }
     pub fn align_superficial_to_underlying(&mut self) {
-        for i in self.edge_store.involution.iter_idx() {
-            let orientation = self.edge_store.involution.edge_data(i).orientation;
-            if let Orientation::Reversed = orientation {
-                self.edge_store.involution.flip_underlying(i);
+        self.edge_store.align_superficial_to_underlying();
+    }
+
+    /// aligns the underlying orientation of the graph to the tree, such that all tree edges are oriented towards the root, and all others point towards the leaves
+    ///
+    /// Relies on the tree being tremaux (i.e. the tree-order is total)
+    /// This is the case for depth-first traversal.
+    pub fn align_underlying_to_tree<P: ForestNodeStore<NodeData = ()>>(
+        &mut self,
+        tree: &SimpleTraversalTree<P>,
+    ) {
+        for (h, tt, i) in tree.iter_hedges() {
+            // println!("hedge: {}, tt: {:?}, i: {:?}\n", h, tt, i);
+            match tt {
+                tree::TTRoot::Root => {
+                    if i.is_some() {
+                        self.edge_store.set_flow(h, Flow::Sink);
+                    } else {
+                        self.edge_store.set_flow(h, Flow::Source);
+                    }
+                }
+                tree::TTRoot::Child => {
+                    if let Some(root_pointer) = i {
+                        if root_pointer == h {
+                            self.edge_store.set_flow(h, Flow::Source);
+                        } else {
+                            self.edge_store.set_flow(h, Flow::Sink);
+                        }
+                    } else {
+                        let current_node_id = tree.node_id(h);
+                        let involved_node_id = tree.node_id(self.inv(h));
+
+                        let order =
+                            tree.tree_order(current_node_id, involved_node_id, &self.edge_store);
+                        match order {
+                            Some(Ordering::Equal) => {
+                                // self.edge_store.set_flow(h);
+                            }
+                            Some(Ordering::Less) => {
+                                //the path to the root from the current node, passes through the involved node
+                                self.edge_store.set_flow(h, Flow::Sink);
+                            }
+                            Some(Ordering::Greater) => {
+                                self.edge_store.set_flow(h, Flow::Source);
+                            }
+                            None => {}
+                        }
+                    }
+                }
+                tree::TTRoot::None => {}
             }
         }
     }
 
-    // pub fn align_to_tree_underlying(&mut self, tree: &TraversalTree) {
-    //     for (i, p) in tree.parent_iter() {
-    //         match p {
-    //             Parent::Root => {
-    //                 if tree.tree.includes(&i) {
-    //                     self.edge_store.involution.set_as_sink(i)
-    //                 } else {
-    //                     self.edge_store.involution.set_as_source(i)
-    //                 }
-    //             }
-    //             Parent::Hedge {
-    //                 hedge_to_root,
-    //                 traversal_order,
-    //             } => {
-    //                 if tree.tree.includes(&i) {
-    //                     if *hedge_to_root == i {
-    //                         self.edge_store.involution.set_as_source(i)
-    //                     } else {
-    //                         self.edge_store.involution.set_as_sink(i)
-    //                     }
-    //                 } else {
-    //                     let tord = traversal_order;
-    //                     if let Parent::Hedge {
-    //                         traversal_order, ..
-    //                     } = tree.connected_parent(i)
-    //                     {
-    //                         if tord > traversal_order {
-    //                             self.edge_store.involution.set_as_sink(i);
-    //                         }
-    //                     }
-    //                 }
-    //             }
-    //             Parent::Unset => {
-    //                 println!("unset{i}");
-    //             }
-    //         }
-    //     }
-    // }
+    /// aligns the superficial orientation of the graph to the tree,
+    ///
+    /// such that all tree edges are oriented towards the root, and all others are unoriented.
+    pub fn align_superficial_to_tree<P: ForestNodeStore<NodeData = ()>>(
+        &mut self,
+        tree: &SimpleTraversalTree<P>,
+    ) {
+        for (h, tt, i) in tree.iter_hedges() {
+            match tt {
+                tree::TTRoot::Root => {
+                    if i.is_some() {
+                        let flow = self.edge_store.flow(h);
+                        match flow {
+                            Flow::Source => {
+                                self.edge_store.set_orientation(h, Orientation::Reversed);
+                            }
+                            Flow::Sink => {
+                                self.edge_store.set_orientation(h, Orientation::Default);
+                            }
+                        }
+                    } else {
+                        self.edge_store.set_orientation(h, Orientation::Undirected);
+                    }
+                }
+                tree::TTRoot::Child => {
+                    if let Some(root_pointer) = i {
+                        let flow = self.edge_store.flow(h);
+                        if root_pointer == h {
+                            match flow {
+                                Flow::Source => {
+                                    self.edge_store.set_orientation(h, Orientation::Default);
+                                }
+                                Flow::Sink => {
+                                    self.edge_store.set_orientation(h, Orientation::Reversed);
+                                }
+                            }
+                        } else {
+                            match flow {
+                                Flow::Source => {
+                                    self.edge_store.set_orientation(h, Orientation::Reversed);
+                                }
+                                Flow::Sink => {
+                                    self.edge_store.set_orientation(h, Orientation::Default);
+                                }
+                            }
+
+                            // self.edge_store.involution.set_as_sink(h);
+                        }
+                    } else {
+                        self.edge_store.set_orientation(h, Orientation::Undirected);
+                    }
+                }
+                tree::TTRoot::None => {}
+            }
+        }
+    }
 
     // pub fn align_to_tree_superficial(&mut self, tree: &TraversalTree) {
     //     for (i, p) in tree.parent_iter() {
@@ -1262,39 +1337,18 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
         &'a self,
         subgraph: &'a S,
     ) -> impl Iterator<Item = (HedgePair, EdgeIndex, EdgeData<&'a E>)> + 'a {
-        subgraph.included_iter().flat_map(|i| {
-            self.edge_store.involution.smart_data(i, subgraph).map(|d| {
-                (
-                    HedgePair::from_half_edge_with_subgraph(
-                        i,
-                        &self.edge_store.involution,
-                        subgraph,
-                    )
-                    .unwrap(),
-                    d.data,
-                    d.as_ref().map(|&a| &self[a]),
-                )
-            })
-        })
+        self.edge_store.iter_edges(subgraph)
     }
 
     pub fn iter_all_edges(&self) -> impl Iterator<Item = (HedgePair, EdgeIndex, EdgeData<&E>)> {
-        self.edge_store
-            .involution
-            .iter_edge_data()
-            .map(move |(i, d)| (self.hedge_pair(i), d.data, d.as_ref().map(|&a| &self[a])))
+        self.edge_store.iter_all_edges()
     }
 
     pub fn iter_internal_edge_data<'a, S: SubGraph>(
         &'a self,
         subgraph: &'a S,
     ) -> impl Iterator<Item = EdgeData<&'a E>> + 'a {
-        subgraph.included_iter().flat_map(|i| {
-            self.edge_store
-                .involution
-                .smart_data(i, subgraph)
-                .map(|d| d.as_ref().map(|&a| &self[a]))
-        })
+        self.edge_store.iter_internal_edge_data(subgraph)
     }
 
     pub fn iter_egde_node<'a, S: SubGraph>(
@@ -1450,6 +1504,8 @@ use subgraph::{Cycle, HedgeNode, Inclusion, InternalSubGraph, OrientedCut, SubGr
 use thiserror::Error;
 use tree::SimpleTraversalTree;
 
+use crate::tree::ForestNodeStore;
+
 #[derive(Error, Debug)]
 pub enum HedgeError {
     #[error("Invalid start node")]
@@ -1483,13 +1539,11 @@ where
 
     fn next(&mut self) -> Option<Self::Item> {
         let i = self.included_iter.next()?;
-        let orientation = self.graph.edge_store.involution.orientation(i);
+        let orientation = self.graph.edge_store.orientation(i);
         let data = &self.graph[self.graph[&i]];
-        if let Some(e) = HedgePair::from_source_with_subgraph(
-            i,
-            &self.graph.edge_store.involution,
-            self.subgraph,
-        ) {
+        if let Some(e) =
+            HedgePair::from_source_with_subgraph(i, &self.graph.edge_store, self.subgraph)
+        {
             Some((e, EdgeData::new(data, orientation)))
         } else {
             self.next()

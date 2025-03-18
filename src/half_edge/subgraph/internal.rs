@@ -4,7 +4,8 @@ use std::hash::Hash;
 use std::ops::Index;
 
 use crate::half_edge::{
-    tree::SimpleTraversalTree, Hedge, HedgeGraph, InvolutiveMapping, NodeStorageOps,
+    hedgevec::Accessors, involution::HedgePair, tree::SimpleTraversalTree, Hedge, HedgeGraph,
+    NodeStorageOps,
 };
 
 use super::{node::HedgeNode, Cycle, Inclusion, SubGraph, SubGraphHedgeIter, SubGraphOps};
@@ -191,7 +192,7 @@ impl InternalSubGraph {
         hedge: Hedge,
         graph: &HedgeGraph<E, V, N>,
     ) {
-        if !graph.edge_store.involution.is_identity(hedge) {
+        if !graph.edge_store.pair(hedge).is_unpaired() {
             self.filter.set(hedge.0, true);
             self.filter.set(graph.inv(hedge).0, true);
         }
@@ -202,7 +203,7 @@ impl InternalSubGraph {
         hedge: Hedge,
         graph: &HedgeGraph<E, V, N>,
     ) {
-        if !graph.edge_store.involution.is_identity(hedge) {
+        if !graph.edge_store.pair(hedge).is_unpaired() {
             self.filter.set(hedge.0, false);
             self.filter.set(graph.inv(hedge).0, false);
         }
@@ -229,19 +230,16 @@ impl InternalSubGraph {
         mut filter: BitVec,
         graph: &HedgeGraph<E, V, N>,
     ) -> Self {
-        for (i, m) in graph.edge_store.involution.inv.iter().enumerate() {
-            match m {
-                InvolutiveMapping::Identity { .. } => filter.set(i, false),
-                InvolutiveMapping::Sink { source_idx } => {
-                    if filter.includes(&Hedge(i)) {
-                        filter.set(source_idx.0, true);
+        for (j, _, _) in graph.iter_all_edges() {
+            match j {
+                HedgePair::Paired { source, sink } => {
+                    if filter.includes(&source) || filter.includes(&sink) {
+                        filter.set(source.0, true);
+                        filter.set(sink.0, true);
                     }
                 }
-                InvolutiveMapping::Source { sink_idx, .. } => {
-                    if filter.includes(&Hedge(i)) {
-                        filter.set(sink_idx.0, true);
-                    }
-                }
+                HedgePair::Unpaired { hedge, .. } => filter.set(hedge.0, false),
+                _ => {}
             }
         }
         InternalSubGraph {
@@ -254,19 +252,16 @@ impl InternalSubGraph {
         mut filter: BitVec,
         graph: &HedgeGraph<E, V, N>,
     ) -> Self {
-        for (i, m) in graph.edge_store.involution.inv.iter().enumerate() {
-            match m {
-                InvolutiveMapping::Identity { .. } => filter.set(i, false),
-                InvolutiveMapping::Sink { source_idx } => {
-                    if !filter.includes(&Hedge(i)) {
-                        filter.set(source_idx.0, false);
+        for (j, _, _) in graph.iter_all_edges() {
+            match j {
+                HedgePair::Paired { source, sink } => {
+                    if filter.includes(&source) && filter.includes(&sink) {
+                        filter.set(source.0, true);
+                        filter.set(sink.0, true);
                     }
                 }
-                InvolutiveMapping::Source { sink_idx, .. } => {
-                    if !filter.includes(&Hedge(i)) {
-                        filter.set(sink_idx.0, false);
-                    }
-                }
+                HedgePair::Unpaired { hedge, .. } => filter.set(hedge.0, false),
+                _ => {}
             }
         }
 

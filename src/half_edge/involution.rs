@@ -49,6 +49,25 @@ impl HedgePair {
     pub fn is_unpaired(&self) -> bool {
         matches!(self, HedgePair::Unpaired { .. })
     }
+
+    pub fn swap(&mut self) {
+        match self {
+            HedgePair::Unpaired { flow, .. } => {
+                *flow = -*flow;
+            }
+            HedgePair::Paired { source, sink } => {
+                std::mem::swap(&mut (*source), &mut (*sink));
+            }
+            HedgePair::Split {
+                source,
+                sink,
+                split,
+            } => {
+                std::mem::swap(&mut (*source), &mut (*sink));
+                *split = -*split;
+            }
+        }
+    }
     pub fn any_hedge(&self) -> Hedge {
         match self {
             HedgePair::Unpaired { hedge, .. } => *hedge,
@@ -98,13 +117,13 @@ impl HedgePair {
         }
     }
 
-    pub fn from_source_with_subgraph<E, S: SubGraph>(
+    pub fn from_source_with_subgraph<E, S: SubGraph, I: AsRef<Involution<E>>>(
         hedge: Hedge,
-        involution: &Involution<E>,
+        involution: I,
         subgraph: &S,
     ) -> Option<Self> {
         if subgraph.includes(&hedge) {
-            match involution.hedge_data(hedge) {
+            match involution.as_ref().hedge_data(hedge) {
                 InvolutiveMapping::Source { sink_idx, .. } => {
                     if subgraph.includes(sink_idx) {
                         Some(HedgePair::Paired {
@@ -1172,6 +1191,10 @@ impl<E> Involution<E> {
         }
     }
 
+    pub fn set_orientation(&mut self, hedge: Hedge, orientation: Orientation) {
+        self.edge_data_mut(hedge).orientation = orientation;
+    }
+
     pub fn flow(&self, hedge: Hedge) -> Flow {
         self.hedge_data(hedge).flow()
     }
@@ -1313,7 +1336,7 @@ impl<E> Involution<E> {
     pub fn set_as_source(&mut self, hedge: Hedge) {
         let is_sink = self.is_sink(hedge);
         if is_sink {
-            self.flip_underlying(hedge)
+            self.flip_underlying(hedge);
         }
     }
 

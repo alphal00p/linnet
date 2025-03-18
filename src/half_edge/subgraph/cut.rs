@@ -1,4 +1,6 @@
+use crate::half_edge::hedgevec::Accessors;
 use crate::half_edge::nodestorage::{NodeStorageOps, NodeStorageVec};
+use crate::half_edge::EdgeAccessors;
 use crate::half_edge::{
     involution::SignOrZero, EdgeData, Flow, Hedge, HedgeGraph, HedgeGraphBuilder,
     InvolutiveMapping, NodeStorage, Orientation, PowersetIterator,
@@ -69,7 +71,7 @@ impl OrientedCut {
             } else {
                 reference.set(i.0, true);
             }
-            match graph.edge_store.involution.hedge_data(i) {
+            match graph.edge_store.inv_full(i) {
                 InvolutiveMapping::Source { .. } => {
                     sign.set(i.0, true);
                 }
@@ -95,7 +97,7 @@ impl OrientedCut {
             } else {
                 sign.set(i.0, true);
             }
-            match graph.edge_store.involution.hedge_data(i) {
+            match graph.edge_store.inv_full(i) {
                 InvolutiveMapping::Identity { .. } => {
                     return Err(CutError::CutEdgeIsIdentity);
                 }
@@ -121,13 +123,13 @@ impl OrientedCut {
             }
             let mut all_sources = graph.empty_subgraph::<BitVec>();
 
-            for h in c.iter_ones() {
-                match graph.edge_store.involution.inv[h] {
+            for h in c.included_iter() {
+                match graph.edge_store.inv_full(h) {
                     InvolutiveMapping::Identity { .. } => {
                         panic!("cut edge is identity")
                     }
                     InvolutiveMapping::Source { .. } => {
-                        all_sources.set(h, true);
+                        all_sources.set(h.0, true);
                     }
                     InvolutiveMapping::Sink { .. } => {}
                 }
@@ -201,7 +203,7 @@ impl OrientedCut {
         i: Hedge,
         graph: &HedgeGraph<E, V, N>,
     ) -> Orientation {
-        let orientation = match graph.edge_store.involution.edge_data(i).orientation {
+        let orientation = match graph.edge_store.orientation(i) {
             Orientation::Undirected => Orientation::Default,
             o => o,
         };
@@ -309,25 +311,27 @@ impl OrientedCut {
     > {
         use indexmap::IndexMap;
 
+        use crate::half_edge::involution::HedgePair;
+
         let mut left = vec![];
         let mut leftright_map = IndexMap::new();
         let mut right = vec![];
 
         let graph = self.to_owned_graph(graph, map);
 
-        for (j, i) in graph.edge_store.involution.inv.iter().enumerate() {
-            if let InvolutiveMapping::Identity { data, underlying } = i {
-                let d = ByAddress(data.as_ref().data);
-                match underlying {
+        for (p, _, i) in graph.iter_all_edges() {
+            if let HedgePair::Unpaired { hedge, flow } = p {
+                let d = ByAddress(i.data.0);
+                match flow {
                     Flow::Sink => {
                         leftright_map
                             .entry(d)
-                            .or_insert_with(|| [Some(Hedge(j)), None])[0] = Some(Hedge(j))
+                            .or_insert_with(|| [Some(hedge), None])[0] = Some(hedge)
                     }
                     Flow::Source => {
                         leftright_map
                             .entry(d)
-                            .or_insert_with(|| [None, Some(Hedge(j))])[1] = Some(Hedge(j))
+                            .or_insert_with(|| [None, Some(hedge)])[1] = Some(hedge)
                     }
                 }
             }
@@ -367,7 +371,7 @@ impl OrientedCut {
                 continue;
             }
             let source = graph.node_hairs(i);
-            match &graph.edge_store.involution.hedge_data(i) {
+            match &graph.edge_store.inv_full(i) {
                 InvolutiveMapping::Identity { data, underlying } => {
                     let datae = graph.get_edge_data(i);
                     builder.add_external_edge(
@@ -398,7 +402,7 @@ impl OrientedCut {
             //     panic!("should be source");
             // }
             let source = graph.node_hairs(i);
-            let data = graph.edge_store.involution.edge_data(i).as_ref();
+            let o = graph.orientation(i);
 
             let (flow, underlying) = if self.sign.includes(&i) {
                 (Flow::Source, Orientation::Default)
@@ -407,8 +411,8 @@ impl OrientedCut {
             };
 
             // Flow::try_from(self.relative_orientation(i)).unwrap();
-            let orientation = data.orientation.relative_to(flow);
-            let datae = &graph[*data.data];
+            let orientation = o.relative_to(flow);
+            let datae = &graph[graph[&i]];
             builder.add_external_edge(
                 nodeidmap[source],
                 (datae, underlying, map(datae)),

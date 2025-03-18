@@ -1,6 +1,6 @@
 use super::{
     hedgevec::SmartHedgeVec,
-    involution::{EdgeData, EdgeIndex, Flow, Hedge, Involution, Orientation},
+    involution::{Flow, Hedge, Involution, Orientation},
     nodestorage::NodeStorageOps,
     HedgeGraph, NodeIndex,
 };
@@ -71,20 +71,10 @@ impl<E, V> Default for HedgeGraphBuilder<E, V> {
 impl<E, V, N: NodeStorageOps<NodeData = V>> From<HedgeGraphBuilder<E, V>> for HedgeGraph<E, V, N> {
     fn from(builder: HedgeGraphBuilder<E, V>) -> Self {
         let len = builder.involution.len();
-        let mut edge_data = Vec::new();
-
-        let involution = builder.involution.map_full(|h, d| {
-            let edgeid = EdgeIndex(edge_data.len());
-            edge_data.push((d.data, h));
-            EdgeData::new(edgeid, d.orientation)
-        });
 
         HedgeGraph {
             node_store: N::build(builder.nodes, len),
-            edge_store: SmartHedgeVec {
-                data: edge_data,
-                involution,
-            },
+            edge_store: SmartHedgeVec::new(builder.involution),
         }
     }
 }

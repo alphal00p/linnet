@@ -490,7 +490,7 @@ impl Positions {
         let mut params = Vec::new();
         let ext_range = 2.0..4.0;
         let range = -1.0..1.0;
-        let edge_positions = graph.edge_store.involution.as_ref().map_full(|e, d| {
+        let edge_positions = graph.edge_store.as_ref().clone().map_full(|e, d| {
             let j = params.len();
             if e.is_unpaired() {
                 params.push(rng.gen_range(ext_range.clone()));
@@ -532,7 +532,7 @@ impl Positions {
         let mut angle = 0.;
         let angle_step = 2. * std::f64::consts::PI / f64::from(graph.n_externals() as u32);
 
-        let edge_positions = graph.edge_store.involution.as_ref().map_full(|e, d| {
+        let edge_positions = graph.edge_store.as_ref().clone().map_full(|e, d| {
             let j = params.len();
             params.push(rng.gen_range(range.clone()));
             params.push(rng.gen_range(range.clone()));
@@ -808,7 +808,7 @@ impl LayoutSettings {
             (edge / 2., -edge / 2.)
         };
 
-        let mut edge_positions = graph.edge_store.involution.as_ref().map_full(|_, d| {
+        let mut edge_positions = graph.edge_store.as_ref().clone().map_full(|_, d| {
             let j = init_params.len();
             init_params.push(rng.gen_range(range.clone()));
             init_params.push(rng.gen_range(range.clone()));
@@ -866,7 +866,7 @@ impl LayoutSettings {
 
         let mut exti = 0;
 
-        let edge_positions = graph.edge_store.involution.as_ref().map_full(|e, d| {
+        let edge_positions = graph.edge_store.as_ref().clone().map_full(|e, d| {
             let j = init_params.len();
             init_params.push(rng.gen_range(range.clone()));
             init_params.push(rng.gen_range(range.clone()));

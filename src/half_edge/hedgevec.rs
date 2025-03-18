@@ -1,4 +1,4 @@
-use std::ops::{Index, IndexMut};
+use std::ops::{Index, IndexMut, Neg};
 
 use serde::{Deserialize, Serialize};
 
@@ -16,12 +16,107 @@ use super::{
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SmartHedgeVec<T> {
     pub(super) data: Vec<(T, HedgePair)>,
-    pub(super) involution: Involution,
+    involution: Involution,
 }
 
 impl<T> AsRef<Involution> for SmartHedgeVec<T> {
     fn as_ref(&self) -> &Involution {
         &self.involution
+    }
+}
+
+pub trait Accessors<Index> {
+    type Data;
+
+    fn orientation(&self, index: Index) -> Orientation;
+    fn set_orientation(&mut self, index: Index, orientation: Orientation);
+    fn pair(&self, index: Index) -> HedgePair;
+    // fn flow(&self, index: Index) -> Flow;
+    // fn set_flow(&mut self, index: Index, flow: Flow);
+    fn data(&self, index: Index) -> &Self::Data;
+    fn data_mut(&mut self, index: Index) -> &mut Self::Data;
+}
+
+impl<T> Accessors<EdgeIndex> for SmartHedgeVec<T> {
+    type Data = T;
+
+    fn orientation(&self, index: EdgeIndex) -> Orientation {
+        let h = self[&index].1.any_hedge();
+        self.involution.orientation(h)
+    }
+
+    fn set_orientation(&mut self, index: EdgeIndex, orientation: Orientation) {
+        let h = self[&index].1.any_hedge();
+        self.involution.set_orientation(h, orientation);
+    }
+
+    fn pair(&self, index: EdgeIndex) -> HedgePair {
+        self[&index].1
+    }
+
+    fn data(&self, index: EdgeIndex) -> &Self::Data {
+        &self[index]
+    }
+
+    fn data_mut(&mut self, index: EdgeIndex) -> &mut Self::Data {
+        &mut self[index]
+    }
+}
+
+impl<T> Accessors<Hedge> for SmartHedgeVec<T> {
+    type Data = T;
+
+    fn orientation(&self, index: Hedge) -> Orientation {
+        self.involution.orientation(index)
+    }
+
+    fn set_orientation(&mut self, index: Hedge, orientation: Orientation) {
+        self.involution.set_orientation(index, orientation);
+    }
+
+    fn pair(&self, index: Hedge) -> HedgePair {
+        let e = self[&index];
+        self[&e].1
+    }
+
+    fn data(&self, index: Hedge) -> &Self::Data {
+        let e = self[&index];
+        &self[e]
+    }
+
+    fn data_mut(&mut self, index: Hedge) -> &mut Self::Data {
+        let e = self[&index];
+        &mut self[e]
+    }
+}
+
+impl<T> Accessors<HedgePair> for SmartHedgeVec<T> {
+    type Data = T;
+
+    fn orientation(&self, index: HedgePair) -> Orientation {
+        let index = index.any_hedge();
+        self.involution.orientation(index)
+    }
+
+    fn set_orientation(&mut self, index: HedgePair, orientation: Orientation) {
+        let index = index.any_hedge();
+        self.involution.set_orientation(index, orientation);
+    }
+
+    fn pair(&self, index: HedgePair) -> HedgePair {
+        index
+    }
+
+    fn data(&self, index: HedgePair) -> &Self::Data {
+        let index = index.any_hedge();
+        let e = self[&index];
+        &self[e]
+    }
+
+    fn data_mut(&mut self, index: HedgePair) -> &mut Self::Data {
+        let index = index.any_hedge();
+        let e = self[&index];
+        &mut self[e]
     }
 }
 
@@ -391,16 +486,96 @@ impl<T> SmartHedgeVec<T> {
         self.involution.flow(hedge)
     }
 
-    pub fn orientation(&self, hedge: Hedge) -> Orientation {
-        self.involution.orientation(hedge)
+    pub fn set_flow(&mut self, hedge: Hedge, flow: Flow) {
+        if self.flow(hedge) != flow {
+            let edge_id = self[&hedge];
+            self[&edge_id].1.swap();
+            match flow {
+                Flow::Source => {
+                    self.involution.set_as_source(hedge);
+                }
+                Flow::Sink => {
+                    self.involution.set_as_sink(hedge);
+                }
+            }
+        }
+    }
+
+    pub fn superficial_hedge_orientation(&self, hedge: Hedge) -> Option<Flow> {
+        match self.involution.hedge_data(hedge) {
+            InvolutiveMapping::Identity { data, underlying } => {
+                data.orientation.relative_to(*underlying).try_into().ok()
+            }
+            InvolutiveMapping::Sink { source_idx } => self
+                .superficial_hedge_orientation(*source_idx)
+                .map(Neg::neg),
+            InvolutiveMapping::Source { data, .. } => data.orientation.try_into().ok(),
+        }
+    }
+
+    pub fn underlying_hedge_orientation(&self, hedge: Hedge) -> Flow {
+        match self.involution.hedge_data(hedge) {
+            InvolutiveMapping::Identity { underlying, .. } => *underlying,
+            InvolutiveMapping::Sink { .. } => Flow::Sink,
+            InvolutiveMapping::Source { .. } => Flow::Source,
+        }
+    }
+
+    pub fn inv_full(&self, hedge: Hedge) -> &InvolutiveMapping<EdgeIndex> {
+        self.involution.hedge_data(hedge)
     }
 
     pub fn edge_len(&self) -> usize {
         self.data.len()
     }
 
+    pub fn iter_edges<'a, S: SubGraph>(
+        &'a self,
+        subgraph: &'a S,
+    ) -> impl Iterator<Item = (HedgePair, EdgeIndex, EdgeData<&'a T>)> + 'a {
+        subgraph.included_iter().flat_map(|i| {
+            self.involution.smart_data(i, subgraph).map(|d| {
+                (
+                    HedgePair::from_half_edge_with_subgraph(i, &self.involution, subgraph).unwrap(),
+                    d.data,
+                    d.as_ref().map(|&a| &self[a]),
+                )
+            })
+        })
+    }
+
+    pub fn iter_all_edges(&self) -> impl Iterator<Item = (HedgePair, EdgeIndex, EdgeData<&T>)> {
+        self.involution
+            .iter_edge_data()
+            .map(move |(i, d)| (self[&self[&i]].1, d.data, d.as_ref().map(|&a| &self[a])))
+    }
+
+    pub fn iter_internal_edge_data<'a, S: SubGraph>(
+        &'a self,
+        subgraph: &'a S,
+    ) -> impl Iterator<Item = EdgeData<&'a T>> + 'a {
+        subgraph.included_iter().flat_map(|i| {
+            self.involution
+                .smart_data(i, subgraph)
+                .map(|d| d.as_ref().map(|&a| &self[a]))
+        })
+    }
+
+    pub fn n_internals<S: SubGraph>(&self, subgraph: &S) -> usize {
+        self.involution.n_internals(subgraph)
+    }
+
     pub fn hedge_len(&self) -> usize {
         self.involution.len()
+    }
+
+    pub fn align_superficial_to_underlying(&mut self) {
+        for i in self.involution.iter_idx() {
+            let orientation = self.involution.edge_data(i).orientation;
+            if let Orientation::Reversed = orientation {
+                self.involution.flip_underlying(i);
+            }
+        }
     }
 
     pub fn mapped_from_involution<E>(
@@ -446,6 +621,12 @@ impl<'a, T> IntoIterator for &'a SmartHedgeVec<T> {
             .map(|(u, t)| (EdgeIndex(u), &t.0, t.1))
     }
 }
+
+// impl<T> AsRef<Involution> for SmartHedgeVec<T> {
+//     fn as_ref(&self) -> &Involution {
+//         self.edge_store.as_ref()
+//     }
+// }
 
 impl<T> IndexMut<EdgeIndex> for SmartHedgeVec<T> {
     fn index_mut(&mut self, index: EdgeIndex) -> &mut Self::Output {

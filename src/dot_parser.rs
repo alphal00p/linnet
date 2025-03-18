@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, path::Path};
+use std::{collections::BTreeMap, fmt::Display, path::Path};
 
 use ahash::AHashMap;
 use dot_parser::ast::{GraphFromFileError, PestError};
@@ -14,9 +14,28 @@ use crate::half_edge::{
 pub struct DotEdgeData {
     pub statements: AHashMap<String, String>,
 }
+
+impl Display for DotEdgeData {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for (key, value) in &self.statements {
+            write!(f, "{}={},", key, value)?;
+        }
+        Ok(())
+    }
+}
 pub struct DotVertexData {
     pub id: String,
     pub statements: AHashMap<String, String>,
+}
+
+impl Display for DotVertexData {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "id={},", self.id)?;
+        for (key, value) in &self.statements {
+            write!(f, "{}={},", key, value)?;
+        }
+        Ok(())
+    }
 }
 
 impl DotEdgeData {

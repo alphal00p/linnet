@@ -1,4 +1,4 @@
-use std::collections::VecDeque;
+use std::{cmp::Ordering, collections::VecDeque};
 
 use bitvec::vec::BitVec;
 use itertools::Itertools;
@@ -132,10 +132,13 @@ impl<P: ForestNodeStore<NodeData = ()>> SimpleTraversalTree<P> {
         NodeIndex::from(self.forest.root(hedge.into()))
     }
 
+    /// get the parent node of the current node
     pub fn node_parent<I: AsRef<Involution>>(&self, from: NodeIndex, inv: I) -> Option<NodeIndex> {
         let root = RootId::from(from);
 
-        if self.forest[root].includes() {
+        if self.forest[root].is_child() {
+            // if the current node is in the forest
+            // get the involved hedge connected to the root pointing hedge of the current node
             let involved = inv.as_ref().inv(self.forest[&root].into());
             Some(self.node_id(involved))
         } else {
@@ -151,6 +154,8 @@ impl<P: ForestNodeStore<NodeData = ()>> SimpleTraversalTree<P> {
         path
     }
 
+    /// among the hedges of the same node get the one pointing to the root node.
+    /// if the from hedge is that pointing to the root node, go to the involved hedge.
     pub fn hedge_parent<I: AsRef<Involution>>(&self, from: Hedge, inv: I) -> Option<Hedge> {
         let root = self.forest.root(from.into()); //Get "NodeId/RootId"
 
@@ -202,6 +207,66 @@ impl<P: ForestNodeStore<NodeData = ()>> SimpleTraversalTree<P> {
             inv,
             current: Some(start),
         }
+    }
+
+    pub fn dot<E, V, N: NodeStorageOps<NodeData = V>>(
+        &self,
+        graph: &HedgeGraph<E, V, N>,
+    ) -> String {
+        let mut structure = graph.just_structure();
+        structure.align_superficial_to_tree(self);
+
+        structure.base_dot()
+    }
+
+    pub fn tree_order<I: AsRef<Involution>>(
+        &self,
+        left: NodeIndex,
+        right: NodeIndex,
+        inv: I,
+    ) -> Option<Ordering> {
+        if left == right {
+            return Some(Ordering::Equal);
+        }
+
+        let left_to_root_passes_through_right = self
+            .ancestor_iter_node(left, inv.as_ref())
+            .any(|a| a == right);
+        if left_to_root_passes_through_right {
+            return Some(Ordering::Less);
+        }
+
+        let right_to_root_passes_through_left = self
+            .ancestor_iter_node(right, inv.as_ref())
+            .any(|a| a == left);
+        if right_to_root_passes_through_left {
+            return Some(Ordering::Greater);
+        }
+
+        None
+    }
+
+    /// Iterate over all half-edges in the tree.
+    ///
+    /// Each iteration yields a three-tuple:
+    ///
+    /// - the half-edge
+    /// - whether it is part of a child, or root node, or outside of the tree
+    /// - the root-pointing half-edge if it is actually part of the tree
+    ///
+    pub fn iter_hedges(&self) -> impl Iterator<Item = (Hedge, TTRoot, Option<Hedge>)> + '_ {
+        self.forest.iter_node_ids().map(|a| {
+            let root = self.forest.root(a); //Get "NodeId/RootId"
+            let hedge: Hedge = a.into();
+            let ttype = self.forest[root];
+            let root_among_hedges = if self.tree_subgraph.includes(&hedge) {
+                Some(self.forest[&root].into())
+            } else {
+                None
+            };
+
+            (hedge, ttype, root_among_hedges)
+        })
     }
 }
 
@@ -465,3 +530,56 @@ pub struct OwnedTraversalTree<P: ForestNodeStore<NodeData = ()>> {
 //         children.into_iter().collect()
 //     }
 // }
+#[cfg(test)]
+pub mod tests {
+    use crate::{dot, half_edge::involution::Orientation};
+
+    use super::*;
+
+    #[test]
+    fn double_pentagon_tree() {
+        let mut graph: HedgeGraph<
+            crate::dot_parser::DotEdgeData,
+            crate::dot_parser::DotVertexData,
+        > = dot!(
+            digraph {
+        node [shape=circle,height=0.1,label=""];  overlap="scale"; layout="neato";
+        00 -> 07[ dir=none,label="a"];
+        00 -> 12[ dir=forward,label="d"];
+        01 -> 00[ dir=forward,label="d"];
+        05 -> 02[ dir=forward,label="d"];
+        02 -> 01[ dir=forward,label="d"];
+        09 -> 04[ dir=forward,label="d"];
+        02 -> 06[ dir=none,label="a"];
+        01 -> 03[ dir=none,label="a"];
+        03 -> 13[ dir=forward,label="d"];
+        04 -> 03[ dir=forward,label="d"];
+        04 -> 05[ dir=none,label="g"];
+        06 -> 07[ dir=forward,label="e-"];
+        07 -> 11[ dir=forward,label="e-"];
+        08 -> 06[ dir=forward,label="e-"];
+        10 -> 05[ dir=forward,label="d"];
+        }
+        )
+        .unwrap();
+
+        // println!("{}", graph.dot_display(&graph.full_filter()));
+
+        let tree = SimpleTraversalTree::depth_first_traverse(
+            &graph,
+            &graph.full_filter(),
+            &NodeIndex(0),
+            None,
+        )
+        .unwrap();
+        // println!("{}", tree.dot(&graph));
+
+        graph.align_underlying_to_tree(&tree);
+        graph.align_superficial_to_tree(&tree);
+        assert!(graph
+            .iter_all_edges()
+            .all(|(_, _, d)| !matches!(d.orientation, Orientation::Reversed)));
+        // println!("{}", tree.dot(&graph))
+        // Test implementation
+    }
+}

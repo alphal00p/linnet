@@ -115,6 +115,14 @@ impl<R, N: ForestNodeStore> Forest<R, N> {
     pub fn iter_roots(&self) -> impl Iterator<Item = (&R, &TreeNodeId)> {
         self.roots.iter().map(|r| (&r.data, &r.root_id))
     }
+
+    pub fn iter_nodes(&self) -> impl Iterator<Item = (TreeNodeId, &N::NodeData)> {
+        self.nodes.iter_nodes()
+    }
+
+    pub fn iter_node_ids(&self) -> impl Iterator<Item = TreeNodeId> + '_ {
+        self.nodes.iter_node_id()
+    }
 }
 
 impl<R, N: Default> Forest<R, N> {
@@ -224,7 +232,7 @@ pub trait ForestNodeStore:
 
     fn iter_nodes(&self) -> impl Iterator<Item = (TreeNodeId, &Self::NodeData)>;
 
-    fn iter_node_id(&self) -> impl Iterator<Item = TreeNodeId>;
+    fn iter_node_id<'a>(&'a self) -> impl Iterator<Item = TreeNodeId> + 'a;
 
     fn add_root(&mut self, data: Self::NodeData, root_id: RootId) -> TreeNodeId;
 
