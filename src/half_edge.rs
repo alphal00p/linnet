@@ -1,4 +1,5 @@
 use core::panic;
+use std::fmt::Display;
 use std::hash::Hash;
 use std::num::TryFromIntError;
 use std::ops::{Index, IndexMut, Neg};
@@ -816,11 +817,11 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
 
         let mut non_bridges = augmented.non_bridges();
 
-        for n in &s_nodes {
+        for _ in &s_nodes {
             non_bridges.pop();
             non_bridges.pop();
         }
-        for n in &t_nodes {
+        for _ in &t_nodes {
             non_bridges.pop();
             non_bridges.pop();
         }
@@ -899,32 +900,28 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
         let t_count = self.count_connected_components(&complement);
         let s_count = self.count_connected_components(&hairy);
 
-        if t_count <= t_connectivity && s_count <= s_connectivity {
-            if regions.get(&s).is_some() {
-                return;
-            } else {
-                for h in s.hairs.included_iter() {
-                    let invh = self.inv(h);
+        if t_count <= t_connectivity && s_count <= s_connectivity && regions.get(&s).is_none() {
+            for h in s.hairs.included_iter() {
+                let invh = self.inv(h);
 
-                    if invh != h && !t.hairs.includes(&invh) && subgraph.includes(&invh) {
-                        let mut new_node = s.clone();
+                if invh != h && !t.hairs.includes(&invh) && subgraph.includes(&invh) {
+                    let mut new_node = s.clone();
 
-                        new_node.hairs.union_with(&self.node_hairs(invh).hairs);
-                        new_node.hairs.intersect_with(subgraph.included());
+                    new_node.hairs.union_with(&self.node_hairs(invh).hairs);
+                    new_node.hairs.intersect_with(subgraph.included());
 
-                        new_node.fix(self);
-                        self.all_s_t_cuts_impl(
-                            subgraph,
-                            s_connectivity,
-                            new_node,
-                            t,
-                            t_connectivity,
-                            regions,
-                        );
-                    }
+                    new_node.fix(self);
+                    self.all_s_t_cuts_impl(
+                        subgraph,
+                        s_connectivity,
+                        new_node,
+                        t,
+                        t_connectivity,
+                        regions,
+                    );
                 }
-                regions.insert(s);
             }
+            regions.insert(s);
         }
     }
 }
@@ -1332,9 +1329,20 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
     }
 
     pub fn dot<S: SubGraph>(&self, node_as_graph: &S) -> String {
-        self.dot_impl(node_as_graph, "start=2;\n".to_string(), &|_| None, &|_| {
-            None
-        })
+        self.dot_impl(node_as_graph, "start=2;\n", &|_| None, &|_| None)
+    }
+
+    pub fn dot_display<S: SubGraph>(&self, node_as_graph: &S) -> String
+    where
+        E: Display,
+        V: Display,
+    {
+        self.dot_impl(
+            node_as_graph,
+            "start=2;\n",
+            &|a| Some(a.to_string()),
+            &|v| Some(v.to_string()),
+        )
     }
 
     pub fn base_dot(&self) -> String {
