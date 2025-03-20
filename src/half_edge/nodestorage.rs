@@ -77,7 +77,7 @@ pub trait NodeStorage: Sized {
     type Storage<N>;
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct NodeStorageVec<N> {
     pub(crate) node_data: Vec<N>,
     pub(crate) hedge_data: Vec<NodeIndex>,
@@ -353,8 +353,7 @@ impl<N> NodeStorageOps for NodeStorageVec<N> {
 
     fn check_and_set_nodes(&mut self) -> Result<(), HedgeGraphError> {
         let mut cover = BitVec::empty(self.hedge_len());
-        for i in 0..self.node_len() {
-            let node = self.nodes.get(i).unwrap();
+        for (i, node) in self.nodes.iter().enumerate() {
             for h in node.hairs.included_iter() {
                 if cover.includes(&h) {
                     return Err(HedgeGraphError::NodesDoNotPartition);
@@ -416,4 +415,10 @@ impl<N> NodeStorageOps for NodeStorageVec<N> {
             nodes: self.nodes,
         }
     }
+}
+
+#[cfg(test)]
+mod test {
+    #[test]
+    fn extend_test() {}
 }

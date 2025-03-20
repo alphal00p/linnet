@@ -591,27 +591,65 @@ fn flower_snark() {
 
 #[test]
 fn join() {
-    let mut ab = HedgeGraphBuilder::<(), ()>::new();
-    let v1 = ab.add_node(());
-    let v2 = ab.add_node(());
+    let mut ab = HedgeGraphBuilder::new();
+    let v1 = ab.add_node("a");
+    let v2 = ab.add_node("a");
 
-    ab.add_edge(v1, v2, (), true);
-    ab.add_edge(v2, v1, (), true);
-    ab.add_external_edge(v1, (), true, Flow::Sink);
-    ab.add_external_edge(v2, (), true, Flow::Source);
+    ab.add_edge(v1, v2, "ie", true);
+    ab.add_edge(v2, v1, "ie", true);
+    ab.add_external_edge(v1, "esink", true, Flow::Sink);
+    ab.add_external_edge(v2, "esource", true, Flow::Source);
 
-    let a: HedgeGraph<(), ()> = ab.build();
-    println!("{}", a.base_dot());
-    let b = a.clone();
+    let a: HedgeGraph<&'static str, &'static str> = ab.build();
 
-    let c = a
-        .join(b, |af, _, bf, _| af == -bf, |af, ad, _, _| (af, ad))
+    let mut ab = HedgeGraphBuilder::new();
+    let v1 = ab.add_node("b");
+    let v2 = ab.add_node("b");
+
+    ab.add_edge(v1, v2, "if", true);
+    ab.add_edge(v2, v1, "if", true);
+    ab.add_external_edge(v1, "f", true, Flow::Sink);
+    ab.add_external_edge(v2, "f", true, Flow::Source);
+
+    let b = ab.build();
+
+    let mut c = a
+        .clone()
+        .join(b.clone(), |af, _, bf, _| af == -bf, |af, ad, _, _| (af, ad))
         .unwrap();
 
-    println!("{}", c.base_dot());
+    assert_eq!(c.node_store.node_data.len(), 4);
+    assert_eq!(c.node_store.node_len(), 4);
+    assert_eq!(c.node_store.hedge_len(), 12);
+    assert!(c.node_store.check_and_set_nodes().is_ok());
+
+    assert_snapshot!(c.dot_display(&c.full_filter()));
+
+    let mut a = HedgeGraphBuilder::new();
+    let n = a.add_node("a");
+    a.add_external_edge(n, "e", true, Flow::Sink);
+    let a: HedgeGraph<&'static str, &'static str> = a.build();
+
+    let mut b = HedgeGraphBuilder::new();
+    let n = b.add_node("b");
+    b.add_external_edge(n, "f", true, Flow::Sink);
+    let b = b.build();
+    let c = a
+        .join(
+            b,
+            |af, _, bf, _| true,
+            |af, ad, bf, bd| {
+                println!("af: {:?}, ad: {:?}, bf: {:?}, bd: {:?}", af, ad, bf, bd);
+                (af, ad)
+            },
+        )
+        .unwrap();
+
+    assert_eq!("e", *c.iter_edges(&c.full_filter()).next().unwrap().2.data);
 }
 use std::time::Instant;
 
+use insta::assert_snapshot;
 use nodestorage::NodeStorageVec;
 
 use crate::dot;

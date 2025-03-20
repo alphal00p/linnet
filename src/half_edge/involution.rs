@@ -28,7 +28,7 @@ impl Hedge {
     }
 }
 
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum HedgePair {
     Unpaired {
         hedge: Hedge,
@@ -164,6 +164,7 @@ impl HedgePair {
         match self {
             HedgePair::Unpaired { flow, .. } => {
                 if attr.color.is_some() {
+                    println!("hee");
                     attr
                 } else {
                     GVEdgeAttrs {
@@ -211,7 +212,6 @@ impl HedgePair {
         orientation: Orientation,
         attr: GVEdgeAttrs,
     ) -> String {
-        let attr = self.fill_color(attr);
         match self {
             HedgePair::Unpaired { hedge, flow } => InvolutiveMapping::<()>::identity_dot(
                 *hedge,
@@ -331,7 +331,7 @@ impl Display for Hedge {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum InvolutiveMapping<E> {
     Identity { data: EdgeData<E>, underlying: Flow },
     Source { data: EdgeData<E>, sink_idx: Hedge },
@@ -354,7 +354,7 @@ impl<E> InvolutiveMapping<E> {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct EdgeData<E> {
     pub orientation: Orientation,
     pub data: E,
@@ -457,7 +457,7 @@ impl<E> EdgeData<E> {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Serialize, Deserialize, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Orientation {
     Default,
     Reversed,
@@ -478,7 +478,7 @@ impl Mul for Orientation {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Serialize, Deserialize, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Flow {
     Source, // outgoing
     Sink,   // incoming
@@ -801,9 +801,24 @@ impl<E> InvolutiveMapping<E> {
         flow: Flow,
     ) -> String {
         let mut out = "".to_string();
-        out.push_str(&format!("ext{} [shape=none, label=\"\"];\n ", edge_id));
 
-        out.push_str(&format!("ext{} -> {}[", edge_id, source));
+        //we interpret this node as the hidden one. so the flow is reversed.
+        match flow {
+            Flow::Sink => {
+                out.push_str(&format!(
+                    "ext{} [shape=none, label=\"\" flow=source];\n",
+                    edge_id
+                ));
+            }
+            Flow::Source => {
+                out.push_str(&format!(
+                    "ext{} [shape=none, label=\"\" flow=sink];\n",
+                    edge_id
+                ));
+            }
+        }
+
+        out.push_str(&format!("  ext{} -> {}[", edge_id, source));
         match (orientation, flow) {
             (Orientation::Default, Flow::Source) => {
                 out.push_str("dir=back ");
@@ -865,7 +880,7 @@ pub enum InvolutionError {
     NotPaired,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Involution<E = EdgeIndex> {
     pub(super) inv: Vec<InvolutiveMapping<E>>,
 }
@@ -993,17 +1008,10 @@ impl<E> Involution<E> {
 
     /// modify the involution to set hedge to sink.
     /// this might make the structure invalid
-    fn set(&mut self, hedge: Hedge, mapping: InvolutiveMapping<E>) -> Option<EdgeData<E>> {
-        if self.is_sink(hedge) {
-            self.inv[hedge.0] = mapping;
-            return None;
-        }
-        let data = self.inv.swap_remove(hedge.0);
-        self.inv.push(mapping);
-        let last = self.inv.len().checked_sub(1).unwrap();
-        self.inv.swap(hedge.0, last);
+    fn set(&mut self, hedge: Hedge, mut mapping: InvolutiveMapping<E>) -> Option<EdgeData<E>> {
+        std::mem::swap(&mut self.inv[hedge.0], &mut mapping);
 
-        data.data()
+        mapping.data()
     }
 
     /// extract the data from the hedge replacing it with a dummy mapping
@@ -1356,8 +1364,9 @@ impl<E> Involution<E> {
         self.inv.swap(hedge.0, pair.0);
 
         match self.hedge_data_mut(hedge) {
-            InvolutiveMapping::Identity { underlying, .. } => {
+            InvolutiveMapping::Identity { underlying, data } => {
                 *underlying = -*underlying;
+                data.orientation = data.orientation.reverse();
             }
             InvolutiveMapping::Source { data, sink_idx } => {
                 *sink_idx = pair;
@@ -1369,9 +1378,6 @@ impl<E> Involution<E> {
         }
 
         match self.hedge_data_mut(pair) {
-            InvolutiveMapping::Identity { underlying, .. } => {
-                *underlying = -*underlying;
-            }
             InvolutiveMapping::Source { data, sink_idx } => {
                 *sink_idx = hedge;
                 data.orientation = data.orientation.reverse();
@@ -1379,6 +1385,7 @@ impl<E> Involution<E> {
             InvolutiveMapping::Sink { source_idx } => {
                 *source_idx = hedge;
             }
+            _ => {}
         }
     }
 
@@ -1501,6 +1508,12 @@ impl<E> IndexMut<Hedge> for Involution<E> {
     Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, From, Into, Hash,
 )]
 pub struct EdgeIndex(pub(crate) usize);
+
+impl Display for EdgeIndex {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "e{}", self.0)
+    }
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct EdgeVec<E> {
@@ -1665,9 +1678,10 @@ impl<E> Display for Involution<E> {
         let mut out = "".to_string();
         for (i, e) in self.inv.iter().enumerate() {
             match e {
-                InvolutiveMapping::Identity { .. } => {
-                    out.push_str(&format!("{}\n", i));
-                }
+                InvolutiveMapping::Identity { underlying, .. } => match underlying {
+                    Flow::Sink => out.push_str(&format!("{}<<\n", i)),
+                    Flow::Source => out.push_str(&format!("{}>>\n", i)),
+                },
                 InvolutiveMapping::Source { sink_idx, .. } => {
                     out.push_str(&format!("{}->{}\n", i, sink_idx));
                 }

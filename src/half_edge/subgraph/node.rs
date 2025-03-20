@@ -9,7 +9,7 @@ use super::contracted::ContractedSubGraph;
 use super::{internal::InternalSubGraph, SubGraph, SubGraphOps};
 use super::{Inclusion, SubGraphHedgeIter};
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct HedgeNode {
     pub internal_graph: InternalSubGraph,
     pub hairs: BitVec,

@@ -326,13 +326,13 @@ impl SimpleTraversalTree {
 
         if seen.count_ones() == 0 {
             // if the root node is not in the subgraph
-            return Err(HedgeGraphError::InvalidNode(*root_node));
+            return Err(HedgeGraphError::RootNodeNotInSubgraph(*root_node));
         }
 
         let mut stack = seen.included_iter().collect::<Vec<_>>();
         if let Some(r) = include_hedge {
             if graph.inv(r) == r {
-                return Err(HedgeGraphError::InvalidHedge(r)); //cannot include an external hedge in the traversal
+                return Err(HedgeGraphError::ExternalHedgeIncluded(r)); //cannot include an external hedge in the traversal
             }
 
             let pos = stack.iter().find_position(|a| **a == r).map(|a| a.0);
@@ -341,7 +341,7 @@ impl SimpleTraversalTree {
             if let Some(pos) = pos {
                 stack.swap(pos, last);
             } else {
-                return Err(HedgeGraphError::InvalidHedge(r));
+                return Err(HedgeGraphError::NotInNode(r, *root_node));
             }
         }
 

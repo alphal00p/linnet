@@ -1,4 +1,5 @@
 use crate::half_edge::hedgevec::Accessors;
+use crate::half_edge::involution::{EdgeIndex, HedgePair};
 use crate::half_edge::nodestorage::{NodeStorageOps, NodeStorageVec};
 use crate::half_edge::EdgeAccessors;
 use crate::half_edge::{
@@ -92,20 +93,20 @@ impl OrientedCut {
         let mut sign = graph.empty_subgraph::<BitVec>();
 
         for i in cut.included_iter() {
-            if sign.includes(&i) {
+            if reference.includes(&i) {
                 return Err(CutError::CutEdgeAlreadySet);
             } else {
-                sign.set(i.0, true);
+                reference.set(i.0, true);
             }
             match graph.edge_store.inv_full(i) {
                 InvolutiveMapping::Identity { .. } => {
                     return Err(CutError::CutEdgeIsIdentity);
                 }
                 InvolutiveMapping::Source { .. } => {
-                    reference.set(i.0, true);
+                    sign.set(i.0, true);
                 }
                 InvolutiveMapping::Sink { source_idx } => {
-                    reference.set(source_idx.0, true);
+                    sign.set(source_idx.0, true);
                 }
             }
         }
@@ -189,12 +190,56 @@ impl OrientedCut {
             .map(|i| (self.relative_orientation(i), graph.get_edge_data_full(i)))
     }
 
+    pub fn iter_edges_idx_relative<'a>(
+        &'a self,
+    ) -> impl Iterator<Item = (Hedge, Orientation)> + 'a {
+        self.reference
+            .included_iter()
+            .map(|i| (i, self.relative_orientation(i)))
+    }
+
+    /// If the cut and reference are aligned=> Default
+    /// If the reference is included but not the cut, => Reversed
+    /// If the cut is included but not the reference, => Undirected
+    /// If neither the cut nor the reference is included, => Undirected
     pub fn relative_orientation(&self, i: Hedge) -> Orientation {
         match (self.sign.includes(&i), self.reference.includes(&i)) {
             (true, true) => Orientation::Default,
             (false, false) => Orientation::Undirected,
             (true, false) => Orientation::Undirected,
             (false, true) => Orientation::Reversed,
+        }
+    }
+
+    pub fn set(&mut self, pair: HedgePair, flow: Flow) {
+        if let HedgePair::Paired { source, sink } = pair {
+            if !(self.reference.includes(&source) || self.reference.includes(&sink)) {
+                self.sign.set(source.0, true);
+                match flow {
+                    Flow::Source => {
+                        self.reference.set(source.0, true);
+                    }
+                    Flow::Sink => {
+                        self.reference.set(sink.0, true);
+                    }
+                }
+            }
+        }
+    }
+
+    pub fn set_inv(&mut self, pair: HedgePair, flow: Flow) {
+        if let HedgePair::Paired { source, sink } = pair {
+            if !(self.reference.includes(&source) || self.reference.includes(&sink)) {
+                self.reference.set(source.0, true);
+                match flow {
+                    Flow::Source => {
+                        self.sign.set(source.0, true);
+                    }
+                    Flow::Sink => {
+                        self.sign.set(sink.0, true);
+                    }
+                }
+            }
         }
     }
 
@@ -297,15 +342,14 @@ impl SubGraph for OrientedCut {
 impl OrientedCut {
     #[allow(clippy::too_many_arguments, clippy::type_complexity)]
     #[cfg(feature = "layout")]
-    pub fn layout<'a, E, V, T>(
+    pub fn layout<'a, E, V>(
         self,
         graph: &'a HedgeGraph<E, V, NodeStorageVec<V>>,
         params: LayoutParams,
         iters: LayoutIters,
         edge: f64,
-        map: &impl Fn(&E) -> T,
     ) -> HedgeGraph<
-        LayoutEdge<(&'a E, Orientation, T)>,
+        LayoutEdge<(&'a E, Orientation, EdgeIndex)>,
         LayoutVertex<&'a V>,
         NodeStorageVec<LayoutVertex<&'a V>>,
     > {
@@ -317,11 +361,11 @@ impl OrientedCut {
         let mut leftright_map = IndexMap::new();
         let mut right = vec![];
 
-        let graph = self.to_owned_graph(graph, map);
+        let graph = self.to_owned_graph(graph);
 
         for (p, _, i) in graph.iter_all_edges() {
             if let HedgePair::Unpaired { hedge, flow } = p {
-                let d = ByAddress(i.data.0);
+                let d = i.data.2;
                 match flow {
                     Flow::Sink => {
                         leftright_map
@@ -352,82 +396,26 @@ impl OrientedCut {
         graph.layout(settings)
     }
 
-    pub fn to_owned_graph<'a, E, V, T, N: NodeStorageOps<NodeData = V>>(
+    /// Take the graph and split it along the cut, putting the cut orientation, and original edge index as additional data.
+    pub fn to_owned_graph<'a, E, V, N: NodeStorageOps<NodeData = V>>(
         self,
         graph: &'a HedgeGraph<E, V, N>,
-        map: &impl Fn(&E) -> T,
-    ) -> HedgeGraph<(&'a E, Orientation, T), &'a V, NodeStorageVec<&'a V>> {
-        let mut builder = HedgeGraphBuilder::new();
+    ) -> HedgeGraph<(&'a E, Orientation, EdgeIndex), &'a V, N::OpStorage<&'a V>> {
+        let mut new_graph = graph.map_data_ref(&|_, v, _| v, &|_, i, _, e| {
+            e.map(|d| (d, Orientation::Undirected, i))
+        });
 
-        let mut nodeidmap = AHashMap::new();
-        for (n, v) in graph.iter_nodes() {
-            nodeidmap.insert(n, builder.add_node(v));
+        for (h, o) in self.iter_edges_idx_relative() {
+            new_graph.edge_store.set_flow(h, Flow::Source);
+            new_graph[[&h]].1 = o;
+            let mut datainv = new_graph[[&h]].clone();
+            datainv.1 = o;
+            let supo = new_graph.orientation(h);
+            let data = EdgeData::new(datainv, supo);
+            let invh = new_graph.inv(h);
+            new_graph.split_edge(invh, data).unwrap();
         }
 
-        let complement = self.reference.complement(graph);
-
-        for i in complement.included_iter() {
-            if self.reference.includes(&graph.inv(i)) {
-                continue;
-            }
-            let source = graph.node_hairs(i);
-            match &graph.edge_store.inv_full(i) {
-                InvolutiveMapping::Identity { data, underlying } => {
-                    let datae = graph.get_edge_data(i);
-                    builder.add_external_edge(
-                        nodeidmap[source],
-                        (datae, Orientation::Default, map(datae)),
-                        data.orientation,
-                        *underlying,
-                    )
-                }
-                InvolutiveMapping::Source { data, sink_idx } => {
-                    let sink = graph.node_hairs(*sink_idx);
-
-                    let datae = graph.get_edge_data(i);
-
-                    builder.add_edge(
-                        nodeidmap[source],
-                        nodeidmap[sink],
-                        (datae, Orientation::Default, map(datae)),
-                        data.orientation,
-                    );
-                }
-                _ => {}
-            }
-        }
-
-        for i in self.reference.included_iter() {
-            // if !graph.involution[i].is_source() {
-            //     panic!("should be source");
-            // }
-            let source = graph.node_hairs(i);
-            let o = graph.orientation(i);
-
-            let (flow, underlying) = if self.sign.includes(&i) {
-                (Flow::Source, Orientation::Default)
-            } else {
-                (Flow::Sink, Orientation::Reversed)
-            };
-
-            // Flow::try_from(self.relative_orientation(i)).unwrap();
-            let orientation = o.relative_to(flow);
-            let datae = &graph[graph[&i]];
-            builder.add_external_edge(
-                nodeidmap[source],
-                (datae, underlying, map(datae)),
-                orientation,
-                flow,
-            );
-            let h = graph.inv(i);
-            let sink = graph.node_hairs(h);
-            builder.add_external_edge(
-                nodeidmap[sink],
-                (datae, underlying, map(datae)),
-                orientation,
-                -flow,
-            );
-        }
-        builder.build()
+        new_graph
     }
 }

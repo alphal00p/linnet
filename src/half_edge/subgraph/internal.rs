@@ -10,7 +10,7 @@ use crate::half_edge::{
 
 use super::{node::HedgeNode, Cycle, Inclusion, SubGraph, SubGraphHedgeIter, SubGraphOps};
 
-#[derive(Clone, Debug, Serialize, Deserialize, Eq)]
+#[derive(Clone, Debug, Serialize, Deserialize, Eq, Ord)]
 pub struct InternalSubGraph {
     // cannot be hairy. I.e. it must always have paired hedges.
     // To represent a hairy subgraph, use a ContractedSubGraph

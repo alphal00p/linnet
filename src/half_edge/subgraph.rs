@@ -225,9 +225,9 @@ pub trait SubGraph:
         edge_attr: &impl Fn(&E) -> Option<String>,
         node_attr: &impl Fn(&V) -> Option<String>,
     ) -> String {
-        let mut out = "digraph {\n ".to_string();
+        let mut out = "digraph {\n".to_string();
         out.push_str(
-            "  node [shape=circle,height=0.1,label=\"\"];  overlap=\"scale\"; layout=\"neato\";\n ",
+            "  node [shape=circle,height=0.1,label=\"\"];  overlap=\"scale\"; layout=\"neato\";\n",
         );
 
         out.push_str(graph_info.as_ref());
@@ -248,10 +248,12 @@ pub trait SubGraph:
                 label: None,
                 other: edge_attr(data.data),
             };
-
+            out.push_str("  ");
             if let Some(p) = subgraph_pair {
+                let attr = p.fill_color(attr);
                 out.push_str(&p.dot(graph, data.orientation, attr));
             } else {
+                let attr = hedge_pair.fill_color(attr);
                 out.push_str(&hedge_pair.dot(graph, data.orientation, attr));
             }
         }

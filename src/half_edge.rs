@@ -20,7 +20,9 @@ use itertools::Itertools;
 use nodestorage::{NodeStorage, NodeStorageOps, NodeStorageVec};
 use rand::{rngs::SmallRng, Rng, SeedableRng};
 use serde::{Deserialize, Serialize};
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, Deserialize, From, Into)]
+#[derive(
+    Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, Deserialize, From, Into, PartialOrd, Ord,
+)]
 pub struct NodeIndex(pub usize);
 
 impl std::fmt::Display for NodeIndex {
@@ -90,7 +92,7 @@ pub mod builder;
 pub mod nodestorage;
 pub mod subgraph;
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct HedgeGraph<E, V, S: NodeStorage<NodeData = V> = NodeStorageVec<V>> {
     edge_store: SmartHedgeVec<E>,
     node_store: S,
@@ -176,6 +178,51 @@ impl<E, V: Default, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
 }
 
 impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
+    pub fn concretize<'a, S: SubGraph>(
+        &'a self,
+        subgraph: &'a S,
+    ) -> HedgeGraph<&'a E, &'a V, N::OpStorage<&'a V>> {
+        let mut builder = HedgeGraphBuilder::new();
+
+        let mut node_map = AHashMap::new();
+
+        for (n, d) in self.iter_node_data(subgraph) {
+            node_map.insert(self.id_from_hairs(n).unwrap(), builder.add_node(d));
+        }
+
+        for (pair, _, d) in self.iter_edges(subgraph) {
+            match pair {
+                HedgePair::Paired { source, sink } => {
+                    let src = node_map[&self.node_id(source)];
+                    let dst = node_map[&self.node_id(sink)];
+
+                    builder.add_edge(src, dst, d.data, d.orientation);
+                }
+                HedgePair::Unpaired { hedge, flow } => {
+                    let src = node_map[&self.node_id(hedge)];
+
+                    builder.add_external_edge(src, d.data, d.orientation, flow);
+                }
+                HedgePair::Split {
+                    source,
+                    sink,
+                    split,
+                } => match split {
+                    Flow::Sink => {
+                        let src = node_map[&self.node_id(sink)];
+                        builder.add_external_edge(src, d.data, d.orientation, split);
+                    }
+                    Flow::Source => {
+                        let src = node_map[&self.node_id(source)];
+                        builder.add_external_edge(src, d.data, d.orientation, split);
+                    }
+                },
+            }
+        }
+
+        builder.build()
+    }
+
     /// Gives the involved hedge.
     /// If the hedge is a source, it will return the sink, and vice versa.
     /// If the hedge is an identity, it will return Itself.
@@ -208,6 +255,17 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
         g.node_store.check_and_set_nodes()?;
 
         Ok(g)
+    }
+
+    /// Sews dangling edges internal to the graph, matching edges with the given function and merging them with the given function.
+    /// The function `matching_fn` should return true if the two dangling half edges should be matched.
+    /// The function `merge_fn` should return the new data for the merged edge, given the data of the two edges being merged.
+    pub fn sew(
+        &mut self,
+        matching_fn: impl Fn(Flow, EdgeData<&E>, Flow, EdgeData<&E>) -> bool,
+        merge_fn: impl Fn(Flow, EdgeData<E>, Flow, EdgeData<E>) -> (Flow, EdgeData<E>),
+    ) -> Result<(), HedgeGraphError> {
+        self.edge_store.sew(matching_fn, merge_fn)
     }
 
     /// Adds a dangling edge to the specified node with the given data and superficial orientation.
@@ -320,9 +378,9 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
     pub fn external_filter(&self) -> BitVec {
         let mut filter = bitvec![usize, Lsb0; 0; self.n_hedges()];
 
-        for (i, edge) in self.iter_all_edges().enumerate() {
-            if edge.0.is_unpaired() {
-                filter.set(i, true);
+        for (i, _, _) in self.iter_all_edges() {
+            if i.is_unpaired() {
+                filter.set(i.any_hedge().0, true);
             }
         }
 
@@ -483,11 +541,17 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
 
 pub trait EdgeAccessors<Index> {
     fn orientation(&self, index: Index) -> Orientation;
+
+    fn set_orientation(&mut self, index: Index, orientation: Orientation);
 }
 
 impl<E, V, N: NodeStorageOps<NodeData = V>> EdgeAccessors<Hedge> for HedgeGraph<E, V, N> {
     fn orientation(&self, index: Hedge) -> Orientation {
         self.edge_store.orientation(index)
+    }
+
+    fn set_orientation(&mut self, index: Hedge, orientation: Orientation) {
+        self.edge_store.set_orientation(index, orientation);
     }
 }
 
@@ -495,11 +559,19 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> EdgeAccessors<HedgePair> for HedgeGr
     fn orientation(&self, index: HedgePair) -> Orientation {
         self.edge_store.orientation(index)
     }
+
+    fn set_orientation(&mut self, index: HedgePair, orientation: Orientation) {
+        self.edge_store.set_orientation(index, orientation);
+    }
 }
 
 impl<E, V, N: NodeStorageOps<NodeData = V>> EdgeAccessors<EdgeIndex> for HedgeGraph<E, V, N> {
     fn orientation(&self, index: EdgeIndex) -> Orientation {
         self.edge_store.orientation(index)
+    }
+
+    fn set_orientation(&mut self, index: EdgeIndex, orientation: Orientation) {
+        self.edge_store.set_orientation(index, orientation);
     }
 }
 
@@ -596,7 +668,7 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
     pub fn map_data_ref<'a, E2, V2>(
         &'a self,
         node_map: &impl Fn(&'a Self, &'a V, &'a HedgeNode) -> V2,
-        edge_map: &impl Fn(&'a Self, HedgePair, EdgeData<&'a E>) -> EdgeData<E2>,
+        edge_map: &impl Fn(&'a Self, EdgeIndex, HedgePair, EdgeData<&'a E>) -> EdgeData<E2>,
     ) -> HedgeGraph<E2, V2, N::OpStorage<V2>> {
         HedgeGraph {
             node_store: self.node_store.map_data_ref_graph(self, node_map),
@@ -605,14 +677,14 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
     }
 
     pub fn just_structure(&self) -> HedgeGraph<(), (), N::OpStorage<()>> {
-        self.map_data_ref(&|_, _, _| (), &|_, _, d| d.map(|_| ()))
+        self.map_data_ref(&|_, _, _| (), &|_, _, _, d| d.map(|_| ()))
     }
 
     pub fn map_nodes_ref<V2>(
         &self,
         f: &impl Fn(&Self, &V, &HedgeNode) -> V2,
     ) -> HedgeGraph<&E, V2, N::OpStorage<V2>> {
-        self.map_data_ref(f, &|_, _, e| e)
+        self.map_data_ref(f, &|_, _, _, e| e)
     }
     pub fn map<E2, V2>(
         self,
@@ -755,7 +827,7 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
 
     pub fn tadpoles(&self, externals: &[NodeIndex]) -> Vec<BitVec> {
         let mut identified: HedgeGraph<(), (), N::OpStorage<()>> =
-            self.map_data_ref(&|_, _, _| (), &|_, _, d| d.map(|_| ()));
+            self.map_data_ref(&|_, _, _| (), &|_, _, _, d| d.map(|_| ()));
 
         let n = identified.identify_nodes(externals, ());
         let hairs = identified
@@ -803,7 +875,7 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
         let t_connectivity = self.count_connected_components(&full_target);
 
         let augmented: HedgeGraph<(), (), N::OpStorage<()>> =
-            self.map_data_ref(&|_, _, _| (), &|_, _, d| d.map(|_| ()));
+            self.map_data_ref(&|_, _, _| (), &|_, _, _, d| d.map(|_| ()));
         let s_nodes = self
             .iter_node_data(&source)
             .map(|a| self.id_from_hairs(a.0).unwrap())
@@ -1173,8 +1245,8 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
         }
         components
     }
-    pub fn align_superficial_to_underlying(&mut self) {
-        self.edge_store.align_superficial_to_underlying();
+    pub fn align_underlying_to_superficial(&mut self) {
+        self.edge_store.align_underlying_to_superficial();
     }
 
     /// aligns the underlying orientation of the graph to the tree, such that all tree edges are oriented towards the root, and all others point towards the leaves
@@ -1394,8 +1466,21 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
         self.dot_impl(
             node_as_graph,
             "start=2;\n",
-            &|a| Some(a.to_string()),
-            &|v| Some(v.to_string()),
+            &|a| Some(format!("{}", a)),
+            &|v| Some(format!("{}", v)),
+        )
+    }
+
+    pub fn dot_label<S: SubGraph>(&self, node_as_graph: &S) -> String
+    where
+        E: Display,
+        V: Display,
+    {
+        self.dot_impl(
+            node_as_graph,
+            "start=2;\n",
+            &|a| Some(format!("label=\"{}\"", a)),
+            &|v| Some(format!("label=\"{}\"", v)),
         )
     }
 
@@ -1410,6 +1495,22 @@ impl<E, V, N: NodeStorage<NodeData = V>> Index<&Hedge> for HedgeGraph<E, V, N> {
         &self.edge_store[index]
     }
 }
+
+impl<E, V, N: NodeStorage<NodeData = V>> Index<[&Hedge; 1]> for HedgeGraph<E, V, N> {
+    type Output = E;
+    fn index(&self, index: [&Hedge; 1]) -> &Self::Output {
+        &self[self[index[0]]]
+    }
+}
+
+impl<E, V, N: NodeStorage<NodeData = V>> IndexMut<[&Hedge; 1]> for HedgeGraph<E, V, N> {
+    // type Output = E;
+    fn index_mut(&mut self, index: [&Hedge; 1]) -> &mut Self::Output {
+        let edgeid = self[index[0]];
+        &mut self[edgeid]
+    }
+}
+
 impl<E, V, N: NodeStorageOps<NodeData = V>> Index<NodeIndex> for HedgeGraph<E, V, N> {
     type Output = V;
     fn index(&self, index: NodeIndex) -> &Self::Output {
@@ -1559,6 +1660,14 @@ pub enum HedgeGraphError {
     NoNode,
     #[error("Invalid hedge {0}")]
     InvalidHedge(Hedge),
+    #[error("External hedge as included: {0}")]
+    ExternalHedgeIncluded(Hedge),
+
+    #[error("Included hedge {0} is not in node {1}")]
+    NotInNode(Hedge, NodeIndex),
+
+    #[error("Traversal Root node not in subgraph {0}")]
+    RootNodeNotInSubgraph(NodeIndex),
     #[error("Invalid node {0}")]
     InvalidNode(NodeIndex),
     #[error("Invalid edge")]

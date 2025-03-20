@@ -13,7 +13,7 @@ use super::{
     HedgeGraph, HedgeGraphError, NodeStorage,
 };
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct SmartHedgeVec<T> {
     pub(super) data: Vec<(T, HedgePair)>,
     involution: Involution,
@@ -133,7 +133,7 @@ impl<T> SmartHedgeVec<T> {
         SmartHedgeVec { data, involution }
     }
 
-    pub(crate) fn _fix_hedge_pairs(&mut self) {
+    pub(crate) fn fix_hedge_pairs(&mut self) {
         for (i, d) in self.involution.iter_edge_data() {
             let hedge_pair = self.involution.hedge_pair(i);
             self.data[d.data.0].1 = hedge_pair;
@@ -216,16 +216,26 @@ impl<T> SmartHedgeVec<T> {
     pub fn map_data_ref<'a, T2, V, N: NodeStorage<NodeData = V>>(
         &'a self,
         graph: &'a HedgeGraph<T, V, N>,
-        edge_map: &impl Fn(&'a HedgeGraph<T, V, N>, HedgePair, EdgeData<&'a T>) -> EdgeData<T2>,
+        edge_map: &impl Fn(
+            &'a HedgeGraph<T, V, N>,
+            EdgeIndex,
+            HedgePair,
+            EdgeData<&'a T>,
+        ) -> EdgeData<T2>,
     ) -> SmartHedgeVec<T2> {
         let mut involution = self.involution.clone();
         SmartHedgeVec {
             data: self
                 .data
                 .iter()
-                .map(|(e, h)| {
-                    let new_edgedata =
-                        edge_map(graph, *h, EdgeData::new(e, self.orientation(h.any_hedge())));
+                .enumerate()
+                .map(|(i, (e, h))| {
+                    let new_edgedata = edge_map(
+                        graph,
+                        EdgeIndex(i),
+                        *h,
+                        EdgeData::new(e, self.orientation(h.any_hedge())),
+                    );
 
                     involution.edge_data_mut(h.any_hedge()).orientation = new_edgedata.orientation;
                     (new_edgedata.data, *h)
@@ -285,6 +295,144 @@ impl<T> SmartHedgeVec<T> {
         )
     }
 
+    fn connect_identities(
+        &mut self,
+        source: Hedge,
+        sink: Hedge,
+        merge_fn: impl Fn(Flow, EdgeData<T>, Flow, EdgeData<T>) -> (Flow, EdgeData<T>),
+    ) {
+        let g = self;
+        let source_edge_id = g.involution[source];
+        let sink_edge_id = g.involution[sink];
+        let last = g.data.len().checked_sub(1).unwrap();
+        let second_last = g.data.len().checked_sub(2).unwrap();
+
+        let mut remaps: [Option<(EdgeIndex, EdgeIndex)>; 2] = [None, None];
+
+        // If sink_edge_id.0 is already the last, swap it to second-last first.
+        if sink_edge_id.0 == last {
+            g.data.swap(sink_edge_id.0, second_last); // swap last and second last
+
+            if source_edge_id.0 != second_last {
+                g.data.swap(source_edge_id.0, last);
+
+                // now we need to remap any pointers to second_last, to source_edge_id
+                remaps[0] = Some((EdgeIndex(second_last), source_edge_id));
+            }
+        } else {
+            g.data.swap(source_edge_id.0, last);
+            g.data.swap(sink_edge_id.0, second_last);
+
+            if source_edge_id.0 == second_last {
+                remaps[0] = Some((EdgeIndex(last), sink_edge_id));
+            } else {
+                remaps[0] = Some((EdgeIndex(last), source_edge_id));
+                remaps[1] = Some((EdgeIndex(second_last), sink_edge_id));
+            }
+        }
+
+        let source_data = EdgeData::new(g.data.pop().unwrap().0, g.involution.orientation(source));
+
+        let sink_data = EdgeData::new(g.data.pop().unwrap().0, g.involution.orientation(sink));
+        let (merge_flow, merge_data) = merge_fn(
+            g.involution.flow(source),
+            source_data,
+            g.involution.flow(sink),
+            sink_data,
+        );
+
+        let new_edge_data = EdgeData::new(EdgeIndex(g.data.len()), merge_data.orientation);
+        let pair = match merge_flow {
+            Flow::Sink => HedgePair::Paired {
+                source: sink,
+                sink: source,
+            },
+            Flow::Source => HedgePair::Paired { source, sink },
+        };
+
+        g.data.push((merge_data.data, pair));
+
+        for (_, d) in g.involution.iter_mut() {
+            match d {
+                InvolutiveMapping::Source { data, .. } => {
+                    if let Some((old, new)) = &remaps[0] {
+                        if data.data == *old {
+                            data.data = *new;
+                        }
+                    }
+                    if let Some((old, new)) = &remaps[1] {
+                        if data.data == *old {
+                            data.data = *new;
+                        }
+                    }
+                }
+                InvolutiveMapping::Identity { data, .. } => {
+                    if let Some((old, new)) = &remaps[0] {
+                        if data.data == *old {
+                            data.data = *new;
+                        }
+                    }
+                    if let Some((old, new)) = &remaps[1] {
+                        if data.data == *old {
+                            data.data = *new;
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        g.involution
+            .connect_identities(source, sink, |_, _, _, _| (merge_flow, new_edge_data))
+            .unwrap();
+    }
+
+    pub(crate) fn sew(
+        &mut self,
+        matching_fn: impl Fn(Flow, EdgeData<&T>, Flow, EdgeData<&T>) -> bool,
+        merge_fn: impl Fn(Flow, EdgeData<T>, Flow, EdgeData<T>) -> (Flow, EdgeData<T>),
+    ) -> Result<(), HedgeGraphError> {
+        let nhedges = self.hedge_len();
+
+        let g = self;
+
+        let mut found_match = true;
+
+        while found_match {
+            let mut matching_ids = None;
+
+            for i in (0..nhedges).map(Hedge) {
+                if let InvolutiveMapping::Identity {
+                    data: datas,
+                    underlying: underlyings,
+                } = g.involution.hedge_data(i)
+                {
+                    for j in ((i.0 + 1)..nhedges).map(Hedge) {
+                        if let InvolutiveMapping::Identity { data, underlying } =
+                            &g.involution.inv[j.0]
+                        {
+                            if matching_fn(
+                                *underlyings,
+                                datas.as_ref().map(|a| &g.data[a.0].0),
+                                *underlying,
+                                data.as_ref().map(|a| &g.data[a.0].0),
+                            ) {
+                                matching_ids = Some((i, j));
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+
+            if let Some((source, sink)) = matching_ids {
+                g.connect_identities(source, sink, &merge_fn);
+            } else {
+                found_match = false;
+            }
+        }
+        Ok(())
+    }
+
     pub(crate) fn join(
         self,
         other: Self,
@@ -340,6 +488,8 @@ impl<T> SmartHedgeVec<T> {
             involution,
         };
 
+        g.fix_hedge_pairs();
+
         while found_match {
             let mut matching_ids = None;
 
@@ -368,86 +518,7 @@ impl<T> SmartHedgeVec<T> {
             }
 
             if let Some((source, sink)) = matching_ids {
-                let source_edge_id = g.involution[source];
-                let sink_edge_id = g.involution[sink];
-
-                let last = g.data.len().checked_sub(1).unwrap();
-                let second_last = g.data.len().checked_sub(2).unwrap();
-
-                g.data.swap(source_edge_id.0, last);
-                g.data.swap(sink_edge_id.0, second_last);
-
-                let mut remaps: [Option<(EdgeIndex, EdgeIndex)>; 2] = [None, None];
-
-                // If sink_edge_id.0 is already the last, swap it to second-last first.
-                if sink_edge_id.0 == last {
-                    g.data.swap(sink_edge_id.0, second_last); // swap last and second last
-
-                    g.data.swap(source_edge_id.0, last);
-
-                    // now we need to remap any pointers to second_last, to source_edge_id
-                    remaps[0] = Some((EdgeIndex(second_last), source_edge_id));
-                } else {
-                    g.data.swap(source_edge_id.0, last);
-                    g.data.swap(sink_edge_id.0, second_last);
-
-                    if source_edge_id.0 == second_last {
-                        remaps[0] = Some((EdgeIndex(last), sink_edge_id));
-                    } else {
-                        remaps[0] = Some((EdgeIndex(last), source_edge_id));
-                        remaps[1] = Some((EdgeIndex(second_last), sink_edge_id));
-                    }
-                }
-
-                let source_data =
-                    EdgeData::new(g.data.pop().unwrap().0, g.involution.orientation(source));
-                let sink_data =
-                    EdgeData::new(g.data.pop().unwrap().0, g.involution.orientation(sink));
-                let (merge_flow, merge_data) = merge_fn(
-                    g.involution.flow(source),
-                    source_data,
-                    g.involution.flow(sink),
-                    sink_data,
-                );
-
-                let new_edge_data = EdgeData::new(EdgeIndex(g.data.len()), merge_data.orientation);
-
-                g.data
-                    .push((merge_data.data, HedgePair::Paired { source, sink }));
-
-                g.involution
-                    .connect_identities(source, sink, |_, _, _, _| (merge_flow, new_edge_data))
-                    .unwrap();
-
-                for (_, d) in g.involution.iter_mut() {
-                    match d {
-                        InvolutiveMapping::Source { data, .. } => {
-                            if let Some((old, new)) = &remaps[0] {
-                                if data.data == *old {
-                                    data.data = *new;
-                                }
-                            }
-                            if let Some((old, new)) = &remaps[1] {
-                                if data.data == *old {
-                                    data.data = *new;
-                                }
-                            }
-                        }
-                        InvolutiveMapping::Identity { data, .. } => {
-                            if let Some((old, new)) = &remaps[0] {
-                                if data.data == *old {
-                                    data.data = *new;
-                                }
-                            }
-                            if let Some((old, new)) = &remaps[1] {
-                                if data.data == *old {
-                                    data.data = *new;
-                                }
-                            }
-                        }
-                        _ => {}
-                    }
-                }
+                g.connect_identities(source, sink, &merge_fn);
             } else {
                 found_match = false;
             }
@@ -569,13 +640,15 @@ impl<T> SmartHedgeVec<T> {
         self.involution.len()
     }
 
-    pub fn align_superficial_to_underlying(&mut self) {
+    pub fn align_underlying_to_superficial(&mut self) {
         for i in self.involution.iter_idx() {
             let orientation = self.involution.edge_data(i).orientation;
             if let Orientation::Reversed = orientation {
                 self.involution.flip_underlying(i);
             }
         }
+
+        self.fix_hedge_pairs(); //EXPENSIVE TODO FIX
     }
 
     pub fn mapped_from_involution<E>(

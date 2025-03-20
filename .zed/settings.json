@@ -3,37 +3,39 @@
 // For a full list of overridable settings, and general information on folder-specific settings,
 // see the documentation: https://zed.dev/docs/configuring-zed#settings-files
 {
-  "inlay_hints": {
-    "enabled": true,
-    "show_type_hints": true,
-    "show_parameter_hints": false,
-    "show_other_hints": true
-  },
-  "lsp": {
-    "rust-analyzer": {
-      "initialization_options": {
-        "cargo": {
-          "features": ["symbolica", "drawing", "layout"]
-        },
-        "inlayHints": {
-          "maxLength": null,
-          "lifetimeElisionHints": {
-            "enable": "never",
-            "useParameterNames": true
-          },
-          "closureReturnTypeHints": {
-            "enable": "always"
-          }
-        },
-        "check": {
-          "onSave": true,
-          "features": ["symbolica", "drawing", "layout"],
-          "command": "clippy"
+    "soft_wrap": "bounded",
+    "preferred_line_length": 100,
+    "inlay_hints": {
+        "enabled": true,
+        "show_type_hints": true,
+        "show_parameter_hints": false,
+        "show_other_hints": true
+    },
+    "lsp": {
+        "rust-analyzer": {
+            "initialization_options": {
+                "cargo": {
+                    "features": ["symbolica", "drawing", "layout"]
+                },
+                "inlayHints": {
+                    "maxLength": null,
+                    "lifetimeElisionHints": {
+                        "enable": "never",
+                        "useParameterNames": true
+                    },
+                    "closureReturnTypeHints": {
+                        "enable": "always"
+                    }
+                },
+                "check": {
+                    "onSave": true,
+                    "features": ["symbolica", "drawing", "layout"],
+                    "command": "clippy"
+                }
+            }
         }
-      }
+    },
+    "shell": {
+        "program": "nu"
     }
-  },
-  "shell": {
-    "program": "nu"
-  }
 }
