@@ -758,6 +758,7 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
         }
     }
 
+    /// all sets of full edges that do not disconnect the graph/ increase its connected components
     pub fn non_cut_edges(&self) -> AHashSet<BitVec> {
         let connected_components = self.count_connected_components(&self.full_filter());
 

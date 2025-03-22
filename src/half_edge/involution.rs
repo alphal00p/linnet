@@ -484,6 +484,17 @@ pub enum Flow {
     Sink,   // incoming
 }
 
+impl Mul for Flow {
+    type Output = Flow;
+
+    fn mul(self, other: Flow) -> Self::Output {
+        match (self, other) {
+            (Flow::Source, _) => other,
+            (Flow::Sink, _) => -other,
+        }
+    }
+}
+
 impl Flow {
     pub fn color(&self) -> &'static str {
         match self {
@@ -879,7 +890,7 @@ pub enum InvolutionError {
     #[error("Should have been an paired hedge")]
     NotPaired,
 }
-
+pub mod newinv;
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Involution<E = EdgeIndex> {
     pub(super) inv: Vec<InvolutiveMapping<E>>,

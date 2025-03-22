@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, fmt::Display, path::Path};
+use std::{borrow::Borrow, collections::BTreeMap, fmt::Display, path::Path, str::FromStr, u8::MAX};
 
 use ahash::AHashMap;
 use dot_parser::ast::{GraphFromFileError, PestError};
@@ -27,23 +27,64 @@ impl Display for DotEdgeData {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DotVertexData {
-    pub id: String,
+    pub id: Option<String>,
     pub statements: BTreeMap<String, String>,
 }
 
 impl DotVertexData {
-    pub fn id(&self) -> String {
+    pub fn id(&self) -> Option<&str> {
         if let Some(d) = self.statements.get("id") {
-            d.clone()
+            Some(d.as_str())
         } else {
-            self.id.clone()
+            self.id.as_ref().map(|id| id.as_str())
         }
+    }
+
+    pub fn format(&self, template: impl AsRef<str>) -> String {
+        let mut result = template.as_ref().to_owned();
+
+        // Find all occurrences of {key} in the template
+        for (key, value) in &self.statements {
+            let placeholder = format!("{{{}}}", key);
+            result = result.replace(&placeholder, value);
+        }
+
+        // Remove any remaining {whatever} patterns
+        while let Some(start) = result.find('{') {
+            if let Some(end) = result[start..].find('}') {
+                result.replace_range(start..=start + end, "");
+            } else {
+                break;
+            }
+        }
+
+        result
+    }
+
+    pub fn empty() -> Self {
+        DotVertexData {
+            id: None,
+            statements: BTreeMap::new(),
+        }
+    }
+
+    pub fn get<Q: Ord + ?Sized, F: FromStr>(&self, key: &Q) -> Option<Result<F, F::Err>>
+    where
+        String: Borrow<Q>,
+    {
+        self.statements.get(key).map(|s| s.parse())
+    }
+
+    pub fn add_statement(&mut self, key: impl ToString, value: impl ToString) {
+        self.statements.insert(key.to_string(), value.to_string());
     }
 }
 
 impl Display for DotVertexData {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "id={},", self.id())?;
+        if let Some(id) = self.id() {
+            write!(f, "id={},", id)?;
+        }
         for (key, value) in &self.statements {
             if key == "id" {
                 continue;
@@ -55,6 +96,44 @@ impl Display for DotVertexData {
 }
 
 impl DotEdgeData {
+    pub fn empty() -> Self {
+        DotEdgeData {
+            statements: BTreeMap::new(),
+        }
+    }
+
+    pub fn format(&self, template: impl AsRef<str>) -> String {
+        let mut result = template.as_ref().to_owned();
+
+        // Find all occurrences of {key} in the template
+        for (key, value) in &self.statements {
+            let placeholder = format!("{{{}}}", key);
+            result = result.replace(&placeholder, value);
+        }
+
+        // Remove any remaining {whatever} patterns
+        while let Some(start) = result.find('{') {
+            if let Some(end) = result[start..].find('}') {
+                result.replace_range(start..=start + end, "");
+            } else {
+                break;
+            }
+        }
+
+        result
+    }
+
+    pub fn add_statement(&mut self, key: impl ToString, value: impl ToString) {
+        self.statements.insert(key.to_string(), value.to_string());
+    }
+
+    pub fn get<Q: Ord + ?Sized, F: FromStr>(&self, key: &Q) -> Option<Result<F, F::Err>>
+    where
+        String: Borrow<Q>,
+    {
+        self.statements.get(key).map(|s| s.parse())
+    }
+
     pub fn from_parser(
         edge: dot_parser::canonical::Edge<(String, String)>,
         map: &BTreeMap<String, NodeIdOrDangling>,
@@ -149,7 +228,7 @@ impl DotVertexData {
             Either::Right((flow, statements))
         } else {
             Either::Left(DotVertexData {
-                id: value.id,
+                id: Some(value.id),
                 statements,
             })
         }
@@ -244,6 +323,31 @@ where
         let serialize = mapped.dot_serialize(&|d| format!("{d}"), &|d| format!("{d}"));
 
         HedgeGraph::<E, V, S::OpStorage<V>>::from_string(serialize).unwrap()
+    }
+
+    pub fn debug_dot(self) -> String {
+        let mapped: HedgeGraph<DotEdgeData, DotVertexData, S::OpStorage<DotVertexData>> = self.map(
+            |_, _, _, v: V| v.into(),
+            |_, _, _, e: EdgeData<E>| e.map(|data| data.into()),
+        );
+        mapped.dot_serialize(&|d| format!("{d}"), &|d| format!("{d}"))
+    }
+
+    pub fn format_dot(
+        self,
+        edge_format: impl AsRef<str>,
+        vertex_format: impl AsRef<str>,
+    ) -> String {
+        let mapped: HedgeGraph<DotEdgeData, DotVertexData, S::OpStorage<DotVertexData>> = self.map(
+            |_, _, _, v: V| v.into(),
+            |_, _, _, e: EdgeData<E>| e.map(|data| data.into()),
+        );
+        mapped.dot_impl(
+            &mapped.full_filter(),
+            "",
+            &|d| Some(format!("{d}label={}", d.format(&edge_format))),
+            &|d| Some(format!("{d}label={}", d.format(&vertex_format))),
+        )
     }
 }
 
@@ -353,7 +457,7 @@ pub mod test {
                 &graph.full_filter(),
                 "",
                 &|a| Some(format!("label={}", a.statements["label"])),
-                &|b| Some(format!("label={}", b.id))
+                &|b| Some(format!("label={:?}", b.id))
             )
         );
         assert_eq!(graph.n_nodes(), 2);
@@ -434,7 +538,7 @@ pub mod test {
         println!(
             "{}",
             graph2.dot_impl(&graph.full_filter(), "", &|a| None, &|b| Some(format!(
-                "label={}",
+                "label={:?}",
                 b.id
             )))
         );
@@ -443,7 +547,7 @@ pub mod test {
         println!(
             "{}",
             graph2.dot_impl(&graph.full_filter(), "", &|a| None, &|b| Some(format!(
-                "label={}",
+                "label={:?}",
                 b.id
             )))
         );
