@@ -232,7 +232,7 @@ pub trait ForestNodeStore:
 
     fn iter_nodes(&self) -> impl Iterator<Item = (TreeNodeId, &Self::NodeData)>;
 
-    fn iter_node_id<'a>(&'a self) -> impl Iterator<Item = TreeNodeId> + 'a;
+    fn iter_node_id(&self) -> impl Iterator<Item = TreeNodeId> + '_;
 
     fn add_root(&mut self, data: Self::NodeData, root_id: RootId) -> TreeNodeId;
 

@@ -17,6 +17,8 @@ pub trait NodeStorageOps: NodeStorage {
     type OpStorage<N>: NodeStorageOps<NodeData = N>;
     fn extend(self, other: Self) -> Self;
 
+    // fn add_node(&mut self, node_data: Self::NodeData) -> NodeIndex;
+
     /// Identifies nodes, essentially turning them into a single node
     /// Invalidates all previous NodeIndex values
     fn identify_nodes(&mut self, nodes: &[NodeIndex], node_data_merge: Self::NodeData)
@@ -95,6 +97,13 @@ impl<N> NodeStorageOps for NodeStorageVec<N> {
     fn node_len(&self) -> usize {
         self.nodes.len()
     }
+
+    // fn add_node(&mut self, node_data: Self::NodeData) -> NodeIndex {
+    //     let empty = HedgeNode::empty(self.hedge_len());
+    //     self.nodes.push(empty);
+    //     self.node_data.push(node_data);
+    //     NodeIndex(self.nodes.len() - 1)
+    // }
 
     fn identify_nodes(
         &mut self,

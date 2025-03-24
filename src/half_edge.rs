@@ -652,6 +652,10 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
         nodes.into_iter().collect()
     }
 
+    pub fn set_flow(&mut self, hedge: Hedge, flow: Flow) {
+        self.edge_store.set_flow(hedge, flow);
+    }
+
     pub fn identify_nodes(&mut self, nodes: &[NodeIndex], node_data_merge: V) -> NodeIndex {
         self.node_store.identify_nodes(nodes, node_data_merge)
     }
@@ -663,8 +667,89 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
     }
 }
 
+pub enum NodeKind<Data> {
+    Internal(Data),
+    External { data: Data, flow: Flow },
+}
+
+pub enum DanglingMatcher<Data> {
+    Actual { hedge: Hedge, data: Data },
+    Internal { data: Data },
+    Saturator { hedge: Hedge },
+}
+
+impl<Data> DanglingMatcher<Data> {
+    fn new(pair: HedgePair, data: Data) -> Self {
+        match pair {
+            HedgePair::Unpaired { hedge, .. } => DanglingMatcher::Actual { hedge, data },
+            HedgePair::Paired { .. } => DanglingMatcher::Internal { data },
+            _ => panic!("Split"),
+        }
+    }
+    pub fn matches(&self, other: &Self) -> bool {
+        match (self, other) {
+            (
+                DanglingMatcher::Actual { hedge: h1, .. },
+                DanglingMatcher::Saturator { hedge: h2 },
+            ) => h1 == h2,
+            _ => false,
+        }
+    }
+
+    pub fn unwrap(self) -> Data {
+        match self {
+            DanglingMatcher::Actual { data, .. } => data,
+            DanglingMatcher::Internal { data } => data,
+            DanglingMatcher::Saturator { .. } => panic!("Cannot unwrap a saturator"),
+        }
+    }
+}
+
 // Mapping
 impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
+    pub fn saturate_dangling<V2>(
+        self,
+        node_map: impl FnMut(&Involution, &HedgeNode, NodeIndex, V) -> V2,
+        mut dangling_map: impl FnMut(&Involution, &N, Hedge, Flow, EdgeData<&E>) -> V2,
+    ) -> HedgeGraph<E, V2, <<N as NodeStorageOps>::OpStorage<V2> as NodeStorageOps>::OpStorage<V2>>
+    {
+        let ext = self.external_filter();
+
+        let mut saturator = HedgeGraphBuilder::new();
+        for i in ext.included_iter() {
+            let flow = self.flow(i);
+            let d = &self[[&i]];
+            let orientation = self.orientation(i);
+            let new_node_data = dangling_map(
+                self.edge_store.as_ref(),
+                &self.node_store,
+                i,
+                flow,
+                EdgeData::new(d, orientation),
+            );
+
+            let n = saturator.add_node(new_node_data);
+
+            saturator.add_external_edge(
+                n,
+                DanglingMatcher::Saturator { hedge: i },
+                orientation,
+                -flow,
+            );
+        }
+
+        let saturator = saturator.build();
+        let new_graph = self.map(node_map, |_, _, p, e| e.map(|d| DanglingMatcher::new(p, d)));
+        new_graph
+            .join(
+                saturator,
+                |_, dl, _, dr| dl.data.matches(dr.data),
+                |fl, dl, _, _| (fl, dl),
+            )
+            .unwrap()
+            .map(|_, _, _, v| v, |_, _, _, e| e.map(|d| d.unwrap()))
+    }
+
     pub fn map_data_ref<'a, E2, V2>(
         &'a self,
         node_map: &impl Fn(&'a Self, &'a V, &'a HedgeNode) -> V2,

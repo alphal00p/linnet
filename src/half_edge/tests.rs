@@ -637,7 +637,7 @@ fn join() {
     let c = a
         .join(
             b,
-            |af, _, bf, _| true,
+            |_, _, _, _| true,
             |af, ad, bf, bd| {
                 println!("af: {:?}, ad: {:?}, bf: {:?}, bd: {:?}", af, ad, bf, bd);
                 (af, ad)
@@ -652,7 +652,7 @@ use std::time::Instant;
 use insta::assert_snapshot;
 use nodestorage::NodeStorageVec;
 
-use crate::{dot, dot_parser::DotGraph};
+use crate::dot;
 
 use super::*;
 
@@ -890,71 +890,4 @@ fn tadpoles() {
         println!("//Tadpole: \n{}", graph.dot(&t));
     }
     println!("Graph: {}", graph.base_dot());
-}
-
-#[test]
-pub fn cut_and_glue() {
-    let twocycle: DotGraph = dot!(
-    digraph{
-        a->b->a
-    })
-    .unwrap();
-
-    println!("{}", twocycle.dot_display(&twocycle.full_filter()));
-
-    let mut cut = OrientedCut::empty(twocycle.n_hedges());
-
-    for (p, e, d) in twocycle.iter_all_edges() {
-        cut.set(p, Flow::Source);
-
-        // if e.0 % 2 == 0 {
-        //     cut.set(p, Flow::Source);
-        // } else {
-        //     cut.set(p, Flow::Sink);
-        // }
-    }
-
-    let cut_cycle = cut.to_owned_graph(&twocycle);
-
-    println!(
-        "{}",
-        cut_cycle.dot_impl(
-            &cut_cycle.full_filter(),
-            "",
-            &|a| Some(format!("label=\"{}\"", a.label())),
-            &|a| { Some(format!("")) }
-        )
-    );
-
-    let boxgraph: DotGraph = dot!(
-    digraph{
-        a->b->c->d->a
-    })
-    .unwrap();
-
-    println!("{}", boxgraph.dot_display(&boxgraph.full_filter()));
-
-    let mut cut = OrientedCut::empty(boxgraph.n_hedges());
-
-    for (p, e, d) in boxgraph.iter_all_edges() {
-        cut.set(p, Flow::Source);
-
-        // if e.0 % 2 == 0 {
-        //     cut.set(p, Flow::Source);
-        // } else {
-        //     cut.set(p, Flow::Sink);
-        // }
-    }
-
-    let cut_box = cut.to_owned_graph(&boxgraph);
-
-    println!(
-        "{}",
-        cut_box.dot_impl(
-            &cut_box.full_filter(),
-            "",
-            &|a| Some(format!("label=\"{}\"", a.label())),
-            &|a| { Some(format!("")) }
-        )
-    );
 }

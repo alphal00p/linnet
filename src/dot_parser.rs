@@ -1,6 +1,5 @@
-use std::{borrow::Borrow, collections::BTreeMap, fmt::Display, path::Path, str::FromStr, u8::MAX};
+use std::{borrow::Borrow, collections::BTreeMap, fmt::Display, path::Path, str::FromStr};
 
-use ahash::AHashMap;
 use dot_parser::ast::{GraphFromFileError, PestError};
 use itertools::{Either, Itertools};
 
@@ -36,7 +35,7 @@ impl DotVertexData {
         if let Some(d) = self.statements.get("id") {
             Some(d.as_str())
         } else {
-            self.id.as_ref().map(|id| id.as_str())
+            self.id.as_deref()
         }
     }
 
@@ -68,6 +67,10 @@ impl DotVertexData {
         }
     }
 
+    pub fn extend(&mut self, other: Self) {
+        self.statements.extend(other.statements);
+    }
+
     pub fn get<Q: Ord + ?Sized, F: FromStr>(&self, key: &Q) -> Option<Result<F, F::Err>>
     where
         String: Borrow<Q>,
@@ -95,11 +98,68 @@ impl Display for DotVertexData {
     }
 }
 
+// pub trait DotFormat<T> {
+//     fn format(&self, template: T) -> String;
+// }
+
+// impl<F> DotFormat<F> for DotVertexData
+// where
+//     F: Fn(&DotVertexData) -> String,
+// {
+//     fn format(&self, template: F) -> String {
+//         let mut result = template.as_ref().to_owned();
+
+//         // Find all occurrences of {key} in the template
+//         for (key, value) in &self.statements {
+//             let placeholder = format!("{{{}}}", key);
+//             result = result.replace(&placeholder, value);
+//         }
+
+//         // Remove any remaining {whatever} patterns
+//         while let Some(start) = result.find('{') {
+//             if let Some(end) = result[start..].find('}') {
+//                 result.replace_range(start..=start + end, "");
+//             } else {
+//                 break;
+//             }
+//         }
+
+//         result
+//     }
+// }
+
+// impl<S: AsRef<str>> DotFormat<S> for DotVertexData {
+//     fn format(&self, template: S) -> String {
+//         let mut result = template.as_ref().to_owned();
+
+//         // Find all occurrences of {key} in the template
+//         for (key, value) in &self.statements {
+//             let placeholder = format!("{{{}}}", key);
+//             result = result.replace(&placeholder, value);
+//         }
+
+//         // Remove any remaining {whatever} patterns
+//         while let Some(start) = result.find('{') {
+//             if let Some(end) = result[start..].find('}') {
+//                 result.replace_range(start..=start + end, "");
+//             } else {
+//                 break;
+//             }
+//         }
+
+//         result
+//     }
+// }
+
 impl DotEdgeData {
     pub fn empty() -> Self {
         DotEdgeData {
             statements: BTreeMap::new(),
         }
+    }
+
+    pub fn extend(&mut self, other: Self) {
+        self.statements.extend(other.statements);
     }
 
     pub fn format(&self, template: impl AsRef<str>) -> String {
@@ -289,6 +349,7 @@ impl<E, V> From<PestError> for HedgeParseError<E, V> {
     }
 }
 
+#[allow(clippy::result_large_err)]
 pub trait HedgeParseExt<D> {
     type Error;
     fn edge<V>(self) -> Result<D, HedgeParseError<Self::Error, V>>;
@@ -503,7 +564,7 @@ pub mod test {
           ext5 [flow=source];
           ext5 -> 1[dir=forward iter=to,];
         }";
-        let mut graph: DotGraph = HedgeGraph::from_string(s).unwrap();
+        let graph: DotGraph = HedgeGraph::from_string(s).unwrap();
 
         let serialized = graph.dot_serialize(&|e| format!("{e}"), &|v| format!("{v}"));
 
@@ -537,7 +598,7 @@ pub mod test {
 
         println!(
             "{}",
-            graph2.dot_impl(&graph.full_filter(), "", &|a| None, &|b| Some(format!(
+            graph2.dot_impl(&graph.full_filter(), "", &|_| None, &|b| Some(format!(
                 "label={:?}",
                 b.id
             )))
@@ -546,7 +607,7 @@ pub mod test {
         graph2.align_underlying_to_superficial();
         println!(
             "{}",
-            graph2.dot_impl(&graph.full_filter(), "", &|a| None, &|b| Some(format!(
+            graph2.dot_impl(&graph.full_filter(), "", &|_| None, &|b| Some(format!(
                 "label={:?}",
                 b.id
             )))
