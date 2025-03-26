@@ -1103,7 +1103,6 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
         let n_nodes = self.number_of_nodes_in_subgraph(subgraph);
         // println!("n_nodes: {}", n_nodes);
         let n_components = self.count_connected_components(subgraph);
-        println!("n_components: {}", n_components);
 
         n_hedges - n_nodes + n_components
     }
