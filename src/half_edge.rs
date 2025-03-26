@@ -789,7 +789,7 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
         self.edge_store.map(f)
     }
 
-    pub fn new_hedgevec<T>(&self, f: &impl Fn(&E, EdgeIndex) -> T) -> HedgeVec<T> {
+    pub fn new_hedgevec<T>(&self, f: impl FnMut(&E, EdgeIndex, &HedgePair) -> T) -> HedgeVec<T> {
         self.edge_store.new_hedgevec(f)
     }
 

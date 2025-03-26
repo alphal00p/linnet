@@ -1526,11 +1526,11 @@ impl Display for EdgeIndex {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct EdgeVec<E> {
-    inv: Involution<usize>,
-    data: Vec<E>,
-}
+// #[derive(Clone, Debug, Serialize, Deserialize)]
+// pub struct EdgeVec<E> {
+//     inv: Involution<usize>,
+//     data: Vec<E>,
+// }
 
 pub struct DrainingInvolutionIter<E> {
     into: std::vec::IntoIter<InvolutiveMapping<E>>,

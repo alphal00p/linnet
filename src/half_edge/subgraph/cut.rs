@@ -396,19 +396,19 @@ impl OrientedCut {
 
         let graph = self.to_owned_graph_ref(graph);
 
-        for (p, _, i) in graph.iter_all_edges() {
+        for (p, d, i) in graph.iter_all_edges() {
             if let Some(flow) = i.data.flow() {
-                if let HedgePair::Unpaired { hedge, .. } = p {
+                if let HedgePair::Unpaired { .. } = p {
                     match flow {
                         Flow::Sink => {
                             leftright_map
                                 .entry(i.data.index)
-                                .or_insert_with(|| [Some(hedge), None])[0] = Some(hedge)
+                                .or_insert_with(|| [Some(d), None])[0] = Some(d)
                         }
                         Flow::Source => {
                             leftright_map
                                 .entry(i.data.index)
-                                .or_insert_with(|| [None, Some(hedge)])[1] = Some(hedge)
+                                .or_insert_with(|| [None, Some(d)])[1] = Some(d)
                         }
                     }
                 }

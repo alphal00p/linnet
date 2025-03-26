@@ -14,10 +14,11 @@ use serde::{Deserialize, Serialize};
 
 use super::{
     drawing::{CetzEdge, CetzString, Decoration, EdgeGeometry},
-    involution::HedgePair,
-    nodestorage::NodeStorageVec,
+    hedgevec::HedgeVec,
+    involution::{EdgeIndex, HedgePair},
+    nodestorage::{NodeStorageOps, NodeStorageVec},
     subgraph::SubGraph,
-    Flow, Hedge, HedgeGraph, Involution, NodeIndex, Orientation,
+    Flow, HedgeGraph, NodeIndex, Orientation,
 };
 
 pub struct LayoutVertex<V> {
@@ -375,7 +376,7 @@ impl Default for LayoutParams {
 #[allow(clippy::type_complexity)]
 pub struct Positions {
     vertex_positions: Vec<(Option<(f64, f64)>, usize, usize)>,
-    edge_positions: Involution<(Option<(f64, f64)>, usize, usize)>,
+    edge_positions: HedgeVec<(Option<(f64, f64)>, usize, usize)>,
 }
 
 impl Positions {
@@ -387,8 +388,8 @@ impl Positions {
             }
         });
 
-        self.edge_positions.iter_edge_data_mut().for_each(|a| {
-            a.data.0.as_mut().map(|pos| {
+        self.edge_positions.0.iter_mut().for_each(|a| {
+            a.0.as_mut().map(|pos| {
                 pos.0 /= scale;
                 pos.1 /= scale;
             });
@@ -408,17 +409,12 @@ impl Positions {
             .reduce(f64::max);
 
         let mut max_edges = None;
-        for (_, data) in self.edge_positions.iter_edge_data() {
-            let data = data
-                .as_ref()
-                .map(|(a, i, j)| {
-                    if let Some((x, y)) = a {
-                        x.abs().max(y.abs())
-                    } else {
-                        params[*i].abs().max(params[*j].abs())
-                    }
-                })
-                .data;
+        for (a, i, j) in self.edge_positions.0.iter() {
+            let data = if let Some((x, y)) = a {
+                x.abs().max(y.abs())
+            } else {
+                params[*i].abs().max(params[*j].abs())
+            };
             if let Some(max) = max_edges {
                 if max < data {
                     max_edges = Some(data);
@@ -445,29 +441,40 @@ impl Positions {
                 let pos = self.vertex_positions[i.0];
                 LayoutVertex::new(v, params[pos.1], params[pos.2])
             },
-            |_, _, h, e| match h {
+            |i, p, h, e| match h {
                 HedgePair::Paired { source, sink } => {
-                    let source_pos = self.vertex_positions[source.0];
+                    let eid = i[h.any_hedge()];
+                    let src = p.node_id_ref(source);
+                    let sk = p.node_id_ref(sink);
+
+                    let source_pos = self.vertex_positions[src.0];
                     let source_pos = Vector2::new(params[source_pos.1], params[source_pos.2]);
-                    let sink_pos = self.vertex_positions[sink.0];
+                    let sink_pos = self.vertex_positions[sk.0];
                     let sink_pos = Vector2::new(params[sink_pos.1], params[sink_pos.2]);
-                    let pos = &self.get_edge_position(source, params);
+                    let pos = &self.get_edge_position(eid, params);
 
                     e.map(|d| LayoutEdge::new_internal(d, &source_pos, &sink_pos, pos.0, pos.1))
                 }
                 HedgePair::Split { source, sink, .. } => {
-                    let source_pos = self.vertex_positions[source.0];
+                    let eid = i[h.any_hedge()];
+                    let src = p.node_id_ref(source);
+                    let sk = p.node_id_ref(sink);
+
+                    let source_pos = self.vertex_positions[src.0];
                     let source_pos = Vector2::new(params[source_pos.1], params[source_pos.2]);
-                    let sink_pos = self.vertex_positions[sink.0];
+                    let sink_pos = self.vertex_positions[sk.0];
                     let sink_pos = Vector2::new(params[sink_pos.1], params[sink_pos.2]);
-                    let pos = &self.get_edge_position(source, params);
+                    let pos = &self.get_edge_position(eid, params);
 
                     e.map(|d| LayoutEdge::new_internal(d, &source_pos, &sink_pos, pos.0, pos.1))
                 }
                 HedgePair::Unpaired { hedge, flow } => {
-                    let source_pos = self.vertex_positions[hedge.0];
+                    let eid = i[h.any_hedge()];
+                    let src = p.node_id_ref(hedge);
+
+                    let source_pos = self.vertex_positions[src.0];
                     let source_pos = Vector2::new(params[source_pos.1], params[source_pos.2]);
-                    let pos = &self.get_edge_position(hedge, params);
+                    let pos = &self.get_edge_position(eid, params);
                     let orientation = e.orientation;
 
                     e.map(|d| {
@@ -490,16 +497,17 @@ impl Positions {
         let mut params = Vec::new();
         let ext_range = 2.0..4.0;
         let range = -1.0..1.0;
-        let edge_positions = graph.edge_store.as_ref().clone().map_full(|e, d| {
+
+        let edge_positions = graph.new_hedgevec(|_, _, pair| {
             let j = params.len();
-            if e.is_unpaired() {
+            if pair.is_unpaired() {
                 params.push(rng.gen_range(ext_range.clone()));
                 params.push(rng.gen_range(ext_range.clone()));
             } else {
                 params.push(rng.gen_range(range.clone()));
                 params.push(rng.gen_range(range.clone()));
             }
-            d.map(|_| (None, j, j + 1))
+            (None, j, j + 1)
         });
 
         for _ in graph.base_nodes_iter() {
@@ -532,17 +540,17 @@ impl Positions {
         let mut angle = 0.;
         let angle_step = 2. * std::f64::consts::PI / f64::from(graph.n_externals() as u32);
 
-        let edge_positions = graph.edge_store.as_ref().clone().map_full(|e, d| {
+        let edge_positions = graph.new_hedgevec(|_, _, pair| {
             let j = params.len();
             params.push(rng.gen_range(range.clone()));
             params.push(rng.gen_range(range.clone()));
-            if e.is_unpaired() {
+            if pair.is_unpaired() {
                 let x = radius * f64::cos(angle);
                 let y = radius * f64::sin(angle);
                 angle += angle_step;
-                d.map(|_| (Some((x, y)), j, j + 1))
+                (Some((x, y)), j, j + 1)
             } else {
-                d.map(|_| (None, j, j + 1))
+                (None, j, j + 1)
             }
         });
 
@@ -582,8 +590,7 @@ impl Positions {
         &'a self,
         params: &'a [f64],
     ) -> impl Iterator<Item = (f64, f64)> + 'a {
-        self.edge_positions.iter_edge_data().map(|(_, e)| {
-            let (p, x, y) = &e.data;
+        self.edge_positions.0.iter().map(|(p, x, y)| {
             if let Some(p) = p {
                 (p.0, p.1)
             } else {
@@ -592,8 +599,8 @@ impl Positions {
         })
     }
 
-    pub fn get_edge_position(&self, edge: super::Hedge, params: &[f64]) -> (f64, f64) {
-        let (p, ix, iy) = self.edge_positions.edge_data(edge).data;
+    pub fn get_edge_position(&self, edge: EdgeIndex, params: &[f64]) -> (f64, f64) {
+        let (p, ix, iy) = self.edge_positions[edge];
         if let Some(p) = p {
             (p.0, p.1)
         } else {
@@ -633,7 +640,7 @@ impl<E, V> CostFunction for GraphLayout<'_, E, V> {
                 cost += self.params.edge_vertex_repulsion / dist;
             }
             for e in self.graph.hairs_from_id(node).hairs.included_iter() {
-                let (ex, ey) = self.positions.get_edge_position(e, param);
+                let (ex, ey) = self.positions.get_edge_position(self.graph[&e], param);
 
                 let dx = x - ex;
                 let dy = y - ey;
@@ -645,9 +652,9 @@ impl<E, V> CostFunction for GraphLayout<'_, E, V> {
                 // cost += self.params.charge_constant_e / dist;
 
                 for othere in self.graph.hairs_from_id(node).hairs.included_iter() {
-                    let a = self.positions.edge_positions.inv(othere);
+                    let a = self.graph.inv(othere);
                     if e > othere && a != e {
-                        let (ox, oy) = self.positions.get_edge_position(othere, param);
+                        let (ox, oy) = self.positions.get_edge_position(self.graph[&othere], param);
                         let dx = ex - ox;
                         let dy = ey - oy;
                         let dist = (dx * dx + dy * dy).sqrt();
@@ -772,8 +779,8 @@ impl LayoutSettings {
         params: LayoutParams,
         iters: LayoutIters,
         edge: f64,
-        left: Vec<Hedge>,
-        right: Vec<Hedge>,
+        left: Vec<EdgeIndex>,
+        right: Vec<EdgeIndex>,
     ) -> Self {
         let mut rng = SmallRng::seed_from_u64(iters.seed);
         let mut vertex_positions = Vec::new();
@@ -808,11 +815,11 @@ impl LayoutSettings {
             (edge / 2., -edge / 2.)
         };
 
-        let mut edge_positions = graph.edge_store.as_ref().clone().map_full(|_, d| {
+        let mut edge_positions = graph.new_hedgevec(|_, _, _| {
             let j = init_params.len();
             init_params.push(rng.gen_range(range.clone()));
             init_params.push(rng.gen_range(range.clone()));
-            d.map(|_| (None, j, j + 1))
+            (None, j, j + 1)
         });
 
         for i in left {
@@ -866,7 +873,7 @@ impl LayoutSettings {
 
         let mut exti = 0;
 
-        let edge_positions = graph.edge_store.as_ref().clone().map_full(|e, d| {
+        let edge_positions = graph.new_hedgevec(|i, d, e| {
             let j = init_params.len();
             init_params.push(rng.gen_range(range.clone()));
             init_params.push(rng.gen_range(range.clone()));
@@ -875,9 +882,9 @@ impl LayoutSettings {
                 exti += 1;
                 let x = radius * angle.cos();
                 let y = radius * angle.sin();
-                d.map(|_| (Some((x, y)), j, j + 1))
+                (Some((x, y)), j, j + 1)
             } else {
-                d.map(|_| (None, j, j + 1))
+                (None, j, j + 1)
             }
         });
 
@@ -935,5 +942,33 @@ impl<E, V> HedgeGraph<E, V, NodeStorageVec<V>> {
         settings.positions.scale(max);
 
         settings.positions.to_graph(self, &best)
+    }
+}
+
+#[cfg(test)]
+pub mod test {
+    use crate::{dot, dot_parser::DotGraph, half_edge::HedgeGraph};
+
+    use super::{LayoutIters, LayoutParams, LayoutSettings};
+
+    #[test]
+    fn layout_simple() {
+        let boxdiag: DotGraph = dot!(
+            digraph{
+                a->b->c->d->a
+            }
+        )
+        .unwrap();
+
+        let layout_settings = LayoutSettings::new(
+            &boxdiag,
+            LayoutParams::default(),
+            LayoutIters {
+                n_iters: 100,
+                temp: 1.,
+                seed: 1,
+            },
+        );
+        boxdiag.layout(layout_settings);
     }
 }

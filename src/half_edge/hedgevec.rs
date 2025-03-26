@@ -164,12 +164,15 @@ impl<T> SmartHedgeVec<T> {
         SmartHedgeVec { data, involution }
     }
 
-    pub fn new_hedgevec<T2>(&self, f: &impl Fn(&T, EdgeIndex) -> T2) -> HedgeVec<T2> {
+    pub fn new_hedgevec<T2>(
+        &self,
+        mut f: impl FnMut(&T, EdgeIndex, &HedgePair) -> T2,
+    ) -> HedgeVec<T2> {
         let data = self
             .data
             .iter()
             .enumerate()
-            .map(|(i, (e, _))| f(e, EdgeIndex(i)))
+            .map(|(i, (e, pair))| f(e, EdgeIndex(i), pair))
             .collect();
 
         HedgeVec(data)
