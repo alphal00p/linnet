@@ -1104,7 +1104,7 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
         // println!("n_nodes: {}", n_nodes);
         let n_components = self.count_connected_components(subgraph);
 
-        n_hedges - n_nodes + n_components
+        n_hedges + n_components - n_nodes
     }
 
     pub fn cycle_basis(&self) -> (Vec<Cycle>, SimpleTraversalTree) {
