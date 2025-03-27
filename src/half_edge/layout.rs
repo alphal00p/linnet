@@ -104,6 +104,10 @@ impl<E> LayoutEdge<E> {
         }
     }
 
+    pub fn pos(&self) -> &Vector2<f64> {
+        self.geometry.pos()
+    }
+
     pub fn to_fancy(
         &mut self,
         source: Vector2<f64>,
@@ -753,9 +757,9 @@ pub struct LayoutSettings {
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy)]
 pub struct LayoutIters {
-    n_iters: u64,
-    temp: f64,
-    seed: u64,
+    pub n_iters: u64,
+    pub temp: f64,
+    pub seed: u64,
 }
 
 impl LayoutSettings {
@@ -830,7 +834,7 @@ impl LayoutSettings {
 
         for i in right {
             let (_, a, b) = edge_positions[i];
-            edge_positions[i] = (Some(left_bot_corner), a, b);
+            edge_positions[i] = (Some(right_bot_corner), a, b);
             right_bot_corner.1 += right_step;
         }
 

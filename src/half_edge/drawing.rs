@@ -407,6 +407,14 @@ impl EdgeGeometry {
         }
     }
 
+    pub fn pos(&self) -> &Vector2<f64> {
+        match self {
+            EdgeGeometry::Simple { pos, .. } => pos,
+            EdgeGeometry::Fancy { pos, .. } => pos,
+            EdgeGeometry::FancyArrow { pos, .. } => pos,
+        }
+    }
+
     pub fn cetz_identity<L: Display>(
         &self,
         source: NodeIndex,

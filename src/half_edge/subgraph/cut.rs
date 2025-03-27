@@ -208,20 +208,59 @@ impl OrientedCut {
     ///
     /// Equivalently tells you if the source hedge is in the left side of the cut [Orientation::Default] or the right side [Orientation::Reversed].
     pub fn get_from_pair(&self, pair: HedgePair) -> Orientation {
-        if let HedgePair::Paired { source, sink } = pair {
-            debug_assert!(
-                (self.left.includes(&source) && !self.left.includes(&sink))
-                    || (!self.left.includes(&source) && self.left.includes(&sink))
-            );
-            if self.left.includes(&source) {
-                Orientation::Default
-            } else if self.left.includes(&sink) {
-                Orientation::Reversed
-            } else {
-                Orientation::Undirected
+        match pair {
+            HedgePair::Paired { source, sink } => {
+                debug_assert!(
+                    (self.left.includes(&source) && !self.left.includes(&sink))
+                        || (!self.left.includes(&source) && self.left.includes(&sink))
+                );
+                if self.left.includes(&source) {
+                    debug_assert!(self.right.includes(&sink));
+                    Orientation::Default
+                } else if self.left.includes(&sink) {
+                    debug_assert!(self.right.includes(&source));
+                    Orientation::Reversed
+                } else {
+                    Orientation::Undirected
+                }
             }
-        } else {
-            Orientation::Undirected
+            HedgePair::Split {
+                source,
+                sink,
+                split,
+            } => {
+                debug_assert!(
+                    (self.left.includes(&source) && !self.left.includes(&sink))
+                        || (!self.left.includes(&source) && self.left.includes(&sink))
+                );
+                match split {
+                    Flow::Sink => {
+                        if self.left.includes(&sink) {
+                            debug_assert!(self.right.includes(&source));
+                            Orientation::Reversed
+                        } else {
+                            Orientation::Undirected
+                        }
+                    }
+                    Flow::Source => {
+                        if self.left.includes(&source) {
+                            debug_assert!(self.right.includes(&sink));
+                            Orientation::Default
+                        } else {
+                            Orientation::Undirected
+                        }
+                    }
+                }
+            }
+            HedgePair::Unpaired { hedge, .. } => {
+                if self.left.includes(&hedge) {
+                    Orientation::Default
+                } else if self.right.includes(&hedge) {
+                    Orientation::Reversed
+                } else {
+                    Orientation::Undirected
+                }
+            }
         }
     }
 
@@ -840,6 +879,26 @@ pub mod test {
             cut_aligned.glue_back();
 
             let ocut = cut.cut();
+
+            let a = ocut.clone().layout(
+                &cut,
+                LayoutParams::default(),
+                LayoutIters {
+                    n_iters: 10,
+                    temp: 1.,
+                    seed: 1,
+                },
+                10.,
+            );
+
+            for h in ocut.left.included_iter() {
+                assert!(a[[&h]].pos().x > 0.);
+            }
+
+            for h in ocut.right.included_iter() {
+                assert!(a[[&h]].pos().x < 0.);
+            }
+
             let ocut_aligned = cut_aligned.cut();
 
             assert_eq!(ocut, ocut_aligned);
