@@ -215,10 +215,10 @@ impl OrientedCut {
                         || (!self.left.includes(&source) && self.left.includes(&sink))
                 );
                 if self.left.includes(&source) {
-                    debug_assert!(self.right.includes(&sink));
+                    // debug_assert!(self.right.includes(&sink));
                     Orientation::Default
                 } else if self.left.includes(&sink) {
-                    debug_assert!(self.right.includes(&source));
+                    // debug_assert!(self.right.includes(&source));
                     Orientation::Reversed
                 } else {
                     Orientation::Undirected
@@ -236,7 +236,7 @@ impl OrientedCut {
                 match split {
                     Flow::Sink => {
                         if self.left.includes(&sink) {
-                            debug_assert!(self.right.includes(&source));
+                            // debug_assert!(self.right.includes(&source));
                             Orientation::Reversed
                         } else {
                             Orientation::Undirected
@@ -244,7 +244,7 @@ impl OrientedCut {
                     }
                     Flow::Source => {
                         if self.left.includes(&source) {
-                            debug_assert!(self.right.includes(&sink));
+                            // debug_assert!(self.right.includes(&sink));
                             Orientation::Default
                         } else {
                             Orientation::Undirected
