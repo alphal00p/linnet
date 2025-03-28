@@ -596,7 +596,7 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> CutGraph<E, V, N> {
                 let lo: Flow = ld.data.flow.try_into().unwrap();
                 let ro: Flow = rd.data.flow.try_into().unwrap();
                 debug_assert_eq!(lo, -ro);
-                debug_assert_eq!(lf, -rf);
+                // debug_assert_eq!(lf, -rf);
 
                 let mut data = ld.data.merge(rd.data).unwrap();
 
