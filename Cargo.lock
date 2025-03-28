@@ -347,9 +347,9 @@ dependencies = [
 
 [[package]]
 name = "dot-parser"
-version = "0.4.1"
+version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "41af7e0cf7b1d89ebff0a50f75bf5480733678e907114cc709dd0297ec785ab7"
+checksum = "4f6d24c07743a3ef530749637f2cd177d9fc37f535678e4e443ea729eba64f50"
 dependencies = [
  "either",
  "pest",
