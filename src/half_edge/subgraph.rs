@@ -247,16 +247,16 @@ pub trait SubGraph:
                 label: None,
                 other: edge_attr(data.data),
             };
-            write!(writer, "  ");
+            write!(writer, "  ")?;
             if let Some(p) = subgraph_pair {
                 let attr = p.fill_color(attr);
-                p.dot_fmt(writer, graph, data.orientation, attr);
+                p.dot_fmt(writer, graph, data.orientation, attr)?;
             } else {
                 let attr = hedge_pair.fill_color(attr);
-                hedge_pair.dot_fmt(writer, graph, data.orientation, attr);
+                hedge_pair.dot_fmt(writer, graph, data.orientation, attr)?;
             }
         }
-        writeln!(writer, "}}");
+        writeln!(writer, "}}")?;
         Ok(())
     }
 
@@ -289,16 +289,16 @@ pub trait SubGraph:
                 label: None,
                 other: edge_attr(data.data),
             };
-            write!(writer, "  ");
+            write!(writer, "  ")?;
             if let Some(p) = subgraph_pair {
                 let attr = p.fill_color(attr);
-                p.dot_io(writer, graph, data.orientation, attr);
+                p.dot_io(writer, graph, data.orientation, attr)?;
             } else {
                 let attr = hedge_pair.fill_color(attr);
-                hedge_pair.dot_io(writer, graph, data.orientation, attr);
+                hedge_pair.dot_io(writer, graph, data.orientation, attr)?;
             }
         }
-        writeln!(writer, "}}");
+        writeln!(writer, "}}")?;
         Ok(())
     }
 

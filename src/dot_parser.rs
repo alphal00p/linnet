@@ -387,7 +387,7 @@ impl<'a, E, V> From<GraphFromFileError<'a>> for HedgeParseError<'a, E, V> {
     }
 }
 
-impl<'a, E, V> From<PestError> for HedgeParseError<'a, E, V> {
+impl<E, V> From<PestError> for HedgeParseError<'_, E, V> {
     fn from(e: PestError) -> Self {
         HedgeParseError::ParseError(e)
     }
@@ -651,7 +651,9 @@ pub mod test {
         let graph: DotGraph = HedgeGraph::from_string(s).unwrap();
 
         let mut serialized = String::new();
-        graph.dot_serialize_fmt(&mut serialized, &|e| format!("{e}"), &|v| format!("{v}"));
+        graph
+            .dot_serialize_fmt(&mut serialized, &|e| format!("{e}"), &|v| format!("{v}"))
+            .unwrap();
 
         let colored = graph.dot_impl(&graph.full_filter(), "", &|e| Some(format!("{e}")), &|v| {
             Some(format!("{v}"))
@@ -668,7 +670,9 @@ pub mod test {
         let mut graph2: DotGraph = HedgeGraph::from_string(serialized.clone()).unwrap();
 
         let mut serialized2 = String::new();
-        graph2.dot_serialize_fmt(&mut serialized2, &|e| format!("{e}"), &|v| format!("{v}"));
+        graph2
+            .dot_serialize_fmt(&mut serialized2, &|e| format!("{e}"), &|v| format!("{v}"))
+            .unwrap();
 
         let colored2 =
             graph2.dot_impl(&graph2.full_filter(), "", &|e| Some(format!("{e}")), &|v| {
@@ -700,7 +704,9 @@ pub mod test {
         );
 
         let mut serialized2 = String::new();
-        graph2.dot_serialize_fmt(&mut serialized2, &|e| format!("{e}"), &|v| format!("{v}"));
+        graph2
+            .dot_serialize_fmt(&mut serialized2, &|e| format!("{e}"), &|v| format!("{v}"))
+            .unwrap();
 
         println!("{}", serialized2);
 

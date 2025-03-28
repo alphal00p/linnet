@@ -9,7 +9,6 @@ use ahash::{AHashMap, AHashSet};
 use bitvec::prelude::*;
 use bitvec::{slice::IterOnes, vec::BitVec};
 use builder::HedgeGraphBuilder;
-use cgmath::dot;
 use derive_more::{From, Into};
 use hedgevec::{Accessors, HedgeVec, SmartHedgeVec};
 use indexmap::IndexSet;

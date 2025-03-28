@@ -2,15 +2,16 @@ use super::{Cycle, Inclusion, SubGraph, SubGraphHedgeIter, SubGraphOps};
 use crate::dot_parser::DotEdgeData;
 use crate::half_edge::hedgevec::Accessors;
 use crate::half_edge::involution::{EdgeIndex, HedgePair};
-#[cfg(feature = "layout")]
-use crate::half_edge::layout::{
-    LayoutEdge, LayoutIters, LayoutParams, LayoutSettings, LayoutVertex,
-};
-use crate::half_edge::nodestorage::{NodeStorageOps, NodeStorageVec};
+use crate::half_edge::nodestorage::NodeStorageOps;
 use crate::half_edge::EdgeAccessors;
 use crate::half_edge::{
     involution::SignOrZero, EdgeData, Flow, Hedge, HedgeGraph, InvolutiveMapping, NodeStorage,
     Orientation, PowersetIterator,
+};
+#[cfg(feature = "layout")]
+use crate::half_edge::{
+    layout::{LayoutEdge, LayoutIters, LayoutParams, LayoutSettings, LayoutVertex},
+    nodestorage::NodeStorageVec,
 };
 use bitvec::vec::BitVec;
 use std::cmp::Ordering;
@@ -653,7 +654,7 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> CutGraph<E, V, N> {
                     false
                 }
             },
-            |lf, ld, rf, rd| {
+            |lf, ld, _, rd| {
                 let lo: Flow = ld.data.flow.try_into().unwrap();
                 let ro: Flow = rd.data.flow.try_into().unwrap();
                 debug_assert_eq!(lo, -ro);
