@@ -425,9 +425,12 @@ where
             |_, _, _, e: EdgeData<E>| e.map(|data| data.into()),
         );
 
-        let serialize = mapped.dot_serialize(&|d| format!("{d}"), &|d| format!("{d}"));
+        let mut out = String::new();
+        mapped
+            .dot_serialize_fmt(&mut out, &|d| format!("{d}"), &|d| format!("{d}"))
+            .unwrap();
 
-        HedgeGraph::<E, V, S::OpStorage<V>>::from_string(serialize).unwrap()
+        HedgeGraph::<E, V, S::OpStorage<V>>::from_string(out).unwrap()
     }
 
     pub fn debug_dot(self) -> String {
@@ -435,7 +438,11 @@ where
             |_, _, _, v: V| v.into(),
             |_, _, _, e: EdgeData<E>| e.map(|data| data.into()),
         );
-        mapped.dot_serialize(&|d| format!("{d}"), &|d| format!("{d}"))
+        let mut out = String::new();
+        mapped
+            .dot_serialize_fmt(&mut out, &|d| format!("{d}"), &|d| format!("{d}"))
+            .unwrap();
+        out
     }
 
     pub fn format_dot(
@@ -522,18 +529,16 @@ macro_rules! dot {
 }
 
 impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
-    pub fn dot_serialize(
+    pub fn dot_serialize_io(
         &self,
+        writer: &mut impl std::io::Write,
         edge_map: &impl Fn(&E) -> String,
         node_map: &impl Fn(&V) -> String,
-    ) -> String {
-        let mut out = "digraph {\n".to_string();
-        // out.push_str(
-        //     "  node [shape=circle,height=0.1,label=\"\"];  overlap=\"scale\"; layout=\"neato\";\n ",
-        // );
+    ) -> Result<(), std::io::Error> {
+        writeln!(writer, "digraph {{")?;
 
         for (n, (_, v)) in self.iter_nodes().enumerate() {
-            out.push_str(format!("  {} [{}];\n", n, node_map(v)).as_str());
+            writeln!(writer, "  {} [{}];", n, node_map(v))?;
         }
 
         for (hedge_pair, _, data) in self.iter_all_edges() {
@@ -543,12 +548,37 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
                 other: Some(edge_map(data.data)),
             };
 
-            out.push_str("  ");
-            out.push_str(&hedge_pair.dot(self, data.orientation, attr));
+            write!(writer, "  ")?;
+            hedge_pair.dot_io(writer, self, data.orientation, attr)?;
+        }
+        writeln!(writer, "}}")?;
+        Ok(())
+    }
+
+    pub fn dot_serialize_fmt(
+        &self,
+        writer: &mut impl std::fmt::Write,
+        edge_map: &impl Fn(&E) -> String,
+        node_map: &impl Fn(&V) -> String,
+    ) -> Result<(), std::fmt::Error> {
+        writeln!(writer, "digraph {{")?;
+
+        for (n, (_, v)) in self.iter_nodes().enumerate() {
+            writeln!(writer, "  {} [{}];", n, node_map(v))?;
         }
 
-        out += "}";
-        out
+        for (hedge_pair, _, data) in self.iter_all_edges() {
+            let attr = GVEdgeAttrs {
+                color: None,
+                label: None,
+                other: Some(edge_map(data.data)),
+            };
+
+            write!(writer, "  ")?;
+            hedge_pair.dot_fmt(writer, self, data.orientation, attr)?;
+        }
+        writeln!(writer, "}}")?;
+        Ok(())
     }
 }
 
@@ -620,7 +650,8 @@ pub mod test {
         }";
         let graph: DotGraph = HedgeGraph::from_string(s).unwrap();
 
-        let serialized = graph.dot_serialize(&|e| format!("{e}"), &|v| format!("{v}"));
+        let mut serialized = String::new();
+        graph.dot_serialize_fmt(&mut serialized, &|e| format!("{e}"), &|v| format!("{v}"));
 
         let colored = graph.dot_impl(&graph.full_filter(), "", &|e| Some(format!("{e}")), &|v| {
             Some(format!("{v}"))
@@ -636,7 +667,8 @@ pub mod test {
 
         let mut graph2: DotGraph = HedgeGraph::from_string(serialized.clone()).unwrap();
 
-        let serialized2 = graph2.dot_serialize(&|e| format!("{e}"), &|v| format!("{v}"));
+        let mut serialized2 = String::new();
+        graph2.dot_serialize_fmt(&mut serialized2, &|e| format!("{e}"), &|v| format!("{v}"));
 
         let colored2 =
             graph2.dot_impl(&graph2.full_filter(), "", &|e| Some(format!("{e}")), &|v| {
@@ -667,10 +699,10 @@ pub mod test {
             )))
         );
 
-        println!(
-            "{}",
-            graph2.dot_serialize(&|e| format!("{e}"), &|v| format!("{v}"))
-        );
+        let mut serialized2 = String::new();
+        graph2.dot_serialize_fmt(&mut serialized2, &|e| format!("{e}"), &|v| format!("{v}"));
+
+        println!("{}", serialized2);
 
         let aligned: DotGraph = dot!(
         digraph {

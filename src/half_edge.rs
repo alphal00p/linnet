@@ -9,6 +9,7 @@ use ahash::{AHashMap, AHashSet};
 use bitvec::prelude::*;
 use bitvec::{slice::IterOnes, vec::BitVec};
 use builder::HedgeGraphBuilder;
+use cgmath::dot;
 use derive_more::{From, Into};
 use hedgevec::{Accessors, HedgeVec, SmartHedgeVec};
 use indexmap::IndexSet;
@@ -1529,6 +1530,27 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
 
 // Display
 impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
+    pub fn dot_impl_fmt<S: SubGraph, Str1: AsRef<str>>(
+        &self,
+        writer: &mut impl std::fmt::Write,
+        node_as_graph: &S,
+        graph_info: Str1,
+        edge_attr: &impl Fn(&E) -> Option<String>,
+        node_attr: &impl Fn(&V) -> Option<String>,
+    ) -> Result<(), std::fmt::Error> {
+        node_as_graph.dot_fmt(writer, self, graph_info, edge_attr, node_attr)
+    }
+    pub fn dot_impl_io<S: SubGraph, Str1: AsRef<str>>(
+        &self,
+        writer: &mut impl std::io::Write,
+        node_as_graph: &S,
+        graph_info: Str1,
+        edge_attr: &impl Fn(&E) -> Option<String>,
+        node_attr: &impl Fn(&V) -> Option<String>,
+    ) -> Result<(), std::io::Error> {
+        node_as_graph.dot_io(writer, self, graph_info, edge_attr, node_attr)
+    }
+
     pub fn dot_impl<S: SubGraph, Str1: AsRef<str>>(
         &self,
         node_as_graph: &S,
@@ -1536,11 +1558,20 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
         edge_attr: &impl Fn(&E) -> Option<String>,
         node_attr: &impl Fn(&V) -> Option<String>,
     ) -> String {
-        node_as_graph.dot(self, graph_info, edge_attr, node_attr)
+        let mut output = String::new();
+        node_as_graph
+            .dot_fmt(&mut output, self, graph_info, edge_attr, node_attr)
+            .unwrap();
+        output
     }
 
     pub fn dot<S: SubGraph>(&self, node_as_graph: &S) -> String {
-        self.dot_impl(node_as_graph, "start=2;\n", &|_| None, &|_| None)
+        let mut output = String::new();
+        self.dot_impl_fmt(&mut output, node_as_graph, "start=2;\n", &|_| None, &|_| {
+            None
+        })
+        .unwrap();
+        output
     }
 
     pub fn dot_display<S: SubGraph>(&self, node_as_graph: &S) -> String
@@ -1548,12 +1579,16 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
         E: Display,
         V: Display,
     {
-        self.dot_impl(
+        let mut output = String::new();
+        self.dot_impl_fmt(
+            &mut output,
             node_as_graph,
             "start=2;\n",
             &|a| Some(format!("{}", a)),
             &|v| Some(format!("{}", v)),
         )
+        .unwrap();
+        output
     }
 
     pub fn dot_label<S: SubGraph>(&self, node_as_graph: &S) -> String
@@ -1561,12 +1596,16 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
         E: Display,
         V: Display,
     {
-        self.dot_impl(
+        let mut output = String::new();
+        self.dot_impl_fmt(
+            &mut output,
             node_as_graph,
             "start=2;\n",
             &|a| Some(format!("label=\"{}\"", a)),
             &|v| Some(format!("label=\"{}\"", v)),
         )
+        .unwrap();
+        output
     }
 
     pub fn base_dot(&self) -> String {

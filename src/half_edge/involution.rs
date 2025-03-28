@@ -1,5 +1,5 @@
 use std::{
-    fmt::Display,
+    fmt::{Display, Write},
     ops::{Index, IndexMut, Mul, Neg},
 };
 
@@ -206,27 +206,212 @@ impl HedgePair {
         }
     }
 
-    pub fn dot<E, V, N: NodeStorageOps<NodeData = V>>(
+    pub fn identity_dot_io<W: std::io::Write>(
+        writer: &mut W,
+        edge_id: Hedge,
+        source: NodeIndex,
+        attr: Option<&GVEdgeAttrs>,
+        orientation: Orientation,
+        flow: Flow,
+    ) -> Result<(), std::io::Error> {
+        //we interpret this node as the hidden one. so the flow is reversed.
+        match flow {
+            Flow::Sink => {
+                writeln!(
+                    writer,
+                    "ext{} [shape=none, label=\"\" flow=source];",
+                    edge_id
+                )?;
+            }
+            Flow::Source => {
+                writeln!(writer, "ext{} [shape=none, label=\"\" flow=sink];", edge_id)?;
+            }
+        }
+
+        write!(writer, "  ext{} -> {}[", edge_id, source)?;
+        match (orientation, flow) {
+            (Orientation::Default, Flow::Source) => {
+                write!(writer, "dir=back ")?;
+            }
+            (Orientation::Default, Flow::Sink) => {
+                write!(writer, "dir=forward ")?;
+            }
+            (Orientation::Reversed, Flow::Sink) => {
+                write!(writer, "dir=back ")?;
+            }
+            (Orientation::Reversed, Flow::Source) => {
+                write!(writer, "dir=forward ")?;
+            }
+            (Orientation::Undirected, _) => {
+                write!(writer, "dir=none ")?;
+            }
+        }
+        if let Some(attr) = attr {
+            write!(writer, "{}", attr)?;
+        }
+        writeln!(writer, "];")?;
+        Ok(())
+    }
+
+    pub fn identity_dot_fmt<W: std::fmt::Write>(
+        writer: &mut W,
+        edge_id: Hedge,
+        source: NodeIndex,
+        attr: Option<&GVEdgeAttrs>,
+        orientation: Orientation,
+        flow: Flow,
+    ) -> Result<(), std::fmt::Error> {
+        //we interpret this node as the hidden one. so the flow is reversed.
+        match flow {
+            Flow::Sink => {
+                writeln!(
+                    writer,
+                    "ext{} [shape=none, label=\"\" flow=source];",
+                    edge_id
+                )?;
+            }
+            Flow::Source => {
+                writeln!(writer, "ext{} [shape=none, label=\"\" flow=sink];", edge_id)?;
+            }
+        }
+
+        write!(writer, "  ext{} -> {}[", edge_id, source)?;
+        match (orientation, flow) {
+            (Orientation::Default, Flow::Source) => {
+                write!(writer, "dir=back ")?;
+            }
+            (Orientation::Default, Flow::Sink) => {
+                write!(writer, "dir=forward ")?;
+            }
+            (Orientation::Reversed, Flow::Sink) => {
+                write!(writer, "dir=back ")?;
+            }
+            (Orientation::Reversed, Flow::Source) => {
+                write!(writer, "dir=forward ")?;
+            }
+            (Orientation::Undirected, _) => {
+                write!(writer, "dir=none ")?;
+            }
+        }
+        if let Some(attr) = attr {
+            write!(writer, "{}", attr)?;
+        }
+        writeln!(writer, "];")?;
+        Ok(())
+    }
+
+    pub fn pair_dot_fmt<W: std::fmt::Write>(
+        writer: &mut W,
+        source: NodeIndex,
+        sink: NodeIndex,
+        attr: Option<&GVEdgeAttrs>,
+        orientation: Orientation,
+    ) -> Result<(), std::fmt::Error> {
+        write!(writer, "{} -> {}[", source, sink)?;
+        match orientation {
+            Orientation::Default => {
+                write!(writer, " dir=forward ")?;
+            }
+            Orientation::Reversed => {
+                write!(writer, " dir=back ")?;
+            }
+            Orientation::Undirected => {
+                write!(writer, " dir=none ")?;
+            }
+        }
+        if let Some(attr) = attr {
+            writeln!(writer, "{}];", attr)?;
+        } else {
+            writeln!(writer, " color=\"red:blue;0.5 \" ];")?;
+        }
+        Ok(())
+    }
+
+    pub fn pair_dot_io<W: std::io::Write>(
+        writer: &mut W,
+        source: NodeIndex,
+        sink: NodeIndex,
+        attr: Option<&GVEdgeAttrs>,
+        orientation: Orientation,
+    ) -> Result<(), std::io::Error> {
+        write!(writer, "{} -> {}[", source, sink)?;
+        match orientation {
+            Orientation::Default => {
+                write!(writer, " dir=forward ")?;
+            }
+            Orientation::Reversed => {
+                write!(writer, " dir=back ")?;
+            }
+            Orientation::Undirected => {
+                write!(writer, " dir=none ")?;
+            }
+        }
+        if let Some(attr) = attr {
+            writeln!(writer, "{}];", attr)?;
+        } else {
+            writeln!(writer, " color=\"red:blue;0.5 \" ];")?;
+        }
+        Ok(())
+    }
+
+    pub fn dot_fmt<W: std::fmt::Write, E, V, N: NodeStorageOps<NodeData = V>>(
         &self,
+        writer: &mut W,
         graph: &HedgeGraph<E, V, N>,
         orientation: Orientation,
         attr: GVEdgeAttrs,
-    ) -> String {
+    ) -> Result<(), std::fmt::Error> {
         match self {
-            HedgePair::Unpaired { hedge, flow } => InvolutiveMapping::<()>::identity_dot(
+            HedgePair::Unpaired { hedge, flow } => Self::identity_dot_fmt(
+                writer,
                 *hedge,
                 graph.node_id(*hedge),
                 Some(&attr),
                 orientation,
                 *flow,
             ),
-            HedgePair::Paired { source, sink } => InvolutiveMapping::<()>::pair_dot(
+            HedgePair::Paired { source, sink } => Self::pair_dot_fmt(
+                writer,
                 graph.node_id(*source),
                 graph.node_id(*sink),
                 Some(&attr),
                 orientation,
             ),
-            HedgePair::Split { source, sink, .. } => InvolutiveMapping::<()>::pair_dot(
+            HedgePair::Split { source, sink, .. } => Self::pair_dot_fmt(
+                writer,
+                graph.node_id(*source),
+                graph.node_id(*sink),
+                Some(&attr),
+                orientation,
+            ),
+        }
+    }
+
+    pub fn dot_io<W: std::io::Write, E, V, N: NodeStorageOps<NodeData = V>>(
+        &self,
+        writer: &mut W,
+        graph: &HedgeGraph<E, V, N>,
+        orientation: Orientation,
+        attr: GVEdgeAttrs,
+    ) -> Result<(), std::io::Error> {
+        match self {
+            HedgePair::Unpaired { hedge, flow } => Self::identity_dot_io(
+                writer,
+                *hedge,
+                graph.node_id(*hedge),
+                Some(&attr),
+                orientation,
+                *flow,
+            ),
+            HedgePair::Paired { source, sink } => Self::pair_dot_io(
+                writer,
+                graph.node_id(*source),
+                graph.node_id(*sink),
+                Some(&attr),
+                orientation,
+            ),
+            HedgePair::Split { source, sink, .. } => Self::pair_dot_io(
+                writer,
                 graph.node_id(*source),
                 graph.node_id(*sink),
                 Some(&attr),

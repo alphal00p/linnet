@@ -384,16 +384,6 @@ impl SubGraph for OrientedCut {
         }
     }
 
-    fn dot<E, V, N: NodeStorage<NodeData = V>, Str: AsRef<str>>(
-        &self,
-        _graph: &crate::half_edge::HedgeGraph<E, V, N>,
-        _graph_info: Str,
-        _edge_attr: &impl Fn(&E) -> Option<String>,
-        _node_attr: &impl Fn(&V) -> Option<String>,
-    ) -> String {
-        String::new()
-    }
-
     fn hairs(&self, node: &super::HedgeNode) -> BitVec {
         self.left.hairs(node)
     }
@@ -558,13 +548,13 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> CutGraph<E, V, N> {
     }
 
     pub fn round_trip_split(&mut self) {
-        self.glue_back();
+        self.glue_back_strict();
         self.split();
     }
 
     pub fn round_trip_glue(&mut self) {
         self.split();
-        self.glue_back();
+        self.glue_back_strict();
     }
 
     pub fn cut(&self) -> OrientedCut {
@@ -589,9 +579,80 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> CutGraph<E, V, N> {
         )
     }
 
-    pub fn glue_back(&mut self) {
+    /// glues_back a cut graph. only matches edges with the same cut data, reversed cut flow, and compatible orientation and flow.
+    pub fn glue_back_strict(&mut self) {
         self.sew(
-            |_, ld, _, rd| ld.data.matches(rd.data),
+            |lf, ld, rf, rd| {
+                if lf == -rf {
+                    if ld.orientation == rd.orientation {
+                        ld.data.matches(rd.data)
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                }
+            },
+            |lf, ld, rf, rd| {
+                let lo: Flow = ld.data.flow.try_into().unwrap();
+                let ro: Flow = rd.data.flow.try_into().unwrap();
+                debug_assert_eq!(lo, -ro);
+                debug_assert_eq!(lf, -rf);
+
+                let mut data = ld.data.merge(rd.data).unwrap();
+
+                let orientation = ld.orientation;
+                match (lf, lo) {
+                    // A source hedge on the right of the cut
+                    // Means that edge data needs to say Orientation::Reversed,
+                    // so we need a relative difference in the flow
+                    (Flow::Source, Flow::Sink) => {
+                        data.cut(Flow::Sink);
+                        (Flow::Source, EdgeData::new(data, orientation))
+                    }
+                    // A sink hedge on the right of the cut
+                    // Means that edge data needs to say Orientation::Default
+                    // so we need an alignment in the flow
+                    (Flow::Sink, Flow::Source) => {
+                        data.cut(Flow::Sink);
+                        (Flow::Sink, EdgeData::new(data, orientation))
+                    }
+                    // A source hedge on the left of the cut
+                    // Means that edge data needs to say Orientation::Default
+                    // so we need an alignment in the flow
+                    (Flow::Source, Flow::Source) => {
+                        data.cut(Flow::Source);
+                        (Flow::Source, EdgeData::new(data, orientation))
+                    }
+                    // A sink hedge on the left of the cut
+                    // Means that edge data needs to say Orientation::Reversed
+                    // so we need a relative difference in the flow
+                    (Flow::Sink, Flow::Sink) => {
+                        data.cut(Flow::Source);
+                        (Flow::Sink, EdgeData::new(data, orientation))
+                    }
+                }
+            },
+        )
+        .unwrap()
+    }
+
+    /// glues_back a cut graph. only matches edges with the same cut data, reversed cut flow, and compatible orientation and without flow matching.
+    pub fn glue_back_lenient(&mut self) {
+        self.sew(
+            |lf, ld, rf, rd| {
+                if lf == -rf {
+                    if ld.orientation == rd.orientation {
+                        ld.data.matches(rd.data)
+                    } else {
+                        false
+                    }
+                } else if ld.orientation == rd.orientation.reverse() {
+                    ld.data.matches(rd.data)
+                } else {
+                    false
+                }
+            },
             |lf, ld, rf, rd| {
                 let lo: Flow = ld.data.flow.try_into().unwrap();
                 let ro: Flow = rd.data.flow.try_into().unwrap();
@@ -875,8 +936,8 @@ pub mod test {
             let occut = cut.cut();
             let occut_aligned = cut_aligned.cut();
 
-            cut.glue_back();
-            cut_aligned.glue_back();
+            cut.glue_back_strict();
+            cut_aligned.glue_back_strict();
 
             let ocut = cut.cut();
 

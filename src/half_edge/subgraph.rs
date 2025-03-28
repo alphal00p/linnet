@@ -218,25 +218,24 @@ pub trait SubGraph:
     fn nhedges(&self) -> usize;
     fn nedges<E, V, N: NodeStorageOps<NodeData = V>>(&self, graph: &HedgeGraph<E, V, N>) -> usize; //not counting unpaired hedges
 
-    fn dot<E, V, N: NodeStorageOps<NodeData = V>, Str: AsRef<str>>(
+    fn dot_fmt<W: std::fmt::Write, E, V, N: NodeStorageOps<NodeData = V>, Str: AsRef<str>>(
         &self,
+        writer: &mut W,
         graph: &HedgeGraph<E, V, N>,
         graph_info: Str,
         edge_attr: &impl Fn(&E) -> Option<String>,
         node_attr: &impl Fn(&V) -> Option<String>,
-    ) -> String {
-        let mut out = "digraph {\n".to_string();
-        out.push_str(
-            "  node [shape=circle,height=0.1,label=\"\"];  overlap=\"scale\"; layout=\"neato\";\n",
-        );
-
-        out.push_str(graph_info.as_ref());
+    ) -> Result<(), std::fmt::Error> {
+        writeln!(writer, "digraph {{")?;
+        writeln!(
+            writer,
+            "  node [shape=circle,height=0.1,label=\"\"];  overlap=\"scale\"; layout=\"neato\";",
+        )?;
+        writeln!(writer, "{}", graph_info.as_ref())?;
 
         for (n, v) in graph.iter_node_data(self) {
             if let Some(a) = node_attr(v) {
-                out.push_str(
-                    format!("  {} [{}];\n", graph.id_from_hairs(n).unwrap().0, a).as_str(),
-                );
+                writeln!(writer, "  {} [{}];", graph.id_from_hairs(n).unwrap().0, a)?;
             }
         }
 
@@ -248,18 +247,59 @@ pub trait SubGraph:
                 label: None,
                 other: edge_attr(data.data),
             };
-            out.push_str("  ");
+            write!(writer, "  ");
             if let Some(p) = subgraph_pair {
                 let attr = p.fill_color(attr);
-                out.push_str(&p.dot(graph, data.orientation, attr));
+                p.dot_fmt(writer, graph, data.orientation, attr);
             } else {
                 let attr = hedge_pair.fill_color(attr);
-                out.push_str(&hedge_pair.dot(graph, data.orientation, attr));
+                hedge_pair.dot_fmt(writer, graph, data.orientation, attr);
+            }
+        }
+        writeln!(writer, "}}");
+        Ok(())
+    }
+
+    fn dot_io<W: std::io::Write, E, V, N: NodeStorageOps<NodeData = V>, Str: AsRef<str>>(
+        &self,
+        writer: &mut W,
+        graph: &HedgeGraph<E, V, N>,
+        graph_info: Str,
+        edge_attr: &impl Fn(&E) -> Option<String>,
+        node_attr: &impl Fn(&V) -> Option<String>,
+    ) -> Result<(), std::io::Error> {
+        writeln!(writer, "digraph {{")?;
+        writeln!(
+            writer,
+            "  node [shape=circle,height=0.1,label=\"\"];  overlap=\"scale\"; layout=\"neato\";",
+        )?;
+        writeln!(writer, "{}", graph_info.as_ref())?;
+
+        for (n, v) in graph.iter_node_data(self) {
+            if let Some(a) = node_attr(v) {
+                writeln!(writer, "  {} [{}];", graph.id_from_hairs(n).unwrap().0, a)?;
             }
         }
 
-        out += "}";
-        out
+        for (hedge_pair, _, data) in graph.iter_all_edges() {
+            let subgraph_pair = hedge_pair.with_subgraph(self);
+
+            let attr = GVEdgeAttrs {
+                color: self.background_color(subgraph_pair),
+                label: None,
+                other: edge_attr(data.data),
+            };
+            write!(writer, "  ");
+            if let Some(p) = subgraph_pair {
+                let attr = p.fill_color(attr);
+                p.dot_io(writer, graph, data.orientation, attr);
+            } else {
+                let attr = hedge_pair.fill_color(attr);
+                hedge_pair.dot_io(writer, graph, data.orientation, attr);
+            }
+        }
+        writeln!(writer, "}}");
+        Ok(())
     }
 
     fn hairs(&self, node: &HedgeNode) -> BitVec;
