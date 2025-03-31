@@ -66,7 +66,7 @@ impl<E> LayoutEdge<E> {
         let pos_angle = center_to_source.angle(center_to_pos).normalize();
 
         let angle = Vector2::unit_y().angle(center_to_pos)
-            + if sink_angle < pos_angle {
+            + if sink_angle > pos_angle {
                 Rad::turn_div_2()
             } else {
                 Rad::zero()
@@ -81,17 +81,11 @@ impl<E> LayoutEdge<E> {
         }
     }
 
-    pub fn new_external(
-        data: E,
-        source: &Vector2<f64>,
-        x: f64,
-        y: f64,
-        orientation: Orientation,
-    ) -> Self {
+    pub fn new_external(data: E, source: &Vector2<f64>, x: f64, y: f64, flow: Flow) -> Self {
         let pos = Vector2::new(x, y);
         let mut pos_angle = Vector2::unit_x().angle(pos - source);
 
-        if let Orientation::Reversed = orientation {
+        if let Flow::Source = flow {
         } else {
             pos_angle += Rad::turn_div_2()
         }
@@ -148,6 +142,7 @@ impl HedgePair {
                     graph.node_id(*hedge),
                     decoration(&data.data),
                     label(&data.data),
+                    orientation,
                 )
             }
             HedgePair::Paired { source, sink } => {
@@ -157,6 +152,7 @@ impl HedgePair {
                     graph.node_id(*sink),
                     decoration(&data.data),
                     label(&data.data),
+                    orientation,
                 )
             }
             HedgePair::Split { source, sink, .. } => {
@@ -166,6 +162,7 @@ impl HedgePair {
                     graph.node_id(*sink),
                     decoration(&data.data),
                     label(&data.data),
+                    orientation,
                 )
             }
         }
@@ -393,10 +390,10 @@ impl Positions {
         });
 
         self.edge_positions.0.iter_mut().for_each(|a| {
-            a.0.as_mut().map(|pos| {
+            if let Some(pos) = &mut a.0 {
                 pos.0 /= scale;
                 pos.1 /= scale;
-            });
+            }
         });
     }
     pub fn max(&self, params: &[f64]) -> Option<f64> {
@@ -479,17 +476,8 @@ impl Positions {
                     let source_pos = self.vertex_positions[src.0];
                     let source_pos = Vector2::new(params[source_pos.1], params[source_pos.2]);
                     let pos = &self.get_edge_position(eid, params);
-                    let orientation = e.orientation;
 
-                    e.map(|d| {
-                        LayoutEdge::new_external(
-                            d,
-                            &source_pos,
-                            pos.0,
-                            pos.1,
-                            orientation.relative_to(flow),
-                        )
-                    })
+                    e.map(|d| LayoutEdge::new_external(d, &source_pos, pos.0, pos.1, flow))
                 }
             },
         )
@@ -877,7 +865,7 @@ impl LayoutSettings {
 
         let mut exti = 0;
 
-        let edge_positions = graph.new_hedgevec(|i, d, e| {
+        let edge_positions = graph.new_hedgevec(|_, _, e| {
             let j = init_params.len();
             init_params.push(rng.gen_range(range.clone()));
             init_params.push(rng.gen_range(range.clone()));
@@ -951,9 +939,15 @@ impl<E, V> HedgeGraph<E, V, NodeStorageVec<V>> {
 
 #[cfg(test)]
 pub mod test {
-    use crate::{dot, dot_parser::DotGraph, half_edge::HedgeGraph};
+    use std::str::FromStr;
 
-    use super::{LayoutIters, LayoutParams, LayoutSettings};
+    use crate::{
+        dot,
+        dot_parser::{DotEdgeData, DotGraph, DotVertexData},
+        half_edge::{drawing::Decoration, HedgeGraph},
+    };
+
+    use super::{LayoutIters, LayoutParams, LayoutSettings, PositionalHedgeGraph};
 
     #[test]
     fn layout_simple() {
@@ -974,5 +968,59 @@ pub mod test {
             },
         );
         boxdiag.layout(layout_settings);
+    }
+
+    #[test]
+    fn layout_sunshine() {
+        let sunshine: DotGraph = dot!(
+            digraph{
+                0 [flow= source]
+                1 [flow= sink]
+                2 [flow= sink]
+                a->0
+                a->1
+                2->a [dir=back]
+                a->3
+                a->4
+                5->a[dir=back]
+            }
+        )
+        .unwrap();
+
+        println!("{}", sunshine.base_dot());
+
+        let layout_settings = LayoutSettings::new(
+            &sunshine,
+            LayoutParams::default(),
+            LayoutIters {
+                n_iters: 30000,
+                temp: 1.,
+                seed: 1,
+            },
+        );
+        let mut layout: HedgeGraph<
+            super::LayoutEdge<crate::dot_parser::DotEdgeData>,
+            super::LayoutVertex<crate::dot_parser::DotVertexData>,
+        > = sunshine.layout(layout_settings);
+        layout.to_fancy(&super::FancySettings {
+            label_shift: 0.1,
+            arrow_angle_percentage: Some(0.6),
+            arrow_shift: 0.1,
+        });
+
+        let out = String::from_str("#set page(width: 35cm, height: auto)\n").unwrap()
+            + PositionalHedgeGraph::<DotEdgeData, DotVertexData>::cetz_impl_collection(
+                &[(
+                    "".to_string(),
+                    "".to_string(),
+                    vec![("sunshine".to_string(), layout)],
+                )],
+                &|_| "a".to_string(),
+                &|_| Decoration::Arrow,
+                true,
+            )
+            .as_str();
+
+        println!("{}", out);
     }
 }

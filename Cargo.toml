@@ -49,6 +49,8 @@ proptest = "1.6.0"
 # hibit_tree = "0.1.0-alpha.3"
 dot-parser = "0.4.2"
 similar-asserts = "1.7.0"
+kurbo = "0.11.1"
+piet = "0.7.0"
 
 [features]
 symbolica = ["dep:symbolica"]

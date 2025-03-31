@@ -920,30 +920,37 @@ pub mod test {
             }
         }
 
-        let all_source = cut_all_source.to_owned_graph_ref(&twocycle);
-        let all_sink = cut_all_sink.to_owned_graph_ref(&twocycle);
-        let sink_source = cut_sink_source.to_owned_graph_ref(&twocycle);
-        let source_sink = cut_source_sink.to_owned_graph_ref(&twocycle);
+        let cuts = vec![
+            cut_all_source,
+            cut_all_sink,
+            cut_sink_source,
+            cut_source_sink,
+        ];
 
-        let cuts = vec![all_source, all_sink, sink_source, source_sink];
-
-        for mut cut in cuts {
+        for cut in cuts {
+            let mut cut_graph = cut.clone().to_owned_graph_ref(&twocycle);
             // cut.round_trip();
 
-            let mut cut_aligned = cut.clone();
+            let mut cut_aligned = cut_graph.clone();
 
             cut_aligned.align_underlying_to_superficial();
 
-            let occut = cut.cut();
+            let occut = cut_graph.cut();
             let occut_aligned = cut_aligned.cut();
 
-            cut.glue_back_strict();
+            cut_graph.glue_back_strict();
             cut_aligned.glue_back_strict();
 
-            let ocut = cut.cut();
+            let ocut = cut_graph.cut();
+            let ocut_aligned = cut_aligned.cut();
+
+            assert_eq!(ocut, ocut_aligned);
+            assert_eq!(occut, occut_aligned);
+            assert_eq!(occut, ocut);
+            assert_eq!(cut, ocut);
 
             let a = ocut.clone().layout(
-                &cut,
+                &cut_graph,
                 LayoutParams::default(),
                 LayoutIters {
                     n_iters: 10,
@@ -961,23 +968,17 @@ pub mod test {
                 assert!(a[[&h]].pos().x < 0.);
             }
 
-            let ocut_aligned = cut_aligned.cut();
-
-            assert_eq!(ocut, ocut_aligned);
-            assert_eq!(occut, occut_aligned);
-            assert_eq!(occut, ocut);
-
-            let original = cut.clone();
+            let original = cut_graph.clone();
             let original_aligned = cut_aligned.clone();
 
-            cut.round_trip_glue();
+            cut_graph.round_trip_glue();
             cut_aligned.round_trip_glue();
 
             assert_eq!(
-                cut,
+                cut_graph,
                 original,
                 "{}\n//not equal to original\n{}",
-                cut.debug_cut_dot(),
+                cut_graph.debug_cut_dot(),
                 original.debug_cut_dot()
             );
             assert_eq!(

@@ -3,7 +3,7 @@ use std::{fmt::Display, mem};
 
 use cgmath::{Angle, Basis2, InnerSpace, Matrix3, Rad, Rotation, SquareMatrix, Vector2, Zero};
 
-use super::{layout::FancySettings, Flow, NodeIndex};
+use super::{involution::Orientation, layout::FancySettings, Flow, NodeIndex};
 
 #[derive(Clone, Debug)]
 pub enum CetzArc {
@@ -420,9 +420,15 @@ impl EdgeGeometry {
         source: NodeIndex,
         decoration: Decoration,
         label: L,
+        orientation: Orientation,
     ) -> String {
         match self {
             EdgeGeometry::Simple { pos, angle } => {
+                let angle = if Orientation::Reversed == orientation {
+                    angle + Rad::turn_div_2()
+                } else {
+                    *angle
+                };
                 format!(
                     "edge(node{}.pos,{},decoration:{},angle:{})\n",
                     source,
@@ -436,6 +442,11 @@ impl EdgeGeometry {
                 label_pos,
                 label_angle,
             } => {
+                let label_angle = if Orientation::Reversed == orientation {
+                    label_angle + Rad::turn_div_2()
+                } else {
+                    *label_angle
+                };
                 format!(
                     "edge(node{}.pos,{},decoration:{},angle:{})\ncetz.draw.content({},angle:{},[{}])\n",
                     source,
@@ -453,6 +464,12 @@ impl EdgeGeometry {
                 label_pos,
                 label_angle,
             } => {
+                let label_angle = if Orientation::Reversed == orientation {
+                    label_angle + Rad::turn_div_2()
+                } else {
+                    *label_angle
+                };
+
                 format!(
                 "edge(node{}.pos,{},decoration:{},angle:{})\ncetz.draw.content({},angle:{},[{}])\n{}\n",
                 source,
@@ -474,9 +491,15 @@ impl EdgeGeometry {
         sink: NodeIndex,
         decoration: Decoration,
         label: L,
+        orientation: Orientation,
     ) -> String {
         match self {
             EdgeGeometry::Simple { pos, angle } => {
+                let angle = if Orientation::Reversed == orientation {
+                    angle + Rad::turn_div_2()
+                } else {
+                    *angle
+                };
                 format!(
                     "edge(node{}.pos,{},node{}.pos,decoration:{},angle:{})\n",
                     source,
@@ -491,6 +514,11 @@ impl EdgeGeometry {
                 label_pos,
                 label_angle,
             } => {
+                let label_angle = if Orientation::Reversed == orientation {
+                    label_angle + Rad::turn_div_2()
+                } else {
+                    *label_angle
+                };
                 format!(
                     "edge(node{}.pos,{},node{}.pos,decoration:{},angle:{})\ncetz.draw.content({},angle:{},[{}])\n",
                     source,
@@ -509,6 +537,11 @@ impl EdgeGeometry {
                 label_pos,
                 label_angle,
             } => {
+                let label_angle = if Orientation::Reversed == orientation {
+                    label_angle + Rad::turn_div_2()
+                } else {
+                    *label_angle
+                };
                 format!(
                     "edge(node{}.pos,{},node{}.pos,decoration:{},angle:{})\ncetz.draw.content({},angle:{},[{}])\n{}\n",
                     source,
