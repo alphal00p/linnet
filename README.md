@@ -5,6 +5,7 @@
 </picture>
 </div>
 
+[![crates.io](https://img.shields.io/crates/v/linnet.svg)](https://crates.io/crates/linnet)
 # Linnet
 
 A graph library that focuses on sub-graphs and node-identification.
