@@ -5,6 +5,7 @@ expression: graph.base_dot()
 digraph {
   node [shape=circle,height=0.1,label=""];  overlap="scale"; layout="neato";
 start=2;
+
   0 -> 1[ dir=none color="red:blue;0.5"];
   1 -> 0[ dir=none color="red:blue;0.5"];
   0 -> 1[ dir=none color="red:blue;0.5"];

@@ -5,6 +5,7 @@ expression: c.dot_display(&c.full_filter())
 digraph {
   node [shape=circle,height=0.1,label=""];  overlap="scale"; layout="neato";
 start=2;
+
   0 [a];
   1 [a];
   2 [b];
