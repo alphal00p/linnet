@@ -1,7 +1,7 @@
 <div align="center">
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://github.com/alphal00p/linnet/blob/6ecc76560c68fa3c988e64f0e46f3009e84cca3d/assets/linnet-logo.webp">
-  <img src="https://github.com/alphal00p/linnet/blob/6ecc76560c68fa3c988e64f0e46f3009e84cca3d/assets/linnet-logo.webp" width="200" height="200">
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/alphal00p/linnet/6ecc76560c68fa3c988e64f0e46f3009e84cca3d/assets/linnet-logo.webp">
+  <img src="https://raw.githubusercontent.com/alphal00p/linnet/6ecc76560c68fa3c988e64f0e46f3009e84cca3d/assets/linnet-logo.webp" width="200" height="200">
 </picture>
 </div>
 
