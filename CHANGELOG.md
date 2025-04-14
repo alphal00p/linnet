@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.4](https://github.com/alphal00p/linnet/compare/v0.2.3...v0.2.4) - 2025-04-14
+
+### Other
+
+- derive more (Decode and Encode)
+
 ## [0.2.3](https://github.com/alphal00p/linnet/compare/v0.2.2...v0.2.3) - 2025-04-08
 
 ### Other
