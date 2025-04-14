@@ -8,10 +8,14 @@ use crate::half_edge::{Hedge, HedgeGraph, NodeStorageOps};
 use super::contracted::ContractedSubGraph;
 use super::{internal::InternalSubGraph, SubGraph, SubGraphOps};
 use super::{Inclusion, SubGraphHedgeIter};
+use bincode::{Decode, Encode};
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(
+    Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash, PartialOrd, Ord, Encode, Decode,
+)]
 pub struct HedgeNode {
     pub internal_graph: InternalSubGraph,
+    #[bincode(with_serde)]
     pub hairs: BitVec,
 }
 

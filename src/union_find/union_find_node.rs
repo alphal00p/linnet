@@ -1,3 +1,6 @@
+use bincode::{Decode, Encode};
+use serde::{Deserialize, Serialize};
+
 use crate::{
     half_edge::{
         involution::Hedge,
@@ -10,10 +13,13 @@ use crate::{
 
 use super::{SetIndex, UnionFind};
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Encode, Decode)]
 pub struct HedgeNodeStore<V> {
     data: V,
     node: HedgeNode,
 }
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Encode, Decode)]
 pub struct UnionFindNodeStore<V> {
     nodes: UnionFind<HedgeNodeStore<V>>,
 }

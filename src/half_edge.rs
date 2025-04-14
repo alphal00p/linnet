@@ -6,6 +6,7 @@ use std::num::TryFromIntError;
 use std::ops::{Index, IndexMut};
 
 use ahash::{AHashMap, AHashSet};
+use bincode::{Decode, Encode};
 use bitvec::prelude::*;
 use bitvec::{slice::IterOnes, vec::BitVec};
 use builder::HedgeGraphBuilder;
@@ -21,7 +22,20 @@ use nodestorage::{NodeStorage, NodeStorageOps, NodeStorageVec};
 use rand::{rngs::SmallRng, Rng, SeedableRng};
 use serde::{Deserialize, Serialize};
 #[derive(
-    Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, Deserialize, From, Into, PartialOrd, Ord,
+    Clone,
+    Copy,
+    Debug,
+    Eq,
+    Hash,
+    PartialEq,
+    Serialize,
+    Deserialize,
+    From,
+    Into,
+    PartialOrd,
+    Ord,
+    Encode,
+    Decode,
 )]
 pub struct NodeIndex(pub usize);
 
@@ -96,6 +110,55 @@ pub mod subgraph;
 pub struct HedgeGraph<E, V, S: NodeStorage<NodeData = V> = NodeStorageVec<V>> {
     edge_store: SmartHedgeVec<E>,
     node_store: S,
+}
+
+impl<E, V, S: NodeStorage<NodeData = V>> ::bincode::Encode for HedgeGraph<E, V, S>
+where
+    E: ::bincode::Encode,
+    V: ::bincode::Encode,
+    S: ::bincode::Encode,
+{
+    fn encode<__E: ::bincode::enc::Encoder>(
+        &self,
+        encoder: &mut __E,
+    ) -> core::result::Result<(), ::bincode::error::EncodeError> {
+        ::bincode::Encode::encode(&self.edge_store, encoder)?;
+        ::bincode::Encode::encode(&self.node_store, encoder)?;
+        core::result::Result::Ok(())
+    }
+}
+
+impl<E, V, S: NodeStorage<NodeData = V>, __Context> ::bincode::Decode<__Context>
+    for HedgeGraph<E, V, S>
+where
+    E: ::bincode::Decode<__Context>,
+    V: ::bincode::Decode<__Context>,
+    S: ::bincode::Decode<__Context>,
+{
+    fn decode<__D: ::bincode::de::Decoder<Context = __Context>>(
+        decoder: &mut __D,
+    ) -> core::result::Result<Self, ::bincode::error::DecodeError> {
+        core::result::Result::Ok(Self {
+            edge_store: ::bincode::Decode::decode(decoder)?,
+            node_store: ::bincode::Decode::decode(decoder)?,
+        })
+    }
+}
+impl<'__de, E, V, S: NodeStorage<NodeData = V>, __Context> ::bincode::BorrowDecode<'__de, __Context>
+    for HedgeGraph<E, V, S>
+where
+    E: ::bincode::de::BorrowDecode<'__de, __Context>,
+    V: ::bincode::de::BorrowDecode<'__de, __Context>,
+    S: ::bincode::de::BorrowDecode<'__de, __Context>,
+{
+    fn borrow_decode<__D: ::bincode::de::BorrowDecoder<'__de, Context = __Context>>(
+        decoder: &mut __D,
+    ) -> core::result::Result<Self, ::bincode::error::DecodeError> {
+        core::result::Result::Ok(Self {
+            edge_store: ::bincode::BorrowDecode::<'_, __Context>::borrow_decode(decoder)?,
+            node_store: ::bincode::BorrowDecode::<'_, __Context>::borrow_decode(decoder)?,
+        })
+    }
 }
 
 impl<E, V, S: NodeStorage<NodeData = V>> AsRef<Involution> for HedgeGraph<E, V, S> {

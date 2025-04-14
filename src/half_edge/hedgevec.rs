@@ -1,5 +1,6 @@
 use std::ops::{Index, IndexMut, Neg};
 
+use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 
 use bitvec::vec::BitVec;
@@ -13,7 +14,9 @@ use super::{
     HedgeGraph, HedgeGraphError, NodeStorage,
 };
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Clone, Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash, Encode, Decode,
+)]
 pub struct SmartHedgeVec<T> {
     pub(super) data: Vec<(T, HedgePair)>,
     involution: Involution,

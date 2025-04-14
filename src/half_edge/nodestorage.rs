@@ -1,3 +1,4 @@
+use bincode::{Decode, Encode};
 use bitvec::vec::BitVec;
 use serde::{Deserialize, Serialize};
 
@@ -79,7 +80,9 @@ pub trait NodeStorage: Sized {
     type Storage<N>;
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Clone, Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash, Encode, Decode,
+)]
 pub struct NodeStorageVec<N> {
     pub(crate) node_data: Vec<N>,
     pub(crate) hedge_data: Vec<NodeIndex>,

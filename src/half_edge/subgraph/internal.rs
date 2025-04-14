@@ -1,3 +1,4 @@
+use bincode::{Decode, Encode};
 use bitvec::vec::BitVec;
 use serde::{Deserialize, Serialize};
 use std::hash::Hash;
@@ -10,10 +11,11 @@ use crate::half_edge::{
 
 use super::{node::HedgeNode, Cycle, Inclusion, SubGraph, SubGraphHedgeIter, SubGraphOps};
 
-#[derive(Clone, Debug, Serialize, Deserialize, Eq, Ord)]
+#[derive(Clone, Debug, Serialize, Deserialize, Eq, Ord, Encode, Decode)]
 pub struct InternalSubGraph {
     // cannot be hairy. I.e. it must always have paired hedges.
     // To represent a hairy subgraph, use a ContractedSubGraph
+    #[bincode(with_serde)]
     pub filter: BitVec,
     pub loopcount: Option<usize>,
 }
