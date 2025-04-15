@@ -110,7 +110,7 @@ fn test_bitvec_filter() {
     for i in 0..3 {
         let filter = &uf[&HeavyIndex(i)].filter;
         for j in 0..3 {
-            assert_eq!(filter[j], i == j);
+            assert_eq!(filter.hairs[j], i == j);
         }
     }
 }

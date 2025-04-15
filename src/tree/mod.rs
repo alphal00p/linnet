@@ -15,8 +15,10 @@ use crate::half_edge::{
 
 pub mod child_pointer;
 pub mod child_vec;
+pub mod iterato;
 pub mod parent_pointer;
-
+/// A type-safe identifier for a node within a `Forest`.
+/// Wraps a `usize` index into the underlying node storage vector.
 #[derive(Clone, Debug, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct TreeNodeId(usize);
 
@@ -38,12 +40,15 @@ impl From<TreeNodeId> for Hedge {
     }
 }
 
+/// Internal data associated with the root of a tree in the `Forest`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RootData<R> {
     pub(crate) data: R,
     pub(crate) root_id: TreeNodeId,
 }
 
+/// A type-safe identifier for a tree within a `Forest`.
+/// Wraps a `usize` index into the `Forest`'s roots vector.
 #[derive(Clone, Debug, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct RootId(pub(crate) usize);
 
@@ -108,6 +113,12 @@ impl<R, N: ForestNodeStore> Index<TreeNodeId> for Forest<R, N> {
 impl<R, N: Default> Default for Forest<R, N> {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl<R, N: ForestNodeStoreDown> Forest<R, N> {
+    pub fn iter_children(&self, start: TreeNodeId) -> impl Iterator<Item = TreeNodeId> + '_ {
+        self.nodes.iter_children(start)
     }
 }
 

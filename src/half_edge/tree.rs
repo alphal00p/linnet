@@ -4,7 +4,9 @@ use bitvec::vec::BitVec;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 
-use crate::tree::{parent_pointer::ParentPointerStore, Forest, ForestNodeStore, RootId};
+use crate::tree::{
+    parent_pointer::ParentPointerStore, Forest, ForestNodeStore, ForestNodeStoreDown, RootId,
+};
 
 use super::{
     involution::{Hedge, Involution},
@@ -80,6 +82,18 @@ impl TTRoot {
 pub struct SimpleTraversalTree<P: ForestNodeStore<NodeData = ()> = ParentPointerStore<()>> {
     forest: Forest<TTRoot, P>,
     pub tree_subgraph: BitVec,
+}
+
+impl<P: ForestNodeStore<NodeData = ()>> SimpleTraversalTree<P> {
+    pub fn cast<P2: ForestNodeStore<NodeData = ()>>(self) -> SimpleTraversalTree<P2>
+    where
+        Forest<TTRoot, P2>: From<Forest<TTRoot, P>>,
+    {
+        SimpleTraversalTree {
+            forest: self.forest.into(),
+            tree_subgraph: self.tree_subgraph,
+        }
+    }
 }
 
 impl<P: ForestNodeStore<NodeData = ()>> SimpleTraversalTree<P> {
@@ -197,6 +211,13 @@ impl<P: ForestNodeStore<NodeData = ()>> Iterator for TraversalTreeAncestorHedgeI
 }
 
 impl<P: ForestNodeStore<NodeData = ()>> SimpleTraversalTree<P> {
+    pub fn iter_leaves(&self)
+    where
+        P: ForestNodeStoreDown,
+    {
+        self.forest.iter_
+    }
+
     pub fn ancestor_iter_hedge<'a>(
         &'a self,
         start: Hedge,

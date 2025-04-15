@@ -360,6 +360,47 @@ impl<U> UnionFind<U> {
         }
     }
 
+    pub fn map_set_data_ref_mut<'a, F, V>(&'a mut self, mut f: F) -> UnionFind<V>
+    where
+        F: FnMut(&'a mut U) -> V,
+    {
+        UnionFind {
+            nodes: self.nodes.clone(),
+            set_data: self
+                .set_data
+                .iter_mut()
+                .map(|d| SetData {
+                    root_pointer: d.root_pointer,
+                    data: d.data.as_mut().map(&mut f),
+                })
+                .collect(),
+        }
+    }
+
+    pub fn map_set_data_ref_result<'a, F, V, Er>(&'a self, mut f: F) -> Result<UnionFind<V>, Er>
+    where
+        F: FnMut(&'a U) -> Result<V, Er>,
+    {
+        let r: Result<Vec<_>, Er> = self
+            .set_data
+            .iter()
+            .map(|d| {
+                let data = d.data.as_ref().map(&mut f).transpose();
+                match data {
+                    Ok(data) => Ok(SetData {
+                        root_pointer: d.root_pointer,
+                        data,
+                    }),
+                    Err(err) => Err(err),
+                }
+            })
+            .collect();
+        Ok(UnionFind {
+            nodes: self.nodes.clone(),
+            set_data: r?,
+        })
+    }
+
     /// Takes ownership of the old data for `x`'s set, applies a function, and replaces it.
     pub fn replace_set_data_of<F>(&mut self, x: ParentPointer, f: F)
     where

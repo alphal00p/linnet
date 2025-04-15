@@ -1,11 +1,20 @@
+//! Implements a tree structure where each node only stores a pointer to its parent.
+
 use std::ops::{Index, IndexMut};
 
 use serde::{Deserialize, Serialize};
 
 use super::{Forest, ForestNodeStore, RootId, TreeNodeId};
+
+/// Represents a node within a `ParentPointerStore`.
+///
+/// Contains the actual data (`V`) and a [ParentId] which points
+/// either to the parent [TreeNodeId] or identifies this node as a root via `RootId`.
 #[derive(Clone, Debug, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct PPNode<V> {
+    /// Pointer to the parent node or the root ID if this is a root node.
     pub(crate) parent: ParentId,
+    /// The data associated with this node.
     pub(crate) data: V,
 }
 
@@ -45,9 +54,15 @@ impl<V> PPNode<V> {
     }
 }
 
+/// Identifies the parent of a node.
+///
+/// A node is either a child of another `Node` or it's the `Root` of a tree,
+/// identified by a `RootId`.
 #[derive(Clone, Debug, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum ParentId {
+    /// This node is a root node belonging to the tree identified by `RootId`.
     Root(RootId),
+    /// This node is a child of the node identified by `TreeNodeId`.
     Node(TreeNodeId),
 }
 
@@ -64,12 +79,28 @@ impl ParentId {
     }
 }
 
+/// A forest data structure where each node only stores its data and a pointer to its parent.
+///
+/// This representation is memory-efficient, especially for sparse trees, and allows for
+/// very fast traversal *upwards* towards the root. However, traversing *downwards*
+/// (finding children) requires iterating through all nodes to find those pointing to a
+/// specific parent, which can be slow.
+///
+/// It implements the `ForestNodeStore` trait.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, Default)]
 pub struct ParentPointerStore<V> {
+    /// The flat list of nodes. The index in the vector corresponds to the `TreeNodeId`.
     pub(crate) nodes: Vec<PPNode<V>>,
 }
 
 impl<V, R> Forest<R, ParentPointerStore<V>> {
+    /// Changes the root of the tree containing `new_root`.
+    ///
+    /// All parent pointers on the path from the `new_root` to the original root
+    /// are reversed. The `new_root` becomes the root node associated with the
+    /// original tree's `RootId`. Updates the `Forest`'s root tracking accordingly.
+    ///
+    /// Returns the `RootId` of the tree that was modified.
     pub fn change_to_root(&mut self, new_root: TreeNodeId) -> RootId {
         let root_id = self.nodes.change_root(new_root);
         self.roots[root_id.0].root_id = new_root;
@@ -79,7 +110,13 @@ impl<V, R> Forest<R, ParentPointerStore<V>> {
 
 impl<V> ParentPointerStore<V> {
     /// Re–roots the tree at the given node (making it a root).
-    /// Along the chain from new_root to the old root the parent pointers are reversed.
+    /// Along the chain from `new_root` to the old root, the parent pointers are reversed.
+    /// The `new_root` becomes associated with the original `RootId`.
+    ///
+    /// Returns the `RootId` of the affected tree.
+    ///
+    /// **Note:** This modifies the store directly. If using within a `Forest`,
+    /// prefer `Forest::change_to_root` which also updates the `Forest`'s root list.
     pub fn change_root(&mut self, new_root: TreeNodeId) -> RootId {
         let mut current = new_root;
         let root_id = self.root(new_root);

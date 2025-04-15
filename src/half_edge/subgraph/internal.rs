@@ -105,6 +105,17 @@ impl SubGraph for InternalSubGraph {
         self.nhedges() / 2
     }
 
+    fn join_mut(&mut self, other: Self) {
+        self.filter.join_mut(other.filter);
+        if let Some(l) = other.loopcount {
+            if let Some(sl) = &mut self.loopcount {
+                *sl += l;
+            } else {
+                self.loopcount = other.loopcount
+            }
+        }
+    }
+
     fn included_iter(&self) -> Self::BaseIter<'_> {
         self.filter.included_iter()
     }

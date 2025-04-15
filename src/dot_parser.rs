@@ -537,7 +537,7 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
     ) -> Result<(), std::io::Error> {
         writeln!(writer, "digraph {{")?;
 
-        for (n, (_, v)) in self.iter_nodes().enumerate() {
+        for (n, (_, _, v)) in self.iter_nodes().enumerate() {
             writeln!(writer, "  {} [{}];", n, node_map(v))?;
         }
 
@@ -563,7 +563,7 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
     ) -> Result<(), std::fmt::Error> {
         writeln!(writer, "digraph {{")?;
 
-        for (n, (_, v)) in self.iter_nodes().enumerate() {
+        for (n, (_, _, v)) in self.iter_nodes().enumerate() {
             writeln!(writer, "  {} [{}];", n, node_map(v))?;
         }
 

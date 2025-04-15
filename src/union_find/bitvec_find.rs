@@ -2,9 +2,14 @@ use std::ops::{Index, IndexMut};
 
 use bitvec::vec::BitVec;
 
-use crate::half_edge::involution::Hedge;
+use crate::half_edge::{
+    involution::Hedge,
+    nodestorage::{NodeStorage, NodeStorageOps},
+    subgraph::HedgeNode,
+    NodeIndex,
+};
 
-use super::{ParentPointer, UnionFind};
+use super::{ParentPointer, SetIndex, UnionFind};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct LightIndex(pub usize);
@@ -22,7 +27,7 @@ pub enum HeavyLight<H, L> {
 
 pub struct BitFilterData<U> {
     pub data: Option<U>,
-    pub filter: BitVec,
+    pub filter: HedgeNode,
 }
 
 pub struct UnionFindBitFilterHL<H, L> {
@@ -46,7 +51,7 @@ impl<H, L> UnionFindBitFilterHL<H, L> {
             pointers.push(index);
             heavy_data.push(BitFilterData {
                 data: Some(d),
-                filter,
+                filter: filter.into(),
             });
         }
 
@@ -74,7 +79,7 @@ impl<H, L> UnionFindBitFilterHL<H, L> {
             pointers.push(index);
             light_data.push(BitFilterData {
                 data: Some(d),
-                filter,
+                filter: filter.into(),
             });
         }
 
@@ -103,7 +108,7 @@ impl<H, L> UnionFindBitFilterHL<H, L> {
                     let id = HeavyLight::Heavy(HeavyIndex(heavy_data.len()));
                     heavy_data.push(BitFilterData {
                         data: Some(h),
-                        filter,
+                        filter: filter.into(),
                     });
                     id
                 }
@@ -111,7 +116,7 @@ impl<H, L> UnionFindBitFilterHL<H, L> {
                     let id = HeavyLight::Light(LightIndex(light_data.len()));
                     light_data.push(BitFilterData {
                         data: Some(l),
-                        filter,
+                        filter: filter.into(),
                     });
                     id
                 }
@@ -135,11 +140,11 @@ impl<H, L> UnionFindBitFilterHL<H, L> {
     }
 
     pub fn find_from_heavy(&self, h: HeavyIndex) -> ParentPointer {
-        self.find(Hedge(self[&h].filter.iter_ones().next().unwrap()))
+        self.find(Hedge(self[&h].filter.hairs.iter_ones().next().unwrap()))
     }
 
     pub fn find_from_light(&self, l: LightIndex) -> ParentPointer {
-        self.find(Hedge(self[&l].filter.iter_ones().next().unwrap()))
+        self.find(Hedge(self[&l].filter.hairs.iter_ones().next().unwrap()))
     }
 
     /// Returns a reference to the BitVec filter for the set containing the element at ParentPointer x.
@@ -194,10 +199,10 @@ impl<H, L> UnionFindBitFilterHL<H, L> {
                     self.heavy_data[widx].data = Some(merge_h(wval, lval));
                     if widx < lidx {
                         let (wslice, lslice) = self.heavy_data.split_at_mut(lidx);
-                        wslice[widx].filter |= &lslice[0].filter;
+                        wslice[widx].filter.hairs |= &lslice[0].filter.hairs;
                     } else {
                         let (lslice, wslice) = self.heavy_data.split_at_mut(widx);
-                        wslice[0].filter |= &lslice[lidx].filter;
+                        wslice[0].filter.hairs |= &lslice[lidx].filter.hairs;
                     }
                 }
 
@@ -222,10 +227,10 @@ impl<H, L> UnionFindBitFilterHL<H, L> {
                     // 2) Merge filters
                     if widx < lidx {
                         let (wslice, lslice) = self.light_data.split_at_mut(lidx);
-                        wslice[widx].filter |= &lslice[0].filter;
+                        wslice[widx].filter.hairs |= &lslice[0].filter.hairs;
                     } else {
                         let (lslice, wslice) = self.light_data.split_at_mut(widx);
-                        wslice[0].filter |= &lslice[lidx].filter;
+                        wslice[0].filter.hairs |= &lslice[lidx].filter.hairs;
                     }
                 }
 
@@ -260,6 +265,10 @@ impl<H, L> UnionFindBitFilterHL<H, L> {
             _ => panic!("Cannot unify a Heavy root with a Light root!"),
         };
         out
+    }
+
+    fn root_hedge(&self, node: NodeIndex) -> Hedge {
+        self.inner[&SetIndex(node.0)].root_pointer
     }
 }
 
@@ -326,3 +335,200 @@ impl<H, L> IndexMut<&LightIndex> for UnionFindBitFilterHL<H, L> {
         &mut self.light_data[index.0]
     }
 }
+
+impl<H, L> NodeStorage for UnionFindBitFilterHL<H, L> {
+    type Storage<N> = UnionFindBitFilterHL<N, L>;
+    type NodeData = H;
+}
+
+// impl<H, L> NodeStorageOps for UnionFindBitFilterHL<H, L> {
+//     type OpStorage<A> = Self::Storage<A>;
+//     fn hedge_len(&self) -> usize {
+//         self.inner.n_elements()
+//     }
+
+//     fn identify_nodes(
+//         &mut self,
+//         nodes: &[NodeIndex],
+//         node_data_merge: Self::NodeData,
+//     ) -> NodeIndex {
+//         let hedges = nodes
+//             .iter()
+//             .map(|n| self.root_hedge(*n))
+//             .collect::<Vec<_>>();
+
+//         let n_init_root = hedges[0];
+//         for n in hedges.iter().skip(1) {
+//             self.inner.union(n_init_root, *n, |a, _| a);
+//         }
+//         self.inner.replace_set_data_of(n_init_root, |mut a| {
+//             a.data = node_data_merge;
+//             a
+//         });
+//         NodeIndex(self.nodes.find_data_index(n_init_root).0)
+//     }
+
+//     fn to_forest<U>(
+//         &self,
+//         map_data: impl Fn(&Self::NodeData) -> U,
+//     ) -> crate::tree::Forest<U, crate::tree::parent_pointer::ParentPointerStore<()>> {
+//         Forest {
+//             roots: self
+//                 .nodes
+//                 .set_data
+//                 .iter()
+//                 .map(|a| RootData {
+//                     root_id: a.root_pointer.into(),
+//                     data: map_data(&a.data.as_ref().unwrap().data),
+//                 })
+//                 .collect(),
+//             nodes: self
+//                 .nodes
+//                 .nodes
+//                 .iter()
+//                 .map(|a| {
+//                     let ad = a.get();
+//                     let n = match &ad {
+//                         super::UFNode::Child(c) => PPNode::child((), (*c).into()),
+//                         super::UFNode::Root { set_data_idx, .. } => {
+//                             PPNode::root((), RootId(set_data_idx.0))
+//                         }
+//                     };
+
+//                     a.set(ad);
+
+//                     n
+//                 })
+//                 .collect(),
+//         }
+//     }
+
+//     fn node_len(&self) -> usize {
+//         self.nodes.n_sets()
+//     }
+
+//     fn set_hedge_data(&mut self, _hedge: crate::half_edge::involution::Hedge, _nodeid: NodeIndex) {
+//         panic!("should not need to set")
+//     }
+
+//     fn check_and_set_nodes(&mut self) -> Result<(), crate::half_edge::HedgeGraphError> {
+//         Ok(())
+//     }
+
+//     fn map_data_ref_graph<'a, E, V2>(
+//         &'a self,
+//         graph: &'a crate::half_edge::HedgeGraph<E, Self::NodeData, Self>,
+//         mut node_map: impl FnMut(
+//             &'a crate::half_edge::HedgeGraph<E, Self::NodeData, Self>,
+//             &'a HedgeNode,
+//             &'a Self::NodeData,
+//         ) -> V2,
+//     ) -> Self::Storage<V2> {
+//         UnionFindNodeStore {
+//             nodes: self.nodes.map_set_data_ref(|n| HedgeNodeStore {
+//                 data: node_map(graph, &n.node, &n.data),
+//                 node: n.node.clone(),
+//             }),
+//         }
+//     }
+
+//     fn get_node(&self, node_id: NodeIndex) -> &HedgeNode {
+//         &self.nodes[SetIndex(node_id.0)].node
+//     }
+
+//     fn iter_nodes(&self) -> impl Iterator<Item = (&HedgeNode, &Self::NodeData)> {
+//         self.nodes.iter_set_data().map(|(_, d)| (&d.node, &d.data))
+//     }
+
+//     fn iter_nodes_mut(&mut self) -> impl Iterator<Item = (&HedgeNode, &mut Self::NodeData)> {
+//         self.nodes
+//             .iter_set_data_mut()
+//             .map(|(_, d)| (&d.node, &mut d.data))
+//     }
+
+//     fn node_id_ref(&self, hedge: crate::half_edge::involution::Hedge) -> NodeIndex {
+//         NodeIndex(self.nodes.find_data_index(hedge).0)
+//     }
+
+//     fn get_node_data_mut(&mut self, node_id: NodeIndex) -> &mut Self::NodeData {
+//         &mut self.nodes[SetIndex(node_id.0)].data
+//     }
+
+//     fn iter_node_id(&self) -> impl Iterator<Item = NodeIndex> {
+//         self.nodes.iter_set_data().map(|(i, _)| NodeIndex(i.0))
+//     }
+
+//     fn get_node_data(&self, node_id: NodeIndex) -> &Self::NodeData {
+//         &self.nodes[SetIndex(node_id.0)].data
+//     }
+
+//     fn map_data_graph<'a, V2>(
+//         self,
+//         involution: &crate::half_edge::involution::Involution<
+//             crate::half_edge::involution::EdgeIndex,
+//         >,
+//         mut f: impl FnMut(
+//             &crate::half_edge::involution::Involution<crate::half_edge::involution::EdgeIndex>,
+//             &HedgeNode,
+//             NodeIndex,
+//             Self::NodeData,
+//         ) -> V2,
+//     ) -> Self::Storage<V2> {
+//         UnionFindNodeStore {
+//             nodes: self.nodes.map_set_data(|i, n| HedgeNodeStore {
+//                 data: f(involution, &n.node, NodeIndex(i.0), n.data),
+//                 node: n.node.clone(),
+//             }),
+//         }
+//     }
+
+//     fn extend(mut self, other: Self) -> Self {
+//         self.nodes.extend(other.nodes);
+//         self
+//     }
+
+//     fn iter(&self) -> impl Iterator<Item = (NodeIndex, &Self::NodeData)> {
+//         self.nodes
+//             .iter_set_data()
+//             .map(|(i, d)| (NodeIndex(i.0), &d.data))
+//     }
+
+//     fn build<
+//         I: IntoIterator<Item = crate::half_edge::builder::HedgeNodeBuilder<Self::NodeData>>,
+//     >(
+//         nodes: I,
+//         n_hedges: usize,
+//     ) -> Self {
+//         NodeStorageVec::build(nodes, n_hedges).into()
+//     }
+
+//     fn drain(self) -> impl Iterator<Item = (NodeIndex, Self::NodeData)> {
+//         self.nodes
+//             .drain_set_data()
+//             .map(|(s, d)| (NodeIndex(s.0), d.data))
+//     }
+
+//     fn random(sources: &[HedgeNode], sinks: &[HedgeNode]) -> Self
+//     where
+//         Self::NodeData: Default,
+//     {
+//         NodeStorageVec::random(sources, sinks).into()
+//     }
+
+//     fn add_dangling_edge(
+//         mut self,
+//         source: NodeIndex,
+//     ) -> Result<Self, crate::half_edge::HedgeGraphError> {
+//         let setid = SetIndex(source.0);
+//         let _ = self.nodes.add_child(setid);
+//         self.nodes.iter_set_data_mut().for_each(|(s, n)| {
+//             if s == setid {
+//                 n.node.hairs.push(true);
+//             } else {
+//                 n.node.hairs.push(false);
+//             }
+//             n.node.internal_graph.filter.push(false);
+//         });
+//         Ok(self)
+//     }
+// }

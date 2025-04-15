@@ -52,6 +52,11 @@ impl SubGraph for ContractedSubGraph {
         self.allhedges.nhedges()
     }
 
+    fn join_mut(&mut self, other: Self) {
+        self.internal_graph.join_mut(other.internal_graph);
+        self.allhedges.join_mut(other.allhedges);
+    }
+
     fn included(&self) -> &BitVec {
         self.allhedges.included()
     }

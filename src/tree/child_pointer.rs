@@ -1,3 +1,7 @@
+//! Implements a tree structure using a first-child, next-sibling representation.
+//! Each node stores its parent, data, a pointer to its first child, and pointers
+//! to its left and right siblings using a *cyclic* doubly linked list for siblings.
+
 use std::collections::VecDeque;
 
 use serde::{Deserialize, Serialize};
@@ -7,11 +11,22 @@ use super::{
     parent_pointer::{PPNode, ParentId, ParentPointerStore},
     ForestNodeStore, ForestNodeStoreDown, TreeNodeId,
 };
+
+/// Represents a node within a `ParentChildStore`.
+///
+/// Contains the parent pointer and data (`PPNode`), an optional pointer to the
+/// *first* child, and pointers to the left and right siblings. The sibling
+/// pointers form a cyclic doubly linked list among all children of the same parent.
+/// If a node is the only child, its `neighbor_left` and `neighbor_right` point to itself.
 #[derive(Clone, Debug, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct PCNode<V> {
+    /// Parent pointer and node data.
     pub(crate) parent_pointer: PPNode<V>,
-    pub(crate) child: Option<TreeNodeId>, // first child, if any. To get the other children, follow the sibling links of this child
-    pub(crate) neighbor_left: TreeNodeId, // next sibling, if any. Will form a cyclic linked list, if equal to right, then it is the only child
+    /// Pointer to the first child of this node, if any.
+    pub(crate) child: Option<TreeNodeId>, // To get the other children, follow the sibling links of this child
+    /// Pointer to the previous (left) sibling in the cyclic list. Points to self if only child.
+    pub(crate) neighbor_left: TreeNodeId, // Will form a cyclic linked list, if equal to right, then it is the only child
+    /// Pointer to the next (right) sibling in the cyclic list. Points to self if only child.
     pub(crate) neighbor_right: TreeNodeId, // previous sibling, if any. Will form a cyclic linked list, if equal to left, then it is the only child
 }
 
@@ -41,7 +56,16 @@ impl<V> PCNode<V> {
     }
 }
 
+/// A forest data structure using a first-child, next-sibling representation with cyclic sibling links.
+///
+/// Each node stores its parent, data, a pointer to its first child, and pointers to its left and
+/// right siblings. Siblings under a parent form a cyclic doubly linked list.
+///
+/// This representation allows for efficient iteration over children and siblings.
+/// It implements `ForestNodeStore` and `ForestNodeStoreDown`.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, Default)]
 pub struct ParentChildStore<V> {
+    /// The flat list of nodes. The index in the vector corresponds to the `TreeNodeId`.
     pub(crate) nodes: Vec<PCNode<V>>,
 }
 
@@ -73,7 +97,10 @@ impl<V> FromIterator<PCNode<V>> for ParentChildStore<V> {
     }
 }
 
+/// An iterator over the siblings of a node (including the node itself).
+/// Uses the cyclic `neighbor_right` pointers.
 pub enum NeighborIter<'a, V> {
+    /// Case where the node has no children/siblings to iterate over.
     None,
     Some {
         initial: TreeNodeId,
@@ -110,6 +137,8 @@ impl<V> Iterator for NeighborIter<'_, V> {
 }
 
 impl<V> ParentChildStore<V> {
+    /// Returns the left sibling of `node_id`.
+    /// Returns `None` if `node_id` is the only child of its parent (based on cyclic link).
     pub fn left_neighbor_cyclic(&self, node_id: TreeNodeId) -> Option<TreeNodeId> {
         if self.nodes[node_id.0].neighbor_left == node_id {
             None
@@ -118,6 +147,13 @@ impl<V> ParentChildStore<V> {
         }
     }
 
+    /// Returns the left sibling of `node_id`, stopping at the "first" child.
+    ///
+    /// This differs from `left_neighbor_cyclic` by returning `None` if moving left
+    /// would wrap around from the *parent's first recorded child* back to the last child.
+    /// Useful if a non-cyclic view of siblings is needed, although the internal
+    /// representation *is* cyclic.
+    /// Returns `None` if the node is a root or the only child.
     pub fn left_neighbor_ending(&self, node_id: TreeNodeId) -> Option<TreeNodeId> {
         let left = self.nodes[node_id.0].neighbor_left;
         if left == node_id {
@@ -135,10 +171,13 @@ impl<V> ParentChildStore<V> {
         }
     }
 
+    /// Returns the first child of `node_id`, if one exists.
     pub fn first_child(&self, node_id: TreeNodeId) -> Option<TreeNodeId> {
         self.nodes[node_id.0].child
     }
 
+    /// Returns the right sibling of `node_id`.
+    /// Returns `None` if `node_id` is the only child of its parent (based on cyclic link).
     pub fn right_neighbor_cyclic(&self, node_id: TreeNodeId) -> Option<TreeNodeId> {
         if self.nodes[node_id.0].neighbor_right == node_id {
             None
@@ -147,6 +186,12 @@ impl<V> ParentChildStore<V> {
         }
     }
 
+    /// Returns the right sibling of `node_id`, stopping before wrapping around the cycle.
+    ///
+    /// This differs from `right_neighbor_cyclic` by returning `None` if moving right
+    /// would wrap around from the *last* child back to the *parent's first recorded child*.
+    /// Useful if a non-cyclic view of siblings is needed.
+    /// Returns `None` if the node is a root or the only child.
     pub fn right_neighbor_ending(&self, node_id: TreeNodeId) -> Option<TreeNodeId> {
         let right = self.nodes[node_id.0].neighbor_right;
         if right == node_id {

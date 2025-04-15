@@ -17,6 +17,7 @@ use super::{
 pub trait NodeStorageOps: NodeStorage {
     type OpStorage<N>: NodeStorageOps<NodeData = N>;
     fn extend(self, other: Self) -> Self;
+    fn extend_mut(&mut self, other: Self);
 
     // fn add_node(&mut self, node_data: Self::NodeData) -> NodeIndex;
 
@@ -52,12 +53,27 @@ pub trait NodeStorageOps: NodeStorage {
     fn map_data_ref_graph<'a, E, V2>(
         &'a self,
         graph: &'a HedgeGraph<E, Self::NodeData, Self>,
-        node_map: &impl Fn(
+        node_map: impl FnMut(
             &'a HedgeGraph<E, Self::NodeData, Self>,
-            &'a Self::NodeData,
             &'a HedgeNode,
+            &'a Self::NodeData,
         ) -> V2,
     ) -> Self::OpStorage<V2>;
+
+    fn map_data_ref_mut_graph<'a, V2>(
+        &'a mut self,
+        node_map: impl FnMut(&'a HedgeNode, &'a mut Self::NodeData) -> V2,
+    ) -> Self::OpStorage<V2>;
+
+    fn map_data_ref_graph_result<'a, E, V2, Er>(
+        &'a self,
+        graph: &'a HedgeGraph<E, Self::NodeData, Self>,
+        node_map: impl FnMut(
+            &'a HedgeGraph<E, Self::NodeData, Self>,
+            &'a HedgeNode,
+            &'a Self::NodeData,
+        ) -> Result<V2, Er>,
+    ) -> Result<Self::OpStorage<V2>, Er>;
 
     fn map_data_graph<V2>(
         self,
@@ -68,7 +84,10 @@ pub trait NodeStorageOps: NodeStorage {
     fn iter_node_id(&self) -> impl Iterator<Item = NodeIndex> {
         (0..self.node_len()).map(NodeIndex)
     }
-    fn iter_nodes(&self) -> impl Iterator<Item = (&HedgeNode, &Self::NodeData)>;
+    fn iter_nodes(&self) -> impl Iterator<Item = (&HedgeNode, NodeIndex, &Self::NodeData)>;
+    fn iter_nodes_mut(
+        &mut self,
+    ) -> impl Iterator<Item = (&HedgeNode, NodeIndex, &mut Self::NodeData)>;
     fn node_id_ref(&self, hedge: Hedge) -> NodeIndex;
     fn get_node(&self, node_id: NodeIndex) -> &HedgeNode;
     fn get_node_data(&self, node_id: NodeIndex) -> &Self::NodeData;
@@ -235,8 +254,22 @@ impl<N> NodeStorageOps for NodeStorageVec<N> {
         }
     }
 
-    fn iter_nodes(&self) -> impl Iterator<Item = (&HedgeNode, &Self::NodeData)> {
-        self.nodes.iter().zip(self.node_data.iter())
+    fn iter_nodes(&self) -> impl Iterator<Item = (&HedgeNode, NodeIndex, &Self::NodeData)> {
+        self.nodes
+            .iter()
+            .zip(self.node_data.iter())
+            .zip(self.iter_node_id())
+            .map(|((node, data), id)| (node, id, data))
+    }
+
+    fn iter_nodes_mut(
+        &mut self,
+    ) -> impl Iterator<Item = (&HedgeNode, NodeIndex, &mut Self::NodeData)> {
+        self.nodes
+            .iter()
+            .enumerate()
+            .zip(self.node_data.iter_mut())
+            .map(|((id, node), data)| (node, NodeIndex(id), data))
     }
 
     fn node_id_ref(&self, hedge: Hedge) -> NodeIndex {
@@ -296,6 +329,37 @@ impl<N> NodeStorageOps for NodeStorageVec<N> {
         }
     }
 
+    fn extend_mut(&mut self, other: Self) {
+        let self_empty_filter = BitVec::empty(self.hedge_data.len());
+        let other_empty_filter = BitVec::empty(other.hedge_data.len());
+        let mut node_data = &mut self.node_data;
+        node_data.extend(other.node_data);
+
+        for n in self.nodes.iter_mut() {
+            n.hairs.extend(other_empty_filter.clone());
+            n.internal_graph.filter.extend(other_empty_filter.clone());
+        }
+
+        let nodes: Vec<_> = other
+            .nodes
+            .into_iter()
+            .map(|mut k| {
+                let mut new_hairs = self_empty_filter.clone();
+                new_hairs.extend(k.hairs.clone());
+                k.hairs = new_hairs;
+
+                let mut internal = self_empty_filter.clone();
+                internal.extend(k.internal_graph.filter.clone());
+                k.internal_graph.filter = internal;
+
+                k
+            })
+            .collect();
+
+        self.nodes.extend(nodes);
+
+        self.hedge_data.extend(other.hedge_data);
+    }
     fn add_dangling_edge(self, source: NodeIndex) -> Result<Self, HedgeGraphError> {
         if self.nodes.len() <= source.0 {
             return Err(HedgeGraphError::NoNode);
@@ -388,17 +452,17 @@ impl<N> NodeStorageOps for NodeStorageVec<N> {
     fn map_data_ref_graph<'a, E, V2>(
         &'a self,
         graph: &'a HedgeGraph<E, Self::NodeData, Self>,
-        node_map: &impl Fn(
+        mut node_map: impl FnMut(
             &'a HedgeGraph<E, Self::NodeData, Self>,
-            &'a Self::NodeData,
             &'a HedgeNode,
+            &'a Self::NodeData,
         ) -> V2,
     ) -> Self::Storage<V2> {
         let node_data = self
             .node_data
             .iter()
             .zip(self.nodes.iter())
-            .map(|(v, h)| node_map(graph, v, h))
+            .map(|(v, h)| node_map(graph, h, v))
             .collect();
 
         NodeStorageVec {
@@ -406,6 +470,47 @@ impl<N> NodeStorageOps for NodeStorageVec<N> {
             hedge_data: self.hedge_data.clone(),
             nodes: self.nodes.clone(),
         }
+    }
+
+    fn map_data_ref_mut_graph<'a, V2>(
+        &'a mut self,
+        mut node_map: impl FnMut(&'a HedgeNode, &'a mut Self::NodeData) -> V2,
+    ) -> Self::Storage<V2> {
+        let node_data = self
+            .node_data
+            .iter_mut()
+            .zip(self.nodes.iter())
+            .map(|(v, h)| node_map(h, v))
+            .collect();
+
+        NodeStorageVec {
+            node_data,
+            hedge_data: self.hedge_data.clone(),
+            nodes: self.nodes.clone(),
+        }
+    }
+
+    fn map_data_ref_graph_result<'a, E, V2, Er>(
+        &'a self,
+        graph: &'a HedgeGraph<E, Self::NodeData, Self>,
+        mut node_map: impl FnMut(
+            &'a HedgeGraph<E, Self::NodeData, Self>,
+            &'a HedgeNode,
+            &'a Self::NodeData,
+        ) -> Result<V2, Er>,
+    ) -> Result<Self::OpStorage<V2>, Er> {
+        let node_data: Result<Vec<_>, Er> = self
+            .node_data
+            .iter()
+            .zip(self.nodes.iter())
+            .map(|(v, h)| node_map(graph, h, v))
+            .collect();
+
+        Ok(NodeStorageVec {
+            node_data: node_data?,
+            hedge_data: self.hedge_data.clone(),
+            nodes: self.nodes.clone(),
+        })
     }
 
     fn map_data_graph<'a, V2>(

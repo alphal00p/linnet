@@ -8,8 +8,9 @@ use ahash::AHashSet;
 use bitvec::{bitvec, order::Lsb0, vec::BitVec};
 
 use super::{
-    involution::HedgePair, nodestorage::NodeStorageOps, GVEdgeAttrs, Hedge, HedgeGraph,
-    NodeStorage, PowersetIterator,
+    involution::{Flow, HedgePair},
+    nodestorage::NodeStorageOps,
+    GVEdgeAttrs, Hedge, HedgeGraph, NodeStorage, PowersetIterator,
 };
 
 const BASE62_ALPHABET: &[u8; 62] =
@@ -176,10 +177,24 @@ impl Iterator for SubGraphHedgeIter<'_> {
         self.iter.next()
     }
 }
+
+pub trait BaseSubgraph: SubGraph + ModifySubgraph<Hedge> + ModifySubgraph<HedgePair> {
+    fn from_filter<E, V, N: NodeStorageOps<NodeData = V>, F: FnMut(&E) -> bool>(
+        graph: &HedgeGraph<E, V, N>,
+        filter: F,
+    ) -> Self;
+}
+
+pub trait ModifySubgraph<Index> {
+    fn add(&mut self, index: Index);
+
+    fn sub(&mut self, index: Index);
+}
+
 pub trait SubGraph:
     Clone + Eq + Hash + Inclusion<Self> + Inclusion<Self::Base> + Inclusion<Hedge>
 {
-    type Base: SubGraph;
+    type Base: BaseSubgraph;
     type BaseIter<'a>: Iterator<Item = Hedge>
     where
         Self: 'a;
@@ -191,6 +206,13 @@ pub trait SubGraph:
         }
         covering
     }
+
+    fn join(mut self, other: Self) -> Self {
+        self.join_mut(other);
+        self
+    }
+
+    fn join_mut(&mut self, other: Self);
 
     fn background_color(&self, hedge_pair: Option<HedgePair>) -> Option<String> {
         let color = "gray".to_string();
@@ -327,6 +349,87 @@ impl Inclusion<Hedge> for BitVec {
     }
 }
 
+impl ModifySubgraph<Hedge> for BitVec {
+    fn add(&mut self, hedge: Hedge) {
+        self.set(hedge.0, true);
+    }
+
+    fn sub(&mut self, hedge: Hedge) {
+        self.set(hedge.0, false);
+    }
+}
+
+impl ModifySubgraph<HedgePair> for BitVec {
+    fn add(&mut self, index: HedgePair) {
+        match index {
+            HedgePair::Paired { source, sink } => {
+                self.add(source);
+                self.add(sink);
+            }
+            HedgePair::Split {
+                source,
+                sink,
+                split,
+            } => match split {
+                Flow::Source => {
+                    self.add(source);
+                    self.sub(sink);
+                }
+                Flow::Sink => {
+                    self.add(sink);
+                    self.sub(source);
+                }
+            },
+            HedgePair::Unpaired { hedge, .. } => {
+                self.add(hedge);
+            }
+        }
+    }
+
+    fn sub(&mut self, index: HedgePair) {
+        match index {
+            HedgePair::Paired { source, sink } => {
+                self.sub(source);
+                self.sub(sink);
+            }
+            HedgePair::Split {
+                source,
+                sink,
+                split,
+            } => match split {
+                Flow::Source => {
+                    self.sub(source);
+                    // self.sub(sink);
+                }
+                Flow::Sink => {
+                    self.sub(sink);
+                    // self.sub(source);
+                }
+            },
+            HedgePair::Unpaired { hedge, .. } => {
+                self.sub(hedge);
+            }
+        }
+    }
+}
+
+impl BaseSubgraph for BitVec {
+    fn from_filter<E, V, N: NodeStorageOps<NodeData = V>, F: FnMut(&E) -> bool>(
+        graph: &HedgeGraph<E, V, N>,
+        mut filter: F,
+    ) -> Self {
+        let mut empty: BitVec = graph.empty_subgraph();
+
+        for (p, e, d) in graph.iter_all_edges() {
+            if filter(d.data) {
+                empty.add(p);
+            }
+        }
+
+        empty
+    }
+}
+
 impl SubGraph for BitVec {
     type Base = BitVec;
     type BaseIter<'a> = SubGraphHedgeIter<'a>;
@@ -334,6 +437,9 @@ impl SubGraph for BitVec {
         self
     }
 
+    fn join_mut(&mut self, other: Self) {
+        self.extend(other);
+    }
     fn included_iter(&self) -> Self::BaseIter<'_> {
         SubGraphHedgeIter {
             iter: self.iter_ones().map(Hedge),

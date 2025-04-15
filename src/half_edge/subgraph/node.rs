@@ -57,6 +57,11 @@ impl SubGraph for HedgeNode {
         self.hairs.included_iter()
     }
 
+    fn join_mut(&mut self, other: Self) {
+        self.hairs.join_mut(other.hairs);
+        self.internal_graph.join_mut(other.internal_graph);
+    }
+
     fn nedges<E, V, N: NodeStorageOps<NodeData = V>>(&self, graph: &HedgeGraph<E, V, N>) -> usize {
         self.internal_graph.nedges(graph)
     }
@@ -260,6 +265,15 @@ impl From<HedgeNode> for ContractedSubGraph {
         ContractedSubGraph {
             internal_graph: value.internal_graph,
             allhedges: value.hairs,
+        }
+    }
+}
+
+impl From<BitVec> for HedgeNode {
+    fn from(value: BitVec) -> Self {
+        HedgeNode {
+            internal_graph: InternalSubGraph::empty(value.len()),
+            hairs: value,
         }
     }
 }

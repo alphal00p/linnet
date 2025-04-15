@@ -367,6 +367,11 @@ impl SubGraph for OrientedCut {
         self.nhedges()
     }
 
+    fn join_mut(&mut self, other: Self) {
+        self.left.join_mut(other.left);
+        self.right.join_mut(other.right);
+    }
+
     fn included(&self) -> &BitVec {
         self.left.included()
     }
@@ -465,9 +470,10 @@ impl OrientedCut {
         self,
         graph: &HedgeGraph<E, V, N>,
     ) -> HedgeGraph<PossiblyCutEdge<&E>, &V, N::OpStorage<&V>> {
-        let mut new_graph = graph.map_data_ref(&|_, v, _| v, &|_, i, _, e| {
-            e.map(|d| PossiblyCutEdge::uncut(d, i))
-        });
+        let mut new_graph = graph.map_data_ref(
+            |_, _, v| v,
+            |_, i, _, e| e.map(|d| PossiblyCutEdge::uncut(d, i)),
+        );
         for h in self.iter_left_hedges() {
             new_graph[[&h]].cut(Flow::Source);
             let data = EdgeData::new(new_graph[[&h]].reverse(), new_graph.orientation(h));
