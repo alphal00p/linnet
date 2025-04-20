@@ -5,7 +5,8 @@ use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 
 use crate::tree::{
-    parent_pointer::ParentPointerStore, Forest, ForestNodeStore, ForestNodeStoreDown, RootId,
+    parent_pointer::ParentPointerStore, Forest, ForestNodeStore, ForestNodeStoreBfs,
+    ForestNodeStoreDown, ForestNodeStorePreorder, RootId,
 };
 
 use super::{
@@ -112,6 +113,10 @@ impl<P: ForestNodeStore<NodeData = ()>> SimpleTraversalTree<P> {
         covers
     }
 
+    fn root_hedge(&self, node: NodeIndex) -> Hedge {
+        self.forest[&RootId(node.0)].into()
+    }
+
     pub fn node_data(&self, node: NodeIndex) -> &TTRoot {
         &self.forest[RootId(node.0)]
     }
@@ -210,12 +215,101 @@ impl<P: ForestNodeStore<NodeData = ()>> Iterator for TraversalTreeAncestorHedgeI
     }
 }
 
+#[derive(Clone)]
+pub struct PreorderTraversalIter<'a, S: ForestNodeStore<NodeData = ()>>
+where
+    S: ForestNodeStoreDown,
+{
+    store: &'a SimpleTraversalTree<S>,
+    inv: &'a Involution,
+    stack: Vec<NodeIndex>,
+}
+
+impl<'a, S: ForestNodeStoreDown + ForestNodeStore<NodeData = ()>> PreorderTraversalIter<'a, S> {
+    /// Create a new pre-order iterator starting at `start`.
+    pub fn new(
+        store: &'a SimpleTraversalTree<S>,
+        inv: &'a impl AsRef<Involution>,
+        start: NodeIndex,
+    ) -> Self {
+        PreorderTraversalIter {
+            inv: inv.as_ref(),
+            store,
+            stack: vec![start],
+        }
+    }
+}
+
+impl<'a, S: ForestNodeStoreDown + ForestNodeStore<NodeData = ()>> Iterator
+    for PreorderTraversalIter<'a, S>
+{
+    type Item = NodeIndex;
+    fn next(&mut self) -> Option<Self::Item> {
+        // Pop the next node from the stack
+        let node = self.stack.pop()?;
+
+        // Push children onto the stack in reverse order so the first child is processed next
+        // (This assumes iter_children returns them in the desired forward order)
+        for child in self
+            .store
+            .iter_children(node, &self.inv)
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+        {
+            self.stack.push(child);
+        }
+
+        Some(node)
+    }
+}
+
 impl<P: ForestNodeStore<NodeData = ()>> SimpleTraversalTree<P> {
-    pub fn iter_leaves(&self)
+    pub fn iter_children<'a, I: AsRef<Involution>>(
+        &'a self,
+        node_id: NodeIndex,
+        inv: &'a I,
+    ) -> impl Iterator<Item = NodeIndex> + 'a
     where
         P: ForestNodeStoreDown,
     {
-        self.forest.iter_
+        self.forest
+            .iter_root_leaves(node_id.into())
+            .filter_map(|a| {
+                let child = self.node_id(inv.as_ref().inv(a.into()));
+                let root = RootId::from(child);
+
+                if self.forest[root].is_child() {
+                    Some(child)
+                } else {
+                    None
+                }
+            })
+    }
+
+    // pub fn iter_descendents<'a, I: AsRef<Involution>>(
+    //     &'a self,
+    //     node_id: NodeIndex,
+    //     inv: &'a I,
+    // ) -> impl Iterator<Item = NodeIndex> + 'a
+    // where
+    //     P: ForestNodeStoreDown,
+    // {
+    //     self.iter_children(node_id, inv)
+    //         .map(|n| self.iter_descendents(n, inv))
+    //         .flatten()
+    // }
+    /// Returns a pre-order iterator over the hedges *within* the traversal tree.
+    /// Requires the underlying Forest store `P` to support pre-order traversal.
+    pub fn iter_preorder_tree_nodes<'a>(
+        &'a self,
+        inv: &'a impl AsRef<Involution>,
+        start: NodeIndex,
+    ) -> PreorderTraversalIter<'a, P>
+    where
+        P: ForestNodeStorePreorder<NodeData = ()> + ForestNodeStoreDown, // Add trait bound
+    {
+        PreorderTraversalIter::new(self, inv, start)
     }
 
     pub fn ancestor_iter_hedge<'a>(

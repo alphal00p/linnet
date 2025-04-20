@@ -5,6 +5,8 @@ use serde::{Deserialize, Serialize};
 
 use bitvec::vec::BitVec;
 
+use crate::permutation::Permutation;
+
 use super::{
     involution::{
         EdgeData, EdgeIndex, Flow, Hedge, HedgePair, Involution, InvolutionError,
@@ -501,6 +503,95 @@ impl<T> SmartHedgeVec<T> {
             }
         }
         Ok(())
+    }
+
+    pub fn extract<S: SubGraph, O>(
+        &mut self,
+        graph: &S,
+        mut split_edge_fn: impl FnMut(EdgeData<&T>) -> EdgeData<O>,
+        mut internal_data: impl FnMut(EdgeData<T>) -> EdgeData<O>,
+    ) -> SmartHedgeVec<O> {
+        let mut new_id_data = vec![];
+        let mut extracted = self.involution.extract(
+            graph,
+            |a| {
+                let new_id = -(new_id_data.len() as i64);
+                let new_data = split_edge_fn(EdgeData::new(&self.data[a.data.0].0, a.orientation));
+                new_id_data.push((
+                    new_data.data,
+                    HedgePair::Unpaired {
+                        hedge: Hedge(0),
+                        flow: Flow::Sink,
+                    },
+                ));
+                EdgeData::new(new_id, new_data.orientation)
+            },
+            |a| a.map(|e| e.0 as i64),
+        );
+
+        let mut split_at = 0;
+        let mut other_len = 0;
+        let data_pos: Vec<_> = self
+            .involution
+            .iter_edge_data_mut()
+            .map(|data| {
+                let old_data = data.data.0;
+                data.data.0 = split_at;
+                split_at += 1;
+                old_data
+            })
+            .chain(extracted.iter_edge_data_mut().filter_map(|i| {
+                if i.data >= 0 {
+                    let old_data = i.data as usize;
+                    i.data = other_len;
+                    other_len += 1;
+                    Some(old_data)
+                } else {
+                    None
+                }
+            }))
+            .collect();
+
+        let perm = Permutation::from_map(data_pos);
+        perm.apply_slice_in_place_inv(&mut self.data);
+        let mut new_data: Vec<Option<T>> = self
+            .data
+            .split_off(split_at)
+            .into_iter()
+            .map(|(d, _)| Some(d))
+            .collect();
+        let shift = new_data.len();
+        let mut new_data_mapped = vec![];
+
+        extracted.iter_edge_data_mut().for_each(|d| {
+            if d.data > 0 {
+                let new_data = internal_data(EdgeData::new(
+                    new_data[d.data as usize].take().unwrap(),
+                    d.orientation,
+                ));
+
+                new_data_mapped.push((
+                    new_data.data,
+                    HedgePair::Unpaired {
+                        hedge: Hedge(0),
+                        flow: Flow::Sink,
+                    },
+                ));
+                d.orientation = new_data.orientation;
+            } else {
+                d.data = shift as i64 - d.data;
+            }
+        });
+        new_data_mapped.extend(new_id_data);
+        let new_inv = extracted.map_data(&|e| EdgeIndex(e as usize));
+        for (i, d) in new_inv.iter_edge_data() {
+            let hedge_pair = new_inv.hedge_pair(i);
+            new_data_mapped[d.data.0].1 = hedge_pair;
+        }
+        SmartHedgeVec {
+            data: new_data_mapped,
+            involution: new_inv,
+        }
     }
 
     pub(crate) fn join_mut(

@@ -1330,6 +1330,97 @@ impl<E> Involution<E> {
         }
     }
 
+    ///Invalidates Subgraphs
+    pub fn swap(&mut self, a: Hedge, b: Hedge) {
+        if !self.is_identity(a) {
+            self.set_inv(self.inv(a), b).unwrap();
+        }
+        if !self.is_identity(b) {
+            self.set_inv(self.inv(b), a).unwrap();
+        }
+        self.inv.swap(a.0, b.0);
+    }
+
+    fn set_inv(&mut self, a: Hedge, inva: Hedge) -> Option<()> {
+        match &mut self.inv[a.0] {
+            InvolutiveMapping::Source { sink_idx, .. } => {
+                *sink_idx = inva;
+                Some(())
+            }
+            InvolutiveMapping::Sink { source_idx } => {
+                *source_idx = inva;
+                Some(())
+            }
+            _ => None,
+        }
+    }
+    // fn put_at_end(&mut self,)
+
+    pub fn extract<S: SubGraph, O>(
+        &mut self,
+        graph: &S,
+        mut split_edge_fn: impl FnMut(EdgeData<&E>) -> EdgeData<O>,
+        mut internal_data: impl FnMut(EdgeData<E>) -> EdgeData<O>,
+    ) -> Involution<O> {
+        let mut left = Hedge(0);
+        let mut extracted = Hedge(self.inv.len());
+        while left < extracted {
+            if !graph.includes(&left) {
+                //left is in the right place
+                left.0 += 1;
+            } else {
+                //left needs to be swapped
+                extracted.0 -= 1;
+                if !graph.includes(&extracted) {
+                    //only with an extracted that is in the wrong spot
+                    self.swap(left, extracted);
+                    left.0 += 1;
+                }
+            }
+        }
+
+        for i in 0..(left.0) {
+            if self.inv(Hedge(i)) >= left {
+                let flow = if self.set_as_source(Hedge(i)) {
+                    Flow::Sink
+                } else {
+                    Flow::Source
+                };
+                self.source_to_identity(Hedge(i), flow);
+            }
+        }
+        let extract = self.inv.split_off(left.0);
+
+        let extracted_inv = extract
+            .into_iter()
+            .map(|m| match m {
+                InvolutiveMapping::Identity { data, underlying } => InvolutiveMapping::Identity {
+                    data: internal_data(data),
+                    underlying,
+                },
+                InvolutiveMapping::Sink { source_idx } => {
+                    if source_idx > left {
+                        InvolutiveMapping::Sink {
+                            source_idx: Hedge(source_idx.0 - left.0),
+                        }
+                    } else {
+                        let underlying = -self.flow(source_idx);
+                        InvolutiveMapping::Identity {
+                            data: split_edge_fn(self.edge_data(source_idx).as_ref()),
+                            underlying,
+                        }
+                    }
+                }
+                InvolutiveMapping::Source { data, sink_idx } => InvolutiveMapping::Source {
+                    data: internal_data(data),
+                    sink_idx: Hedge(sink_idx.0 - left.0),
+                },
+            })
+            .collect();
+
+        Involution { inv: extracted_inv }
+    }
+
     pub fn hedge_pair(&self, hedge: Hedge) -> HedgePair {
         HedgePair::from_half_edge(hedge, self)
     }
@@ -1464,7 +1555,7 @@ impl<E> Involution<E> {
         Involution { inv }
     }
 
-    pub fn map_data<F, G, E2>(self, g: &G) -> Involution<E2>
+    pub fn map_data<G, E2>(self, g: &G) -> Involution<E2>
     where
         G: FnMut(E) -> E2 + Clone,
     {
@@ -1552,10 +1643,19 @@ impl<E> Involution<E> {
 
     /// If the data at `hedge` was a sink, turn it into a source.
     /// Otherwise do nothing.
-    pub fn set_as_source(&mut self, hedge: Hedge) {
+    pub fn set_as_source(&mut self, hedge: Hedge) -> bool {
         let is_sink = self.is_sink(hedge);
         if is_sink {
             self.flip_underlying(hedge);
+            return true;
+        }
+        false
+    }
+
+    fn source_to_identity(&mut self, hedge: Hedge, underlying: Flow) {
+        if self.is_source(hedge) {
+            let data = self.get_data_owned(hedge).unwrap();
+            self.inv[hedge.0] = InvolutiveMapping::Identity { data, underlying };
         }
     }
 

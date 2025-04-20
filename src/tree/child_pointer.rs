@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use super::{
     child_vec::ChildVecStore,
     parent_pointer::{PPNode, ParentId, ParentPointerStore},
-    ForestNodeStore, ForestNodeStoreDown, TreeNodeId,
+    ForestNodeStore, ForestNodeStoreBfs, ForestNodeStoreDown, ForestNodeStorePreorder, TreeNodeId,
 };
 
 /// Represents a node within a `ParentChildStore`.
@@ -262,34 +262,42 @@ impl<V> ForestNodeStore for ParentChildStore<V> {
     }
 
     fn add_child(&mut self, data: Self::NodeData, parent: TreeNodeId) -> TreeNodeId {
-        let node_id = TreeNodeId(self.nodes.len());
-        let child = self.nodes[parent.0].child;
-        let new_child = node_id;
-        let neighbor_left;
-        let neighbor_right;
+        let new_child_id = TreeNodeId(self.nodes.len());
+        debug_assert!(parent.0 < self.nodes.len(), "Parent ID out of bounds");
 
-        self.nodes[parent.0].child = Some(new_child);
-        if let Some(child) = child {
-            let childnode = &mut self.nodes[child.0];
-            let neighbor_left_child = childnode.neighbor_left;
-            childnode.neighbor_left = new_child;
-            neighbor_right = child;
+        let (neighbor_left, neighbor_right) = {
+            let parent_node = &mut self.nodes[parent.0];
+            if let Some(first_child_id) = parent_node.child {
+                // Parent already has children. Insert new child *after* the current last child.
+                let last_child_id = self.nodes[first_child_id.0].neighbor_left; // Get current last child (left of first)
 
-            let neighbor_left_node = &mut self.nodes[neighbor_left_child.0];
-            neighbor_left_node.neighbor_right = new_child;
-            neighbor_left = neighbor_left_child;
-        } else {
-            neighbor_left = new_child;
-            neighbor_right = new_child;
-        }
+                // Update links:
+                // 1. New child's left neighbor is the old last child.
+                // 2. New child's right neighbor is the first child (completing the cycle).
+                // 3. Old last child's right neighbor becomes the new child.
+                // 4. First child's left neighbor becomes the new child.
 
+                self.nodes[last_child_id.0].neighbor_right = new_child_id; // 3
+                self.nodes[first_child_id.0].neighbor_left = new_child_id; // 4
+
+                (last_child_id, first_child_id) // 1, 2
+            } else {
+                // Parent had no children. New child is the first and only child.
+                parent_node.child = Some(new_child_id); // Set parent's child pointer
+                                                        // Neighbors point to self.
+                (new_child_id, new_child_id)
+            }
+        };
+
+        // Add the new node
         self.nodes.push(PCNode {
             parent_pointer: PPNode::child(data, parent),
-            child,
+            child: None, // New node initially has no children
             neighbor_left,
             neighbor_right,
         });
-        node_id
+
+        new_child_id
     }
 
     fn map<F, U>(self, mut transform: F) -> Self::Store<U>
@@ -313,102 +321,107 @@ impl<V> ForestNodeStore for ParentChildStore<V> {
     }
 }
 
-/// A pre–order DFS-iterator over a tree (using the parent/child store).
-pub struct PreorderIter<'a, V> {
-    store: &'a ParentChildStore<V>,
-    current: Option<TreeNodeId>,
-}
-
-impl<V> ParentChildStore<V> {
-    /// Returns a pre–order DFS iterator starting from the given node.
-    pub fn iter_preorder(&self, start: TreeNodeId) -> PreorderIter<V> {
-        PreorderIter::new(self, start)
+// Preorder Iterator specific to ParentChildStore internal structure
+mod pc_preorder {
+    use super::*;
+    #[derive(Clone)]
+    pub struct PreorderIter<'a, V> {
+        store: &'a ParentChildStore<V>,
+        current: Option<TreeNodeId>,
+        // Could potentially add a stack or use the recursive logic helper
     }
-}
 
-impl<'a, V> PreorderIter<'a, V> {
-    /// Create a new iterator starting at `start`. Typically `start` is a root node.
-    pub fn new(store: &'a ParentChildStore<V>, start: TreeNodeId) -> Self {
-        PreorderIter {
-            store,
-            current: Some(start),
-        }
-    }
-}
-
-impl<V> Iterator for PreorderIter<'_, V> {
-    type Item = TreeNodeId;
-    fn next(&mut self) -> Option<Self::Item> {
-        let node = self.current?;
-        // Compute the next node in pre-order:
-        self.current = self.next_preorder(node);
-        Some(node)
-    }
-}
-
-impl<V> PreorderIter<'_, V> {
-    /// Returns the next node (if any) in pre–order after `node`.
-    ///
-    /// The algorithm is as follows:
-    /// 1. If `node` has a first child, that is the next node.
-    /// 2. Otherwise, climb the parent chain until a node with a right sibling is found.
-    /// 3. If none is found, the traversal is finished.
-    pub fn next_preorder(&self, node: TreeNodeId) -> Option<TreeNodeId> {
-        // 1. If the current node has a (first) child, return it.
-        if let Some(child) = self.store.first_child(node) {
-            return Some(child);
-        }
-        // 2. Otherwise, climb upward until we hit a node with an available right sibling.
-        let mut current = node;
-        loop {
-            // Using our store’s method to ask: “Is there a right sibling?”
-            if let Some(sibling) = self.store.right_neighbor_ending(current) {
-                return Some(sibling);
+    impl<'a, V> PreorderIter<'a, V> {
+        pub fn new(store: &'a ParentChildStore<V>, start: TreeNodeId) -> Self {
+            PreorderIter {
+                store,
+                current: Some(start),
             }
-            // No sibling here; move upward if possible.
-            let parent = self.store[&current];
-            match parent {
-                ParentId::Node(p) => current = p,
-                ParentId::Root(_) => return None, // we reached a root; no more nodes in pre–order
+        }
+
+        // Helper based on the original logic
+        fn next_node_logic(&self, node: TreeNodeId) -> Option<TreeNodeId> {
+            // 1. If the current node has a (first) child, return it.
+            if let Some(child) = self.store.first_child(node) {
+                return Some(child);
+            }
+            // 2. Otherwise, climb upward
+            let mut current = node;
+            loop {
+                // Try right sibling. Crucially, use right_neighbor_cyclic.
+                // Need to detect when we loop back to the first sibling without going up.
+                let right_neighbor = self.store.right_neighbor_cyclic(current);
+
+                // Find the parent's first child to detect cycle completion *at this level*.
+                let parent_id = self.store[&current];
+                let first_child_of_parent = match parent_id {
+                    ParentId::Node(p) => self.store.nodes[p.0].child,
+                    ParentId::Root(_) => None,
+                };
+
+                // If there IS a right neighbor, AND it's NOT the first child (meaning we haven't wrapped)
+                if let Some(sibling) = right_neighbor {
+                    if Some(sibling) != first_child_of_parent {
+                        return Some(sibling); // Go to the sibling
+                    }
+                    // If sibling == first_child_of_parent, we wrapped around. Need to go up. Fall through.
+                }
+                // Only child or wrapped around siblings: move upward.
+                match parent_id {
+                    ParentId::Node(p) => current = p,
+                    ParentId::Root(_) => return None, // Reached root while climbing; traversal ends
+                }
             }
         }
     }
-}
 
-pub struct BfsTreeIter<'a, V> {
-    store: &'a ParentChildStore<V>,
-    queue: VecDeque<TreeNodeId>,
-}
-
-impl<V> ParentChildStore<V> {
-    /// Returns a BFS iterator starting at the given node.
-    pub fn iter_bfs(&self, start: TreeNodeId) -> BfsTreeIter<V> {
-        BfsTreeIter::new(self, start)
-    }
-}
-
-impl<'a, V> BfsTreeIter<'a, V> {
-    /// Create a new BFS iterator starting at `start`.
-    pub fn new(store: &'a ParentChildStore<V>, start: TreeNodeId) -> Self {
-        let mut queue = VecDeque::new();
-        // Start with the root node.
-        queue.push_back(start);
-        BfsTreeIter { store, queue }
-    }
-}
-
-impl<V> Iterator for BfsTreeIter<'_, V> {
-    type Item = TreeNodeId;
-    fn next(&mut self) -> Option<Self::Item> {
-        // Remove the node at the front (FIFO behavior)
-        let node = self.queue.pop_front()?;
-        // Enqueue all children of the current node.
-        // We use iter_children(), which (via the neighbor functions)
-        // returns all of the children in order.
-        for child in self.store.iter_children(node) {
-            self.queue.push_back(child);
+    impl<'a, V> Iterator for PreorderIter<'a, V> {
+        type Item = TreeNodeId;
+        fn next(&mut self) -> Option<Self::Item> {
+            let node_to_return = self.current?;
+            self.current = self.next_node_logic(node_to_return);
+            Some(node_to_return)
         }
-        Some(node)
+    }
+}
+
+// Bfs Iterator specific to ParentChildStore
+mod pc_bfs {
+    use super::*;
+    #[derive(Clone)]
+    pub struct BfsTreeIter<'a, V> {
+        store: &'a ParentChildStore<V>,
+        queue: VecDeque<TreeNodeId>,
+    }
+    impl<'a, V> BfsTreeIter<'a, V> {
+        pub fn new(store: &'a ParentChildStore<V>, start: TreeNodeId) -> Self {
+            let mut queue = VecDeque::new();
+            queue.push_back(start);
+            BfsTreeIter { store, queue }
+        }
+    }
+    impl<V> Iterator for BfsTreeIter<'_, V> {
+        type Item = TreeNodeId;
+        fn next(&mut self) -> Option<Self::Item> {
+            let node = self.queue.pop_front()?;
+            // Use the store's iter_children which correctly uses NeighborIter
+            for child in self.store.iter_children(node) {
+                self.queue.push_back(child);
+            }
+            Some(node)
+        }
+    }
+}
+
+impl<V> ForestNodeStorePreorder for ParentChildStore<V> {
+    fn iter_preorder(&self, start: TreeNodeId) -> impl Iterator<Item = TreeNodeId> + '_ {
+        pc_preorder::PreorderIter::new(self, start)
+    }
+}
+
+impl<V> ForestNodeStoreBfs for ParentChildStore<V> {
+    fn iter_bfs(&self, start: TreeNodeId) -> impl Iterator<Item = TreeNodeId> + '_ {
+        pc_bfs::BfsTreeIter::new(self, start)
     }
 }
 

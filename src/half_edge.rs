@@ -286,6 +286,10 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
         builder.build()
     }
 
+    pub fn extract<S: SubGraph>(&mut self, subgraph: &S) -> HedgeGraph<E, V, N::OpStorage<V>> {
+        todo!()
+    }
+
     /// Gives the involved hedge.
     /// If the hedge is a source, it will return the sink, and vice versa.
     /// If the hedge is an identity, it will return Itself.

@@ -1,7 +1,9 @@
 use super::{
     child_pointer::{PCNode, ParentChildStore},
+    iterato::{BfsIter, PreorderIter},
     parent_pointer::{PPNode, ParentId, ParentPointerStore},
-    ForestNodeStore, ForestNodeStoreDown, RootId, TreeNodeId,
+    ForestNodeStore, ForestNodeStoreBfs, ForestNodeStoreDown, ForestNodeStorePreorder, RootId,
+    TreeNodeId,
 };
 
 /// A node in the ChildVecStore. It contains a PPNode plus an ordered vector of children.
@@ -132,6 +134,18 @@ impl<V> ForestNodeStoreDown for ChildVecStore<V> {
     }
 }
 
+impl<V> ForestNodeStorePreorder for ChildVecStore<V> {
+    fn iter_preorder(&self, start: TreeNodeId) -> impl Iterator<Item = TreeNodeId> + '_ {
+        // Use the generic PreorderIter helper
+        PreorderIter::new(self, start)
+    }
+}
+impl<V> ForestNodeStoreBfs for ChildVecStore<V> {
+    fn iter_bfs(&self, start: TreeNodeId) -> impl Iterator<Item = TreeNodeId> + '_ {
+        // Use the generic BfsIter helper
+        BfsIter::new(self, start)
+    }
+}
 //
 // Conversions
 //

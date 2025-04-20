@@ -197,7 +197,7 @@ impl Permutation {
     /// p.apply_slice_in_place_inv(&mut data);
     /// assert_eq!(data, vec![30, 10, 20]);
     /// ```
-    pub fn apply_slice_in_place_inv<T: Clone, S>(&self, slice: &mut S)
+    pub fn apply_slice_in_place_inv<T, S>(&self, slice: &mut S)
     where
         S: AsMut<[T]>,
     {
