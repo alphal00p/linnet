@@ -1,27 +1,27 @@
 use bincode::{Decode, Encode};
+use bitvec::vec::BitVec;
 use serde::{Deserialize, Serialize};
 
 use crate::{
     half_edge::{
         involution::Hedge,
-        nodestorage::{NodeStorage, NodeStorageOps, NodeStorageVec},
-        subgraph::HedgeNode,
+        nodestore::{BitVecNeighborIter, NodeStorage, NodeStorageOps, NodeStorageVec},
         NodeIndex,
     },
     tree::{parent_pointer::PPNode, Forest, RootData, RootId},
+    union_find::{SetIndex, UFNode, UnionFind},
 };
-
-use super::{SetIndex, UnionFind};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Encode, Decode)]
 pub struct HedgeNodeStore<V> {
     data: V,
-    node: HedgeNode,
+    #[bincode(with_serde)]
+    node: BitVec,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Encode, Decode)]
 pub struct UnionFindNodeStore<V> {
-    nodes: UnionFind<HedgeNodeStore<V>>,
+    pub nodes: UnionFind<HedgeNodeStore<V>>,
 }
 
 impl<V> From<NodeStorageVec<V>> for UnionFindNodeStore<V> {
@@ -33,7 +33,7 @@ impl<V> From<NodeStorageVec<V>> for UnionFindNodeStore<V> {
             .map(|(v, h)| HedgeNodeStore { data: v, node: h })
             .collect();
 
-        let hairs: Vec<_> = node_data.iter().map(|a| a.node.hairs.clone()).collect();
+        let hairs: Vec<_> = node_data.iter().map(|a| a.node.clone()).collect();
 
         UnionFindNodeStore {
             nodes: UnionFind::from_bitvec_partition(node_data.into_iter().zip(hairs).collect())
@@ -51,6 +51,11 @@ impl SetIndex {
 impl<V> NodeStorage for UnionFindNodeStore<V> {
     type Storage<N> = UnionFindNodeStore<N>;
     type NodeData = V;
+    type Neighbors = BitVec;
+    type NeighborsIter<'a>
+        = BitVecNeighborIter<'a>
+    where
+        Self: 'a;
 }
 
 impl<V> UnionFindNodeStore<V> {
@@ -61,6 +66,25 @@ impl<V> UnionFindNodeStore<V> {
 
 impl<V> NodeStorageOps for UnionFindNodeStore<V> {
     type OpStorage<A> = Self::Storage<A>;
+    type Base = BitVec;
+
+    fn swap(&mut self, a: Hedge, b: Hedge) {
+        todo!()
+    }
+
+    fn extract<S: crate::half_edge::subgraph::SubGraph<Base = Self::Base>, V2>(
+        &mut self,
+        subgraph: &S,
+        spit_node: impl FnMut(&Self::NodeData) -> V2,
+        owned_node: impl FnMut(Self::NodeData) -> V2,
+    ) -> Self::OpStorage<V2> {
+        todo!()
+    }
+
+    fn get_neighbor_iterator<'a>(&'a self, node_id: NodeIndex) -> Self::NeighborsIter<'a> {
+        (&self.nodes[SetIndex(node_id.0)].node).into()
+    }
+
     fn hedge_len(&self) -> usize {
         self.nodes.n_elements()
     }
@@ -86,10 +110,10 @@ impl<V> NodeStorageOps for UnionFindNodeStore<V> {
         NodeIndex(self.nodes.find_data_index(n_init_root).0)
     }
 
-    fn to_forest<U>(
+    fn to_forest<U, H>(
         &self,
         map_data: impl Fn(&Self::NodeData) -> U,
-    ) -> crate::tree::Forest<U, crate::tree::parent_pointer::ParentPointerStore<()>> {
+    ) -> crate::tree::Forest<U, crate::tree::parent_pointer::ParentPointerStore<H>> {
         Forest {
             roots: self
                 .nodes
@@ -107,9 +131,9 @@ impl<V> NodeStorageOps for UnionFindNodeStore<V> {
                 .map(|a| {
                     let ad = a.get();
                     let n = match &ad {
-                        super::UFNode::Child(c) => PPNode::child((), (*c).into()),
-                        super::UFNode::Root { set_data_idx, .. } => {
-                            PPNode::root((), RootId(set_data_idx.0))
+                        UFNode::Child(c) => PPNode::dataless_child((*c).into()),
+                        UFNode::Root { set_data_idx, .. } => {
+                            PPNode::dataless_root(RootId(set_data_idx.0))
                         }
                     };
 
@@ -125,10 +149,6 @@ impl<V> NodeStorageOps for UnionFindNodeStore<V> {
         self.nodes.n_sets()
     }
 
-    fn set_hedge_data(&mut self, _hedge: crate::half_edge::involution::Hedge, _nodeid: NodeIndex) {
-        panic!("should not need to set")
-    }
-
     fn check_and_set_nodes(&mut self) -> Result<(), crate::half_edge::HedgeGraphError> {
         Ok(())
     }
@@ -138,13 +158,13 @@ impl<V> NodeStorageOps for UnionFindNodeStore<V> {
         graph: &'a crate::half_edge::HedgeGraph<E, Self::NodeData, Self>,
         mut node_map: impl FnMut(
             &'a crate::half_edge::HedgeGraph<E, Self::NodeData, Self>,
-            &'a HedgeNode,
+            Self::NeighborsIter<'a>,
             &'a Self::NodeData,
         ) -> V2,
-    ) -> Self::Storage<V2> {
+    ) -> Self::OpStorage<V2> {
         UnionFindNodeStore {
             nodes: self.nodes.map_set_data_ref(|n| HedgeNodeStore {
-                data: node_map(graph, &n.node, &n.data),
+                data: node_map(graph, (&n.node).into(), &n.data),
                 node: n.node.clone(),
             }),
         }
@@ -152,11 +172,11 @@ impl<V> NodeStorageOps for UnionFindNodeStore<V> {
 
     fn map_data_ref_mut_graph<'a, V2>(
         &'a mut self,
-        mut node_map: impl FnMut(&'a HedgeNode, &'a mut Self::NodeData) -> V2,
-    ) -> Self::Storage<V2> {
+        mut node_map: impl FnMut(Self::NeighborsIter<'a>, &'a mut Self::NodeData) -> V2,
+    ) -> Self::OpStorage<V2> {
         UnionFindNodeStore {
             nodes: self.nodes.map_set_data_ref_mut(|n| HedgeNodeStore {
-                data: node_map(&n.node, &mut n.data),
+                data: node_map((&n.node).into(), &mut n.data),
                 node: n.node.clone(),
             }),
         }
@@ -167,13 +187,13 @@ impl<V> NodeStorageOps for UnionFindNodeStore<V> {
         graph: &'a crate::half_edge::HedgeGraph<E, Self::NodeData, Self>,
         mut node_map: impl FnMut(
             &'a crate::half_edge::HedgeGraph<E, Self::NodeData, Self>,
-            &'a HedgeNode,
+            Self::NeighborsIter<'a>,
             &'a Self::NodeData,
         ) -> Result<V2, Er>,
     ) -> Result<Self::OpStorage<V2>, Er> {
         Ok(UnionFindNodeStore {
             nodes: self.nodes.map_set_data_ref_result(|n| {
-                match node_map(graph, &n.node, &n.data) {
+                match node_map(graph, (&n.node).into(), &n.data) {
                     Ok(data) => Ok(HedgeNodeStore {
                         data,
                         node: n.node.clone(),
@@ -184,22 +204,19 @@ impl<V> NodeStorageOps for UnionFindNodeStore<V> {
         })
     }
 
-    fn get_node(&self, node_id: NodeIndex) -> &HedgeNode {
-        &self.nodes[SetIndex(node_id.0)].node
-    }
-
-    fn iter_nodes(&self) -> impl Iterator<Item = (&HedgeNode, NodeIndex, &Self::NodeData)> {
+    fn iter_nodes<'a>(
+        &'a self,
+    ) -> impl Iterator<Item = (Self::NeighborsIter<'a>, NodeIndex, &'a Self::NodeData)> {
         self.nodes
             .iter_set_data()
-            .map(|(i, d)| (&d.node, NodeIndex(i.0), &d.data))
+            .map(|(i, d)| ((&d.node).into(), NodeIndex(i.0), &d.data))
     }
-
-    fn iter_nodes_mut(
-        &mut self,
-    ) -> impl Iterator<Item = (&HedgeNode, NodeIndex, &mut Self::NodeData)> {
+    fn iter_nodes_mut<'a>(
+        &'a mut self,
+    ) -> impl Iterator<Item = (Self::NeighborsIter<'a>, NodeIndex, &mut Self::NodeData)> {
         self.nodes
             .iter_set_data_mut()
-            .map(|(i, d)| (&d.node, NodeIndex(i.0), &mut d.data))
+            .map(|(i, d)| ((&d.node).into(), NodeIndex(i.0), &mut d.data))
     }
 
     fn node_id_ref(&self, hedge: crate::half_edge::involution::Hedge) -> NodeIndex {
@@ -220,19 +237,18 @@ impl<V> NodeStorageOps for UnionFindNodeStore<V> {
 
     fn map_data_graph<'a, V2>(
         self,
-        involution: &crate::half_edge::involution::Involution<
+        involution: &'a crate::half_edge::involution::Involution<
             crate::half_edge::involution::EdgeIndex,
         >,
         mut f: impl FnMut(
-            &crate::half_edge::involution::Involution<crate::half_edge::involution::EdgeIndex>,
-            &HedgeNode,
+            &'a crate::half_edge::involution::Involution<crate::half_edge::involution::EdgeIndex>,
             NodeIndex,
             Self::NodeData,
         ) -> V2,
-    ) -> Self::Storage<V2> {
+    ) -> Self::OpStorage<V2> {
         UnionFindNodeStore {
             nodes: self.nodes.map_set_data(|i, n| HedgeNodeStore {
-                data: f(involution, &n.node, NodeIndex(i.0), n.data),
+                data: f(involution, NodeIndex(i.0), n.data),
                 node: n.node.clone(),
             }),
         }
@@ -268,7 +284,7 @@ impl<V> NodeStorageOps for UnionFindNodeStore<V> {
             .map(|(s, d)| (NodeIndex(s.0), d.data))
     }
 
-    fn random(sources: &[HedgeNode], sinks: &[HedgeNode]) -> Self
+    fn random(sources: &[Self::Neighbors], sinks: &[Self::Neighbors]) -> Self
     where
         Self::NodeData: Default,
     {
@@ -283,11 +299,10 @@ impl<V> NodeStorageOps for UnionFindNodeStore<V> {
         let _ = self.nodes.add_child(setid);
         self.nodes.iter_set_data_mut().for_each(|(s, n)| {
             if s == setid {
-                n.node.hairs.push(true);
+                n.node.push(true);
             } else {
-                n.node.hairs.push(false);
+                n.node.push(false);
             }
-            n.node.internal_graph.filter.push(false);
         });
         Ok(self)
     }

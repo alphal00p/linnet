@@ -1,4 +1,4 @@
-use nodestorage::NodeStorageVec;
+use nodestore::NodeStorageVec;
 
 use super::*;
 use crate::half_edge::builder::HedgeGraphBuilder;
@@ -586,7 +586,7 @@ impl TestGraph {
         let mut max_degree = 0;
 
         for i in 0..graph.n_nodes() {
-            let degree = graph.hairs_from_id(NodeIndex(i)).hairs.count_ones();
+            let degree = graph.hair_iter(NodeIndex(i)).count();
             min_degree = min_degree.min(degree);
             max_degree = max_degree.max(degree);
         }

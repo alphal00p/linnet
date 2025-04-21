@@ -650,7 +650,7 @@ fn join() {
 use std::time::Instant;
 
 use insta::assert_snapshot;
-use nodestorage::NodeStorageVec;
+use nodestore::NodeStorageVec;
 
 use crate::dot;
 
@@ -749,22 +749,22 @@ fn double_pentagon_all_cuts() {
     // );
 
     let cuts = graph.all_cuts(
-        graph.hairs_from_id(NodeIndex(10)).clone(),
-        graph.hairs_from_id(NodeIndex(9)).clone(),
+        graph.hair_iter(NodeIndex(10)).clone().into(),
+        graph.hair_iter(NodeIndex(9)).clone().into(),
     );
 
     assert_eq!(cuts.len(), 9);
 
     let cuts = graph.all_cuts(
-        graph.hairs_from_id(NodeIndex(10)).clone(),
-        graph.hairs_from_id(NodeIndex(13)).clone(),
+        graph.hair_iter(NodeIndex(10)).clone().into(),
+        graph.hair_iter(NodeIndex(13)).clone().into(),
     );
 
     assert_eq!(cuts.len(), 14);
 
     let cuts = graph.all_cuts(
-        graph.hairs_from_id(NodeIndex(1)).clone(),
-        graph.hairs_from_id(NodeIndex(2)).clone(),
+        graph.hair_iter(NodeIndex(1)).clone().into(),
+        graph.hair_iter(NodeIndex(2)).clone().into(),
     );
 
     assert_eq!(cuts.len(), 16);

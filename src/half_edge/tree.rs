@@ -5,21 +5,15 @@ use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 
 use crate::tree::{
-    parent_pointer::ParentPointerStore, Forest, ForestNodeStore, ForestNodeStoreBfs,
-    ForestNodeStoreDown, ForestNodeStorePreorder, RootId,
+    parent_pointer::ParentPointerStore, Forest, ForestNodeStore, ForestNodeStoreDown,
+    ForestNodeStorePreorder, RootId,
 };
 
 use super::{
     involution::{Hedge, Involution},
-    nodestorage::NodeStorage,
     subgraph::{Cycle, Inclusion, InternalSubGraph, SubGraph, SubGraphOps},
     HedgeGraph, HedgeGraphError, NodeIndex, NodeStorageOps,
 };
-
-impl<V, P: ForestNodeStore<NodeData = ()>> NodeStorage for Forest<V, P> {
-    type Storage<N> = Forest<N, P>;
-    type NodeData = V;
-}
 
 // pub struct HedgeTree<V, P: ForestNodeStore<NodeData = ()>, E> {
 //     graph: HedgeGraph<E, V, Forest<V, P>>,
@@ -113,9 +107,9 @@ impl<P: ForestNodeStore<NodeData = ()>> SimpleTraversalTree<P> {
         covers
     }
 
-    fn root_hedge(&self, node: NodeIndex) -> Hedge {
-        self.forest[&RootId(node.0)].into()
-    }
+    // fn root_hedge(&self, node: NodeIndex) -> Hedge {
+    //     self.forest[&RootId(node.0)].into()
+    // }
 
     pub fn node_data(&self, node: NodeIndex) -> &TTRoot {
         &self.forest[RootId(node.0)]
@@ -240,8 +234,8 @@ impl<'a, S: ForestNodeStoreDown + ForestNodeStore<NodeData = ()>> PreorderTraver
     }
 }
 
-impl<'a, S: ForestNodeStoreDown + ForestNodeStore<NodeData = ()>> Iterator
-    for PreorderTraversalIter<'a, S>
+impl<S: ForestNodeStoreDown + ForestNodeStore<NodeData = ()>> Iterator
+    for PreorderTraversalIter<'_, S>
 {
     type Item = NodeIndex;
     fn next(&mut self) -> Option<Self::Item> {
@@ -437,7 +431,7 @@ impl SimpleTraversalTree {
         root_node: &NodeIndex,
         include_hedge: Option<Hedge>,
     ) -> Result<Self, HedgeGraphError> {
-        let mut seen = subgraph.hairs(&graph[root_node]);
+        let mut seen = subgraph.hairs(graph.hair_iter(*root_node));
 
         if seen.count_ones() == 0 {
             // if the root node is not in the subgraph
@@ -482,7 +476,7 @@ impl SimpleTraversalTree {
                 // mark the new node as seen
                 // seen.union_with(&cn.hairs);
 
-                for i in cn.hairs.included_iter() {
+                for i in cn {
                     if subgraph.includes(&i) {
                         seen.set(i.0, true);
                         if !seen.includes(&graph.inv(i)) {
@@ -503,7 +497,7 @@ impl SimpleTraversalTree {
         root_node: &NodeIndex,
         include_hedge: Option<Hedge>,
     ) -> Result<Self, HedgeGraphError> {
-        let mut seen = subgraph.hairs(&graph[root_node]);
+        let mut seen = subgraph.hairs(graph.hair_iter(*root_node));
 
         if seen.count_ones() == 0 {
             // if the root node is not in the subgraph
@@ -559,7 +553,7 @@ impl SimpleTraversalTree {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct OwnedTraversalTree<P: ForestNodeStore<NodeData = ()>> {
+pub struct OwnedTraversalTree<P: ForestNodeStore<NodeData = ()> + Clone + ForestNodeStorePreorder> {
     graph: HedgeGraph<(), bool, Forest<bool, P>>,
     tree_subgraph: InternalSubGraph,
     covers: BitVec,

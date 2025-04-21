@@ -21,7 +21,10 @@
 //!
 //! Conversions between the different store types are provided via `From` implementations.
 
-use std::ops::{Index, IndexMut};
+use std::{
+    fmt::{Display, Write},
+    ops::{Index, IndexMut, Range},
+};
 
 use bitvec::vec::BitVec;
 use child_pointer::ParentChildStore;
@@ -43,7 +46,13 @@ pub mod parent_pointer;
 /// A type-safe identifier for a node within a `Forest`.
 /// Wraps a `usize` index into the underlying node storage vector.
 #[derive(Clone, Debug, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
-pub struct TreeNodeId(usize);
+pub struct TreeNodeId(pub usize);
+
+impl Display for TreeNodeId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Node ({})", self.0)
+    }
+}
 
 impl From<usize> for TreeNodeId {
     fn from(i: usize) -> Self {
@@ -75,15 +84,14 @@ pub struct RootData<R> {
 #[derive(Clone, Debug, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct RootId(pub(crate) usize);
 
+impl Display for RootId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Root ({})", self.0)
+    }
+}
 impl From<NodeIndex> for RootId {
     fn from(n: NodeIndex) -> Self {
         n.0.into()
-    }
-}
-
-impl From<RootId> for NodeIndex {
-    fn from(r: RootId) -> Self {
-        r.0.into()
     }
 }
 
@@ -197,6 +205,24 @@ impl<R, N: ForestNodeStoreAncestors> Forest<R, N> {
     }
 }
 
+pub struct NodeIdIter {
+    pub(crate) range: Range<usize>,
+    pub(crate) current: TreeNodeId,
+}
+
+impl Iterator for NodeIdIter {
+    type Item = TreeNodeId;
+    fn next(&mut self) -> Option<Self::Item> {
+        let out = if self.range.contains(&self.current.0) {
+            Some(self.current)
+        } else {
+            None
+        };
+        self.current.0 += 1;
+        out
+    }
+}
+
 /// General Forest methods available for any `ForestNodeStore`.
 impl<R, N: ForestNodeStore> Forest<R, N> {
     pub fn iter_roots(&self) -> impl Iterator<Item = (&R, &TreeNodeId)> {
@@ -209,10 +235,10 @@ impl<R, N: ForestNodeStore> Forest<R, N> {
         (0..self.roots.len()).map(RootId)
     }
 
-    pub fn iter_nodes(&self) -> impl Iterator<Item = (TreeNodeId, &N::NodeData)> {
+    pub fn iter_nodes(&self) -> impl Iterator<Item = (TreeNodeId, Option<&N::NodeData>)> {
         self.nodes.iter_nodes()
     }
-    pub fn iter_node_ids(&self) -> impl Iterator<Item = TreeNodeId> + '_ {
+    pub fn iter_node_ids(&self) -> NodeIdIter {
         self.nodes.iter_node_id()
     }
 
@@ -220,7 +246,37 @@ impl<R, N: ForestNodeStore> Forest<R, N> {
         self.nodes.root(nodeid)
     }
 
-    // Note: map_nodes and map_nodes_ref stay here, constraints adjusted slightly
+    pub fn map_roots<R2>(self, mut transform: impl FnMut(R) -> R2) -> Forest<R2, N> {
+        Forest {
+            roots: self
+                .roots
+                .into_iter()
+                .map(|a| RootData {
+                    data: transform(a.data),
+                    root_id: a.root_id,
+                })
+                .collect(),
+            nodes: self.nodes,
+        }
+    }
+
+    pub fn map_roots_ref<R2>(&self, mut transform: impl FnMut(&R) -> R2) -> Forest<R2, N>
+    where
+        N: Clone,
+    {
+        Forest {
+            roots: self
+                .roots
+                .iter()
+                .map(|a| RootData {
+                    data: transform(&a.data),
+                    root_id: a.root_id,
+                })
+                .collect(),
+            nodes: self.nodes.clone(),
+        }
+    }
+
     pub fn map_nodes<F, T, U>(self, transform: F) -> Forest<R, N::Store<U>>
     where
         N: ForestNodeStore<NodeData = T>,
@@ -242,7 +298,6 @@ impl<R, N: ForestNodeStore> Forest<R, N> {
     {
         Forest {
             nodes: self.nodes.map_ref(transform),
-            // Clone root data; mapping only affects node data type
             roots: self.roots.clone(),
         }
     }
@@ -295,6 +350,14 @@ impl<R, N: Default> Forest<R, N> {
 pub enum ForestError {
     #[error("Length mismatch")]
     LengthMismatch,
+    #[error("Parent pointers are cyclic")]
+    CyclicPP,
+    #[error("Child pointers are cyclic")]
+    CyclicCP,
+    #[error("Self loop Parent pointers at: {0}")]
+    SelfLoopPP(TreeNodeId),
+    #[error("Parent pointer of child of {0} is not correct")]
+    WrongPP(TreeNodeId),
     #[error("Does not partition: Sets overlap")]
     DoesNotPartion,
     #[error("Does not partition: Sets do not cover the domain")]
@@ -303,17 +366,185 @@ pub enum ForestError {
     InvalidNodeId(TreeNodeId),
     #[error("Invalid RootId: {0:?}")]
     InvalidRootId(RootId),
+    #[error("Mismatch roots len {expected}!={obtained}")]
+    MismatchRootsLen { expected: usize, obtained: usize },
+    #[error("Root node pointer wrong for root {0}")]
+    WrongRootPointer(RootId),
+}
+
+impl<U, P: ForestNodeStore> Forest<U, P> {
+    pub fn validate_structure(&self) -> Result<(), ForestError> {
+        let roots = self.nodes.validate()?;
+
+        for (rid, nid) in roots {
+            if self.roots[rid.0].root_id != nid {
+                return Err(ForestError::WrongRootPointer(rid));
+            }
+        }
+
+        Ok(())
+    }
+
+    pub fn debug_draw<FR, FN>(
+        &self,
+        mut format_root: FR, // Closure to format root data (&R) -> String
+        mut format_node: FN, // Closure to format node data (&N::NodeData) -> String
+    ) -> String
+    where
+        FR: FnMut(&U) -> String,
+        FN: FnMut(&P::NodeData) -> String,
+        P: ForestNodeStoreDown,
+    {
+        let mut output = String::new();
+        let _ = writeln!(output, "Forest ({} roots):", self.roots.len());
+
+        // Recursive helper function - structure remains the same, handles sub-trees
+        fn draw_subtree_recursive<W: Write, N: ForestNodeStoreDown, FmtNode>(
+            f: &mut W,                 // Output writer
+            nodes: &N,                 // Node store access
+            node_id: TreeNodeId,       // Current node to draw
+            prefix: &str,              // Current line prefix (e.g., "  │   ")
+            is_last_child: bool,       // Is this the last child of its parent?
+            format_node: &mut FmtNode, // Mutable reference to node formatter closure
+        ) -> Result<(), std::fmt::Error>
+        where
+            FmtNode: FnMut(&N::NodeData) -> String, // Closure signature
+        {
+            // Determine the connector shape based on whether it's the last child
+            let connector = if is_last_child {
+                "└── "
+            } else {
+                "├── "
+            };
+            // Use Index trait which should be implemented for the store
+            let node_data_ref = &nodes[node_id]; // Assuming Index<TreeNodeId> exists for N
+            let node_data_str = format_node(node_data_ref);
+
+            // Write the line for the current node
+            writeln!(
+                f,
+                "{}{}{}:{}", // TreeNodeId needs Debug
+                prefix, connector, node_id, node_data_str
+            )?;
+
+            // Prepare the prefix for the children of this node
+            let child_prefix = format!("{}{}", prefix, if is_last_child { "    " } else { "│   " });
+
+            let children: Vec<_> = nodes.iter_children(node_id).collect();
+            let num_children = children.len();
+            for (i, child_id) in children.into_iter().enumerate() {
+                // Recurse: pass the new prefix and whether this child is the last one
+                draw_subtree_recursive(
+                    f,
+                    nodes,
+                    child_id,
+                    &child_prefix,
+                    i == num_children - 1,
+                    format_node,
+                )?;
+            }
+            Ok(())
+        } // End of helper fn definition
+
+        let num_roots = self.roots.len();
+        for (root_idx, root_meta) in self.roots.iter().enumerate() {
+            let root_id = RootId(root_idx);
+            let start_node_id = root_meta.root_id;
+
+            // Format data using closures
+            let root_data_str = format_root(&root_meta.data);
+            // Use Index trait for Forest to access node data via store
+            let root_node_data_str = format_node(&self[start_node_id]);
+
+            // 1. Print the Root line
+            let _ = writeln!(
+                output,
+                "{}:{}", // RootId needs Debug
+                root_id, root_data_str
+            );
+
+            // 2. Print the connector line
+            let _ = writeln!(output, "  │"); // Fixed indent for the connector
+
+            // 3. Define the prefix for the root node line itself and its direct children
+            let node_line_prefix = "  "; // Prefix for the root TreeNodeId line
+
+            // 4. Print the root TreeNodeId line
+            let _ = writeln!(
+                output,
+                "{}{}:{}", // TreeNodeId needs Debug
+                node_line_prefix, start_node_id, root_node_data_str
+            );
+
+            // 5. Draw children, starting the recursion with the correct prefix
+            let children: Vec<_> = self.nodes.iter_children(start_node_id).collect();
+            let num_children = children.len();
+
+            // Prefix for the *children's connectors* (└── or ├──)
+            // It's based on the root node's prefix
+            // let children_connector_prefix = format!("{}{}", node_line_prefix, "    "); // Indent matching the root node + 4 spaces for connector alignment
+
+            for (i, child_id) in children.into_iter().enumerate() {
+                // Pass the prefix that aligns the connectors (└──, ├──)
+                // under the root node line.
+                let _ = draw_subtree_recursive(
+                    &mut output,
+                    &self.nodes,
+                    child_id,
+                    node_line_prefix, // Prefix aligns the connector itself
+                    i == num_children - 1,
+                    &mut format_node,
+                );
+            }
+
+            // 6. Add separation between trees (only if not the last root)
+            if root_idx < num_roots - 1 {
+                let _ = writeln!(output); // Just a blank line for separation
+            }
+        }
+
+        output
+    }
+    pub fn swap_roots(&mut self, a: RootId, b: RootId) {
+        if a == b {
+            return;
+        }
+
+        let roota = self.roots[a.0].root_id;
+        if roota == self.nodes.root_node(roota) {
+            self.nodes.set_root(roota, b);
+        }
+        let rootb = self.roots[b.0].root_id;
+        if rootb == self.nodes.root_node(rootb) {
+            self.nodes.set_root(rootb, a);
+        }
+
+        self.roots.swap(a.0, b.0);
+    }
+
+    pub fn from_bitvec_partition<I: IntoIterator<Item = (U, bitvec::prelude::BitVec)>>(
+        bitvec_part: I,
+    ) -> Result<Self, ForestError> {
+        Forest::<U, ParentPointerStore<P::NodeData>>::from_bitvec_partition_impl(bitvec_part).map(
+            |a| Forest {
+                nodes: P::from_pp(a.nodes),
+                roots: a.roots,
+            },
+        )
+    }
 }
 
 /// Construction from BitVec partition (remains the same)
-impl<U: Clone> Forest<U, ParentPointerStore<()>> {
+impl<U, V> Forest<U, ParentPointerStore<V>> {
     /// Creates a forest from a partition represented by a vector of (RootData, BitVec).
     /// Each BitVec represents the set of node indices belonging to that tree/root.
     /// Nodes within a set are linked arbitrarily (first encountered becomes root, others point to it).
     /// Node data is set to `()`.
     ///
     /// Returns `Err(ForestError)` if the BitVecs have different lengths or overlap.
-    pub fn from_bitvec_partition(bitvec_part: Vec<(U, BitVec)>) -> Result<Self, ForestError> {
+    fn from_bitvec_partition_impl<I: IntoIterator<Item = (U, bitvec::prelude::BitVec)>>(
+        bitvec_part: I,
+    ) -> Result<Self, ForestError> {
         let mut nodes = vec![];
         let mut roots = vec![];
         let mut cover: Option<BitVec> = None;
@@ -330,15 +561,17 @@ impl<U: Clone> Forest<U, ParentPointerStore<()>> {
                 c.union_with(&set);
             } else {
                 cover = Some(BitVec::empty(len));
-                nodes = vec![None; len];
+
+                nodes.resize_with(len, || None);
+                // nodes = vec![None; len];
             }
             let mut first = None;
             for i in set.included_iter() {
                 if let Some(root) = first {
-                    nodes[i.0] = Some(PPNode::child((), root))
+                    nodes[i.0] = Some(PPNode::dataless_child(root))
                 } else {
                     first = Some(i.into());
-                    nodes[i.0] = Some(PPNode::root((), RootId(roots.len())));
+                    nodes[i.0] = Some(PPNode::dataless_root(RootId(roots.len())));
                 }
             }
             roots.push(RootData {
@@ -369,28 +602,91 @@ pub trait ForestNodeStore:
     + Sized // Needed for some default implementations returning Self iterators
 {
     type NodeData;
-    type Store<T>: ForestNodeStore<NodeData = T>;
+    type Store<T>: ForestNodeStore<NodeData = T>+From<ParentPointerStore<T>>+Into<ParentPointerStore<T>>;
+
+    fn parent(&self,child:TreeNodeId)->ParentId{
+        self[&child]
+    }
+
+
+
+    fn to_store(self)->Self::Store<Self::NodeData>;
+    fn from_store(store:Self::Store<Self::NodeData>)->Self;
+    fn debug_draw(&self,node_display:impl FnMut(Option<&Self::NodeData>)->Option<String>)->String;
+    fn validate(&self)->Result<Vec<(RootId,TreeNodeId)>,ForestError>;
+
+    fn panicing_validate(&self){
+        self.validate()
+            .unwrap_or_else(|a| panic!("Err:{}\nforest:\n{}", a, self.debug_draw(|_| None)));
+    }
+
+    fn n_nodes(&self)->usize;
+    fn swap(&mut self,a:TreeNodeId,b:TreeNodeId);
+    fn set_root(&mut self,a:TreeNodeId,root:RootId);
+
+    fn from_pp(pp:ParentPointerStore<Self::NodeData>)->Self{
+        Self::from_store(Self::Store::<Self::NodeData>::from(pp))
+    }
+
+
+
+    fn split_off(&mut self,at:TreeNodeId)->Self;
+
+
+    /// Makes x's root, the root of y's root.
+    fn make_root_of(&mut self, x: TreeNodeId, y: TreeNodeId) -> TreeNodeId{
+        let rootx = self.root_node(x);
+        let rooty = self.root_node(y);
+        self.reparent(rootx,rooty);
+        rootx
+    }
+
+    fn reparent(&mut self,parent:TreeNodeId,child:TreeNodeId);
 
     /// Finds the `RootId` by traversing upwards. Default implementation provided.
     fn root(&self, nodeid: TreeNodeId) -> RootId { let mut current = nodeid;
             loop {
-                match self[&current] { // Uses the Index<&TreeNodeId> implementation
+                match self[&current] {
+                    ParentId::PointingRoot(p)=>current=p,
                     ParentId::Root(root_id) => return root_id,
                     ParentId::Node(parent_node_id) => current = parent_node_id,
                 }
             } }
 
-    fn iter_nodes(&self) -> impl Iterator<Item = (TreeNodeId, &Self::NodeData)>;
-    fn iter_node_id(&self) -> impl Iterator<Item = TreeNodeId> + '_;
+    fn root_node(&self,nodeid:TreeNodeId)->TreeNodeId{
+        let mut current = nodeid;
+        loop {
+            match self[&current] {
+                ParentId::PointingRoot(r)=> current=r,
+                ParentId::Root(_) => return current,
+                ParentId::Node(parent_node_id) => current = parent_node_id,
+            }
+        }
+    }
 
+    fn iter_nodes(&self) -> impl Iterator<Item = (TreeNodeId, Option<&Self::NodeData>)>;
+    fn iter_node_id(&self) -> NodeIdIter {
+        NodeIdIter {
+            range: 0..self.n_nodes(),
+            current: TreeNodeId(0),
+        }
+    }
     /// Adds a new root node.
     fn add_root(&mut self, data: Self::NodeData, root_id: RootId) -> TreeNodeId;
 
     /// Adds a new child node as the *last* child of the parent.
     fn add_child(&mut self, data: Self::NodeData, parent: TreeNodeId) -> TreeNodeId;
 
+
+    fn set_node_data(&mut self,data:Self::NodeData,node_id:TreeNodeId)->Option<Self::NodeData>;
+    /// Adds a new child node as the *last* child of the parent.
+    fn add_dataless_child(&mut self, parent: TreeNodeId) -> TreeNodeId;
+
     fn map<F, U>(self, transform: F) -> Self::Store<U> where F: FnMut(Self::NodeData) -> U;
     fn map_ref<F, U>(&self, transform: F) -> Self::Store<U> where F: FnMut(&Self::NodeData) -> U;
+    fn forgetful_map<U>(&self)->Self::Store<U>;
+
+    fn extend(&mut self,other:Self,shift_roots_by:RootId);
 }
 
 /// Trait extension for `ForestNodeStore` providing downward traversal capabilities.
@@ -412,8 +708,11 @@ pub trait ForestNodeStoreAncestors: ForestNodeStore {
 
 /// Trait for stores supporting pre-order traversal.
 pub trait ForestNodeStorePreorder: ForestNodeStore {
+    type Iterator<'a>: Iterator<Item = TreeNodeId> + Clone
+    where
+        Self: 'a;
     /// Returns a pre-order DFS iterator starting from `start`.
-    fn iter_preorder(&self, start: TreeNodeId) -> impl Iterator<Item = TreeNodeId> + '_;
+    fn iter_preorder(&self, start: TreeNodeId) -> Self::Iterator<'_>;
 }
 
 /// Trait for stores supporting breadth-first traversal.
@@ -443,6 +742,18 @@ impl<N: ForestNodeStoreDown> ForestNodeStoreRootLeaves for N {
     fn iter_root_leaves(&self, root_id: RootId) -> impl Iterator<Item = TreeNodeId> + '_ {
         self.iter_leaves()
             .filter(move |&leaf_id| self.root(leaf_id) == root_id)
+    }
+}
+
+impl<P, V> Forest<V, P> {
+    pub fn cast<PP>(self) -> Forest<V, PP>
+    where
+        PP: From<P>,
+    {
+        Forest {
+            nodes: self.nodes.into(),
+            roots: self.roots,
+        }
     }
 }
 

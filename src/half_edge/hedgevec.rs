@@ -515,7 +515,7 @@ impl<T> SmartHedgeVec<T> {
         let mut extracted = self.involution.extract(
             graph,
             |a| {
-                let new_id = -(new_id_data.len() as i64);
+                let new_id = -(1 + new_id_data.len() as i64);
                 let new_data = split_edge_fn(EdgeData::new(&self.data[a.data.0].0, a.orientation));
                 new_id_data.push((
                     new_data.data,
@@ -528,6 +528,8 @@ impl<T> SmartHedgeVec<T> {
             },
             |a| a.map(|e| e.0 as i64),
         );
+
+        // The self involution is good and valid, but we now need to split the data carrying vec.
 
         let mut split_at = 0;
         let mut other_len = 0;
@@ -564,7 +566,7 @@ impl<T> SmartHedgeVec<T> {
         let mut new_data_mapped = vec![];
 
         extracted.iter_edge_data_mut().for_each(|d| {
-            if d.data > 0 {
+            if d.data >= 0 {
                 let new_data = internal_data(EdgeData::new(
                     new_data[d.data as usize].take().unwrap(),
                     d.orientation,
@@ -579,15 +581,18 @@ impl<T> SmartHedgeVec<T> {
                 ));
                 d.orientation = new_data.orientation;
             } else {
-                d.data = shift as i64 - d.data;
+                d.data = shift as i64 + d.data.abs() - 1;
+                // println!("{}", d.data);
             }
         });
         new_data_mapped.extend(new_id_data);
         let new_inv = extracted.map_data(&|e| EdgeIndex(e as usize));
         for (i, d) in new_inv.iter_edge_data() {
             let hedge_pair = new_inv.hedge_pair(i);
+            // println!("{}", d.data.0);
             new_data_mapped[d.data.0].1 = hedge_pair;
         }
+        self.fix_hedge_pairs();
         SmartHedgeVec {
             data: new_data_mapped,
             involution: new_inv,
@@ -608,7 +613,7 @@ impl<T> SmartHedgeVec<T> {
         full_other.extend(!other_empty_filter.clone());
 
         let self_inv_shift = self.hedge_len();
-        let mut edge_data = &mut self.data;
+        let edge_data = &mut self.data;
         let edge_data_shift = edge_data.len();
         edge_data.extend(other.data);
 

@@ -1,13 +1,15 @@
+use std::ops::{Range, RangeFrom, RangeInclusive, RangeTo, RangeToInclusive};
+
 use bitvec::vec::BitVec;
 use bitvec::{bitvec, order::Lsb0};
 use serde::{Deserialize, Serialize};
 
 use crate::half_edge::builder::HedgeNodeBuilder;
-use crate::half_edge::nodestorage::NodeStorageOps;
+use crate::half_edge::nodestore::NodeStorageOps;
 use crate::half_edge::{Hedge, HedgeGraph};
 
-use super::{internal::InternalSubGraph, node::HedgeNode, SubGraph, SubGraphOps};
-use super::{Inclusion, SubGraphHedgeIter};
+use super::{internal::InternalSubGraph, SubGraph, SubGraphOps};
+use super::{Inclusion, ModifySubgraph, SubGraphHedgeIter};
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct ContractedSubGraph {
@@ -45,11 +47,69 @@ impl Inclusion<BitVec> for ContractedSubGraph {
     }
 }
 
+impl Inclusion<Range<Hedge>> for ContractedSubGraph {
+    fn includes(&self, other: &Range<Hedge>) -> bool {
+        self.allhedges.includes(other)
+    }
+
+    fn intersects(&self, other: &Range<Hedge>) -> bool {
+        self.allhedges.intersects(other)
+    }
+}
+
+impl Inclusion<RangeTo<Hedge>> for ContractedSubGraph {
+    fn includes(&self, other: &RangeTo<Hedge>) -> bool {
+        self.allhedges.includes(other)
+    }
+
+    fn intersects(&self, other: &RangeTo<Hedge>) -> bool {
+        (0..other.end.0).any(|a| self.includes(&Hedge(a)))
+    }
+}
+
+impl Inclusion<RangeToInclusive<Hedge>> for ContractedSubGraph {
+    fn includes(&self, other: &RangeToInclusive<Hedge>) -> bool {
+        self.allhedges.includes(other)
+    }
+
+    fn intersects(&self, other: &RangeToInclusive<Hedge>) -> bool {
+        (0..=other.end.0).any(|a| self.includes(&Hedge(a)))
+    }
+}
+
+impl Inclusion<RangeFrom<Hedge>> for ContractedSubGraph {
+    fn includes(&self, other: &RangeFrom<Hedge>) -> bool {
+        self.allhedges.includes(other)
+    }
+
+    fn intersects(&self, other: &RangeFrom<Hedge>) -> bool {
+        (other.start.0..).any(|a| self.includes(&Hedge(a)))
+    }
+}
+
+impl Inclusion<RangeInclusive<Hedge>> for ContractedSubGraph {
+    fn includes(&self, other: &RangeInclusive<Hedge>) -> bool {
+        self.allhedges.includes(other)
+    }
+
+    fn intersects(&self, other: &RangeInclusive<Hedge>) -> bool {
+        (other.start().0..=other.end().0).any(|a| self.includes(&Hedge(a)))
+    }
+}
+
 impl SubGraph for ContractedSubGraph {
     type Base = BitVec;
     type BaseIter<'a> = SubGraphHedgeIter<'a>;
     fn nhedges(&self) -> usize {
         self.allhedges.nhedges()
+    }
+
+    fn size(&self) -> usize {
+        self.allhedges.len()
+    }
+
+    fn has_greater(&self, hedge: Hedge) -> bool {
+        self.allhedges.has_greater(hedge)
     }
 
     fn join_mut(&mut self, other: Self) {
@@ -69,11 +129,11 @@ impl SubGraph for ContractedSubGraph {
         self.allhedges.nedges(graph)
     }
 
-    fn hairs(&self, node: &HedgeNode) -> BitVec {
-        let mut hairs = self.allhedges.intersection(&node.hairs);
-        hairs.subtract_with(&self.internal_graph.filter);
-        hairs
-    }
+    // fn hairs(&self, node: &HedgeNode) -> BitVec {
+    //     let mut hairs = self.allhedges.intersection(&node.hairs);
+    //     hairs.subtract_with(&self.internal_graph.filter);
+    //     hairs
+    // }
 
     fn string_label(&self) -> String {
         self.allhedges.string_label() + "⊛" + self.internal_graph.string_label().as_str()
@@ -100,6 +160,12 @@ impl SubGraphOps for ContractedSubGraph {
         Self {
             internal_graph: InternalSubGraph::empty(graph.n_hedges()),
             allhedges: externalhedges,
+        }
+    }
+
+    fn union_with_iter(&mut self, other: impl Iterator<Item = Hedge>) {
+        for h in other {
+            self.allhedges.add(h);
         }
     }
 

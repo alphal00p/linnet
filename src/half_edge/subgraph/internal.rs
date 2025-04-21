@@ -3,13 +3,16 @@ use bitvec::vec::BitVec;
 use serde::{Deserialize, Serialize};
 use std::hash::Hash;
 use std::ops::Index;
+use std::ops::{Range, RangeFrom, RangeInclusive, RangeTo, RangeToInclusive};
 
 use crate::half_edge::{
     hedgevec::Accessors, involution::HedgePair, tree::SimpleTraversalTree, Hedge, HedgeGraph,
     NodeStorageOps,
 };
 
-use super::{node::HedgeNode, Cycle, Inclusion, SubGraph, SubGraphHedgeIter, SubGraphOps};
+use super::{
+    node::HedgeNode, Cycle, Inclusion, ModifySubgraph, SubGraph, SubGraphHedgeIter, SubGraphOps,
+};
 
 #[derive(Clone, Debug, Serialize, Deserialize, Eq, Ord, Encode, Decode)]
 pub struct InternalSubGraph {
@@ -98,11 +101,69 @@ impl Inclusion<BitVec> for InternalSubGraph {
     }
 }
 
+impl Inclusion<Range<Hedge>> for InternalSubGraph {
+    fn includes(&self, other: &Range<Hedge>) -> bool {
+        (other.start.0..other.end.0).all(|a| self.includes(&Hedge(a)))
+    }
+
+    fn intersects(&self, other: &Range<Hedge>) -> bool {
+        (other.start.0..other.end.0).any(|a| self.includes(&Hedge(a)))
+    }
+}
+
+impl Inclusion<RangeTo<Hedge>> for InternalSubGraph {
+    fn includes(&self, other: &RangeTo<Hedge>) -> bool {
+        (0..other.end.0).all(|a| self.includes(&Hedge(a)))
+    }
+
+    fn intersects(&self, other: &RangeTo<Hedge>) -> bool {
+        (0..other.end.0).any(|a| self.includes(&Hedge(a)))
+    }
+}
+
+impl Inclusion<RangeToInclusive<Hedge>> for InternalSubGraph {
+    fn includes(&self, other: &RangeToInclusive<Hedge>) -> bool {
+        (0..=other.end.0).all(|a| self.includes(&Hedge(a)))
+    }
+
+    fn intersects(&self, other: &RangeToInclusive<Hedge>) -> bool {
+        (0..=other.end.0).any(|a| self.includes(&Hedge(a)))
+    }
+}
+
+impl Inclusion<RangeFrom<Hedge>> for InternalSubGraph {
+    fn includes(&self, other: &RangeFrom<Hedge>) -> bool {
+        (other.start.0..).all(|a| self.includes(&Hedge(a)))
+    }
+
+    fn intersects(&self, other: &RangeFrom<Hedge>) -> bool {
+        (other.start.0..).any(|a| self.includes(&Hedge(a)))
+    }
+}
+
+impl Inclusion<RangeInclusive<Hedge>> for InternalSubGraph {
+    fn includes(&self, other: &RangeInclusive<Hedge>) -> bool {
+        (other.start().0..=other.end().0).all(|a| self.includes(&Hedge(a)))
+    }
+
+    fn intersects(&self, other: &RangeInclusive<Hedge>) -> bool {
+        (other.start().0..=other.end().0).any(|a| self.includes(&Hedge(a)))
+    }
+}
+
 impl SubGraph for InternalSubGraph {
     type Base = BitVec;
     type BaseIter<'a> = SubGraphHedgeIter<'a>;
     fn nedges<E, V, N: NodeStorageOps<NodeData = V>>(&self, _graph: &HedgeGraph<E, V, N>) -> usize {
         self.nhedges() / 2
+    }
+
+    fn has_greater(&self, hedge: Hedge) -> bool {
+        self.filter.has_greater(hedge)
+    }
+
+    fn size(&self) -> usize {
+        self.filter.size()
     }
 
     fn join_mut(&mut self, other: Self) {
@@ -131,10 +192,6 @@ impl SubGraph for InternalSubGraph {
         }
     }
 
-    fn hairs(&self, node: &HedgeNode) -> BitVec {
-        node.hairs.intersection(&self.filter)
-    }
-
     fn included(&self) -> &BitVec {
         self.filter.included()
     }
@@ -151,6 +208,12 @@ impl SubGraphOps for InternalSubGraph {
     fn intersect_with(&mut self, other: &InternalSubGraph) {
         self.filter &= &other.filter;
         self.loopcount = None;
+    }
+
+    fn union_with_iter(&mut self, other: impl Iterator<Item = Hedge>) {
+        for h in other {
+            self.filter.add(h);
+        }
     }
 
     fn union_with(&mut self, other: &InternalSubGraph) {

@@ -1,13 +1,14 @@
 use bitvec::vec::BitVec;
 use bitvec::{bitvec, order::Lsb0};
 use serde::{Deserialize, Serialize};
+use std::ops::{Range, RangeFrom, RangeInclusive, RangeTo, RangeToInclusive};
 
 use crate::half_edge::builder::HedgeNodeBuilder;
 use crate::half_edge::{Hedge, HedgeGraph, NodeStorageOps};
 
 use super::contracted::ContractedSubGraph;
 use super::{internal::InternalSubGraph, SubGraph, SubGraphOps};
-use super::{Inclusion, SubGraphHedgeIter};
+use super::{Inclusion, ModifySubgraph, SubGraphHedgeIter};
 use bincode::{Decode, Encode};
 
 #[derive(
@@ -57,6 +58,14 @@ impl SubGraph for HedgeNode {
         self.hairs.included_iter()
     }
 
+    fn has_greater(&self, hedge: Hedge) -> bool {
+        self.hairs.has_greater(hedge)
+    }
+
+    fn size(&self) -> usize {
+        self.hairs.size()
+    }
+
     fn join_mut(&mut self, other: Self) {
         self.hairs.join_mut(other.hairs);
         self.internal_graph.join_mut(other.internal_graph);
@@ -70,9 +79,19 @@ impl SubGraph for HedgeNode {
         self.hairs.nhedges()
     }
 
-    fn hairs(&self, node: &HedgeNode) -> BitVec {
-        let mut hairs = node.all_edges();
-        hairs.intersect_with(&node.hairs);
+    // fn hairs(&self, node: &HedgeNode) -> BitVec {
+    //     let mut hairs = node.all_edges();
+    //     hairs.intersect_with(&node.hairs);
+    //     hairs
+    // }
+    //
+    fn hairs(&self, node: impl Iterator<Item = Hedge>) -> BitVec {
+        let mut hairs = BitVec::empty(self.size());
+        for h in node {
+            if self.includes(&h) {
+                hairs.add(h)
+            }
+        }
         hairs
     }
 
@@ -95,13 +114,65 @@ impl SubGraph for HedgeNode {
         }
     }
 }
+impl Inclusion<Range<Hedge>> for HedgeNode {
+    fn includes(&self, other: &Range<Hedge>) -> bool {
+        (other.start.0..other.end.0).all(|a| self.includes(&Hedge(a)))
+    }
 
+    fn intersects(&self, other: &Range<Hedge>) -> bool {
+        (other.start.0..other.end.0).any(|a| self.includes(&Hedge(a)))
+    }
+}
+
+impl Inclusion<RangeTo<Hedge>> for HedgeNode {
+    fn includes(&self, other: &RangeTo<Hedge>) -> bool {
+        (0..other.end.0).all(|a| self.includes(&Hedge(a)))
+    }
+
+    fn intersects(&self, other: &RangeTo<Hedge>) -> bool {
+        (0..other.end.0).any(|a| self.includes(&Hedge(a)))
+    }
+}
+
+impl Inclusion<RangeToInclusive<Hedge>> for HedgeNode {
+    fn includes(&self, other: &RangeToInclusive<Hedge>) -> bool {
+        (0..=other.end.0).all(|a| self.includes(&Hedge(a)))
+    }
+
+    fn intersects(&self, other: &RangeToInclusive<Hedge>) -> bool {
+        (0..=other.end.0).any(|a| self.includes(&Hedge(a)))
+    }
+}
+
+impl Inclusion<RangeFrom<Hedge>> for HedgeNode {
+    fn includes(&self, other: &RangeFrom<Hedge>) -> bool {
+        (other.start.0..).all(|a| self.includes(&Hedge(a)))
+    }
+
+    fn intersects(&self, other: &RangeFrom<Hedge>) -> bool {
+        (other.start.0..).any(|a| self.includes(&Hedge(a)))
+    }
+}
+
+impl Inclusion<RangeInclusive<Hedge>> for HedgeNode {
+    fn includes(&self, other: &RangeInclusive<Hedge>) -> bool {
+        (other.start().0..=other.end().0).all(|a| self.includes(&Hedge(a)))
+    }
+
+    fn intersects(&self, other: &RangeInclusive<Hedge>) -> bool {
+        (other.start().0..=other.end().0).any(|a| self.includes(&Hedge(a)))
+    }
+}
 impl SubGraphOps for HedgeNode {
     fn complement<E, V, N: NodeStorageOps<NodeData = V>>(
         &self,
         graph: &HedgeGraph<E, V, N>,
     ) -> Self {
         Self::from_internal_graph(self.internal_graph.complement(graph), graph)
+    }
+
+    fn union_with_iter(&mut self, other: impl Iterator<Item = Hedge>) {
+        self.hairs.union_with_iter(other);
     }
 
     fn union_with(&mut self, other: &Self) {
@@ -228,11 +299,11 @@ impl HedgeNode {
         let mut hairs = bitvec![usize, Lsb0; 0; graph.n_hedges()];
 
         for i in self.internal_graph.included_iter() {
-            hairs |= &graph.node_hairs(i).hairs;
+            hairs.union_with_iter(graph.neighbors(i));
         }
 
         for i in self.hairs.included_iter() {
-            hairs |= &graph.node_hairs(i).hairs;
+            hairs.union_with_iter(graph.neighbors(i));
         }
 
         self.hairs = !(!hairs | &self.internal_graph.filter);

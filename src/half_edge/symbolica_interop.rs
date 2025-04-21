@@ -3,7 +3,7 @@ use ahash::AHashMap;
 use super::{
     builder::HedgeGraphBuilder,
     involution::{HedgePair, Orientation},
-    nodestorage::{NodeStorageOps, NodeStorageVec},
+    nodestore::{NodeStorageOps, NodeStorageVec},
     HedgeGraph, HedgeGraphError,
 };
 

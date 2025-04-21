@@ -1,10 +1,19 @@
 //! Implements a tree structure where each node only stores a pointer to its parent.
 
-use std::ops::{Index, IndexMut};
+use std::{
+    fmt::Display,
+    ops::{Index, IndexMut},
+};
 
+use bitvec::vec::BitVec;
 use serde::{Deserialize, Serialize};
 
-use super::{Forest, ForestNodeStore, RootId, TreeNodeId};
+use crate::half_edge::{
+    involution::Hedge,
+    subgraph::{ModifySubgraph, SubGraph},
+};
+
+use super::{Forest, ForestNodeStore, ForestNodeStoreAncestors, RootId, TreeNodeId};
 
 /// Represents a node within a `ParentPointerStore`.
 ///
@@ -15,41 +24,89 @@ pub struct PPNode<V> {
     /// Pointer to the parent node or the root ID if this is a root node.
     pub(crate) parent: ParentId,
     /// The data associated with this node.
-    pub(crate) data: V,
+    pub(crate) data: Option<V>,
 }
 
 impl<V> PPNode<V> {
     pub fn child(data: V, parent: TreeNodeId) -> Self {
         PPNode {
             parent: ParentId::Node(parent),
-            data,
+            data: Some(data),
+        }
+    }
+
+    pub fn debug_display(
+        &self,
+        writer: &mut impl std::fmt::Write,
+        draw_data: &mut impl FnMut(Option<&V>) -> Option<String>,
+    ) {
+        write!(writer, "{}", self.parent).unwrap();
+        if let Some(root_data) = draw_data(self.data.as_ref()) {
+            writeln!(writer, "{}", root_data).unwrap();
+        } else {
+            writeln!(writer).unwrap();
+        }
+    }
+
+    pub fn forget<U>(&self) -> PPNode<U> {
+        PPNode {
+            parent: self.parent,
+            data: None,
+        }
+    }
+
+    pub fn shift(&mut self, root: RootId, nodes: TreeNodeId) {
+        match &mut self.parent {
+            ParentId::Node(n) => {
+                n.0 += nodes.0;
+            }
+            ParentId::PointingRoot(n) => {
+                n.0 += nodes.0;
+            }
+            ParentId::Root(r) => {
+                r.0 += root.0;
+            }
+        }
+    }
+
+    pub fn dataless_child(parent: TreeNodeId) -> Self {
+        PPNode {
+            parent: ParentId::Node(parent),
+            data: None,
         }
     }
 
     pub fn root(data: V, root_id: RootId) -> Self {
         PPNode {
             parent: ParentId::Root(root_id),
-            data,
+            data: Some(data),
         }
     }
 
-    pub fn map<F, U>(self, mut transform: F) -> PPNode<U>
+    pub fn dataless_root(root_id: RootId) -> Self {
+        PPNode {
+            parent: ParentId::Root(root_id),
+            data: None,
+        }
+    }
+
+    pub fn map<F, U>(self, transform: F) -> PPNode<U>
     where
         F: FnMut(V) -> U,
     {
         PPNode {
             parent: self.parent,
-            data: transform(self.data),
+            data: self.data.map(transform),
         }
     }
 
-    pub fn map_ref<F, U>(&self, mut transform: F) -> PPNode<U>
+    pub fn map_ref<F, U>(&self, transform: F) -> PPNode<U>
     where
         F: FnMut(&V) -> U,
     {
         PPNode {
             parent: self.parent,
-            data: transform(&self.data),
+            data: self.data.as_ref().map(transform),
         }
     }
 }
@@ -62,14 +119,27 @@ impl<V> PPNode<V> {
 pub enum ParentId {
     /// This node is a root node belonging to the tree identified by `RootId`.
     Root(RootId),
+
     /// This node is a child of the node identified by `TreeNodeId`.
     Node(TreeNodeId),
+    /// for use when splitting
+    PointingRoot(TreeNodeId),
+}
+
+impl Display for ParentId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ParentId::Node(n) => write!(f, "parent node: {}", n),
+            ParentId::Root(r) => write!(f, "root id:{}", r),
+            ParentId::PointingRoot(n) => write!(f, "root node:{}", n),
+        }
+    }
 }
 
 impl ParentId {
     pub fn is_root(&self) -> bool {
         match self {
-            ParentId::Root(_) => true,
+            ParentId::Root(_) | ParentId::PointingRoot(_) => true,
             ParentId::Node(_) => false,
         }
     }
@@ -131,9 +201,9 @@ impl<V> ParentPointerStore<V> {
             prev = Some(current);
 
             match orig_parent {
-                ParentId::Node(p) => {
-                    current = p;
-                }
+                ParentId::Node(p) => current = p,
+
+                ParentId::PointingRoot(p) => current = p,
                 ParentId::Root(r) => return r,
             }
         }
@@ -158,13 +228,13 @@ impl<V> Index<&TreeNodeId> for ParentPointerStore<V> {
 impl<V> Index<TreeNodeId> for ParentPointerStore<V> {
     type Output = V;
     fn index(&self, index: TreeNodeId) -> &Self::Output {
-        &self.nodes[index.0].data
+        self.nodes[index.0].data.as_ref().unwrap()
     }
 }
 
 impl<V> IndexMut<TreeNodeId> for ParentPointerStore<V> {
     fn index_mut(&mut self, index: TreeNodeId) -> &mut Self::Output {
-        &mut self.nodes[index.0].data
+        self.nodes[index.0].data.as_mut().unwrap()
     }
 }
 
@@ -172,26 +242,166 @@ impl<V> ForestNodeStore for ParentPointerStore<V> {
     type NodeData = V;
     type Store<T> = ParentPointerStore<T>;
 
+    fn set_root(&mut self, a: TreeNodeId, root: RootId) {
+        let rootx = self.root_node(a);
+        self.nodes[rootx.0].parent = ParentId::Root(root);
+    }
+
+    fn validate(&self) -> Result<Vec<(RootId, TreeNodeId)>, super::ForestError> {
+        let mut roots = vec![];
+        let mut seen = BitVec::empty(self.n_nodes());
+
+        while let Some(next) = seen.iter_zeros().next() {
+            let current = TreeNodeId(next);
+            seen.add(Hedge(next));
+            self.iter_ancestors(current).for_each(|a| {
+                seen.add(Hedge::from(a));
+            });
+            let root_id = self.root_node(current);
+            let root = self.root(root_id);
+
+            roots.push((root, root_id));
+        }
+
+        Ok(roots)
+    }
+
+    fn debug_draw(
+        &self,
+        _node_display: impl FnMut(Option<&Self::NodeData>) -> Option<String>,
+    ) -> String {
+        "".to_string()
+    }
+    fn n_nodes(&self) -> usize {
+        self.nodes.len()
+    }
+
+    fn set_node_data(&mut self, data: Self::NodeData, node_id: TreeNodeId) -> Option<V> {
+        let old = self.nodes[node_id.0].data.take();
+        self.nodes[node_id.0].data = Some(data);
+        old
+    }
+
+    fn forgetful_map<U>(&self) -> Self::Store<U> {
+        ParentPointerStore {
+            nodes: self
+                .nodes
+                .iter()
+                .map(|a| PPNode {
+                    parent: a.parent,
+                    data: None,
+                })
+                .collect(),
+        }
+    }
+
+    // with path compression for split nodes
+    fn split_off(&mut self, at: TreeNodeId) -> Self {
+        for mut current in (0..self.nodes.len()).map(TreeNodeId) {
+            while let ParentId::Node(p) = self[&current] {
+                let mut newp = p;
+                while (newp <= at) ^ (current > at) {
+                    // the pointer crosses the splitting boundary, we need to find a new pointer.
+
+                    match self[&newp] {
+                        ParentId::Node(next) => {
+                            newp = next;
+                        }
+                        ParentId::Root(_) => {
+                            // split_root = true;
+                            break;
+                        }
+                        ParentId::PointingRoot(next) => {
+                            newp = next;
+                        }
+                    }
+                }
+
+                if let ParentId::Root(r) = self[&newp] {
+                    // set current to now be the root, and original root to point here.
+
+                    self.nodes[newp.0].parent = ParentId::PointingRoot(current);
+                    self.nodes[current.0].parent = ParentId::Root(r);
+                } else {
+                    self.reparent(newp, current);
+                }
+
+                current = p
+            }
+        }
+
+        for n in (0..self.nodes.len()).map(TreeNodeId) {
+            if let ParentId::Node(n) = &mut self.nodes[n.0].parent {
+                if *n > at {
+                    n.0 -= at.0;
+                }
+            }
+
+            if let ParentId::PointingRoot(rp) = self[&n] {
+                let root = self[&rp];
+                self.nodes[n.0].parent = root;
+            }
+        }
+        Self {
+            nodes: self.nodes.split_off(at.0),
+        }
+    }
+
+    fn extend(&mut self, other: Self, shift_roots_by: RootId) {
+        let nodeshift = TreeNodeId(self.nodes.len());
+        self.nodes.extend(other.nodes.into_iter().map(|mut r| {
+            r.shift(shift_roots_by, nodeshift);
+            r
+        }));
+    }
+
+    fn reparent(&mut self, parent: TreeNodeId, child: TreeNodeId) {
+        self.nodes[child.0].parent = ParentId::Node(parent);
+    }
+
+    fn swap(&mut self, a: TreeNodeId, b: TreeNodeId) {
+        for n in &mut self.nodes {
+            if let ParentId::Node(pp) = &mut n.parent {
+                if *pp == a {
+                    *pp = b;
+                } else if *pp == b {
+                    *pp = a;
+                }
+            }
+        }
+
+        self.nodes.swap(a.0, b.0);
+    }
+    fn from_store(store: Self::Store<Self::NodeData>) -> Self {
+        store
+    }
+
+    fn to_store(self) -> Self::Store<Self::NodeData> {
+        self
+    }
+
     fn add_root(&mut self, data: Self::NodeData, root_id: RootId) -> TreeNodeId {
         let node_id = TreeNodeId(self.nodes.len());
         self.nodes.push(PPNode::root(data, root_id));
         node_id
     }
 
-    fn iter_node_id(&self) -> impl Iterator<Item = TreeNodeId> {
-        (0..self.nodes.len()).map(TreeNodeId)
-    }
-
-    fn iter_nodes(&self) -> impl Iterator<Item = (TreeNodeId, &Self::NodeData)> {
+    fn iter_nodes(&self) -> impl Iterator<Item = (TreeNodeId, Option<&Self::NodeData>)> {
         self.nodes
             .iter()
             .enumerate()
-            .map(|(i, n)| (TreeNodeId(i), &n.data))
+            .map(|(i, n)| (TreeNodeId(i), n.data.as_ref()))
     }
 
     fn add_child(&mut self, data: Self::NodeData, parent: TreeNodeId) -> TreeNodeId {
         let node_id = TreeNodeId(self.nodes.len());
         self.nodes.push(PPNode::child(data, parent));
+        node_id
+    }
+
+    fn add_dataless_child(&mut self, parent: TreeNodeId) -> TreeNodeId {
+        let node_id = TreeNodeId(self.nodes.len());
+        self.nodes.push(PPNode::dataless_child(parent));
         node_id
     }
 

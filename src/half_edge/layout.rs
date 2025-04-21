@@ -8,16 +8,18 @@ use argmin::{
     core::{CostFunction, Executor, State},
     solver::simulatedannealing::{Anneal, SimulatedAnnealing},
 };
+
+// #[cfg(feature = "drawing")]
 use cgmath::{Angle, InnerSpace, Rad, Vector2, Zero};
 use rand::{rngs::SmallRng, Rng, SeedableRng};
 use serde::{Deserialize, Serialize};
 
+// #[cfg(feature = "drawing")]
+use super::drawing::{CetzEdge, CetzString, Decoration, EdgeGeometry};
 use super::{
-    drawing::{CetzEdge, CetzString, Decoration, EdgeGeometry},
     hedgevec::HedgeVec,
     involution::{EdgeIndex, HedgePair},
-    nodestorage::{NodeStorageOps, NodeStorageVec},
-    subgraph::SubGraph,
+    nodestore::{NodeStorageOps, NodeStorageVec},
     Flow, HedgeGraph, NodeIndex, Orientation,
 };
 
@@ -438,7 +440,7 @@ impl Positions {
         params: &[f64],
     ) -> PositionalHedgeGraph<E, V> {
         graph.map(
-            |_, _, i, v| {
+            |_, i, v| {
                 let pos = self.vertex_positions[i.0];
                 LayoutVertex::new(v, params[pos.1], params[pos.2])
             },
@@ -631,7 +633,7 @@ impl<E, V> CostFunction for GraphLayout<'_, E, V> {
                 let dist = (dx * dx + dy * dy).sqrt();
                 cost += self.params.edge_vertex_repulsion / dist;
             }
-            for e in self.graph.hairs_from_id(node).hairs.included_iter() {
+            for e in self.graph.hair_iter(node) {
                 let (ex, ey) = self.positions.get_edge_position(self.graph[&e], param);
 
                 let dx = x - ex;
@@ -643,7 +645,7 @@ impl<E, V> CostFunction for GraphLayout<'_, E, V> {
                     0.5 * self.params.spring_constant * (self.params.spring_length - dist).powi(2);
                 // cost += self.params.charge_constant_e / dist;
 
-                for othere in self.graph.hairs_from_id(node).hairs.included_iter() {
+                for othere in self.graph.hair_iter(node) {
                     let a = self.graph.inv(othere);
                     if e > othere && a != e {
                         let (ox, oy) = self.positions.get_edge_position(self.graph[&othere], param);

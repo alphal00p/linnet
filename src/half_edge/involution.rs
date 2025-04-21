@@ -10,7 +10,7 @@ use rand::{rngs::SmallRng, Rng, SeedableRng};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use super::{nodestorage::NodeStorageOps, subgraph::SubGraph, GVEdgeAttrs, HedgeGraph, NodeIndex};
+use super::{nodestore::NodeStorageOps, subgraph::SubGraph, GVEdgeAttrs, HedgeGraph, NodeIndex};
 
 #[derive(
     Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash, Encode, Decode,
@@ -169,7 +169,6 @@ impl HedgePair {
         match self {
             HedgePair::Unpaired { flow, .. } => {
                 if attr.color.is_some() {
-                    println!("hee");
                     attr
                 } else {
                     GVEdgeAttrs {
@@ -1356,6 +1355,7 @@ impl<E> Involution<E> {
     }
     // fn put_at_end(&mut self,)
 
+    /// Extracts the edges included in the subgraph into a separate involution. If the involution maps edges across the splitting boundary, i.e. if i in graph but inv(i) not in graph, then the edge involution is modified on each side, to turn this into a dangling edge. The data assigned to a fully owned edge is mapped by the internal_data closure, whilst those that get split, are assigned the data gotten from the split_edge_fn closure. The new dangling edges retain the old underlying orientation.
     pub fn extract<S: SubGraph, O>(
         &mut self,
         graph: &S,
@@ -1386,7 +1386,8 @@ impl<E> Involution<E> {
                 } else {
                     Flow::Source
                 };
-                self.source_to_identity(Hedge(i), flow);
+
+                self.source_to_identity_impl(Hedge(i), flow, flow == Flow::Sink);
             }
         }
         let extract = self.inv.split_off(left.0);
@@ -1653,8 +1654,20 @@ impl<E> Involution<E> {
     }
 
     fn source_to_identity(&mut self, hedge: Hedge, underlying: Flow) {
+        self.source_to_identity_impl(hedge, underlying, false);
+    }
+
+    fn source_to_identity_impl(
+        &mut self,
+        hedge: Hedge,
+        underlying: Flow,
+        reverse_orientation: bool,
+    ) {
         if self.is_source(hedge) {
-            let data = self.get_data_owned(hedge).unwrap();
+            let mut data = self.get_data_owned(hedge).unwrap();
+            if reverse_orientation {
+                data.orientation = data.orientation.reverse()
+            }
             self.inv[hedge.0] = InvolutiveMapping::Identity { data, underlying };
         }
     }
@@ -2017,3 +2030,6 @@ impl<E> Display for Involution<E> {
         write!(f, "{}", out)
     }
 }
+
+#[cfg(test)]
+pub mod test;

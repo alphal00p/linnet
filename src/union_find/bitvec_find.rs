@@ -4,8 +4,7 @@ use bitvec::vec::BitVec;
 
 use crate::half_edge::{
     involution::Hedge,
-    nodestorage::{NodeStorage, NodeStorageOps},
-    subgraph::HedgeNode,
+    nodestore::{BitVecNeighborIter, NodeStorage},
     NodeIndex,
 };
 
@@ -27,7 +26,7 @@ pub enum HeavyLight<H, L> {
 
 pub struct BitFilterData<U> {
     pub data: Option<U>,
-    pub filter: HedgeNode,
+    pub filter: BitVec,
 }
 
 pub struct UnionFindBitFilterHL<H, L> {
@@ -51,7 +50,7 @@ impl<H, L> UnionFindBitFilterHL<H, L> {
             pointers.push(index);
             heavy_data.push(BitFilterData {
                 data: Some(d),
-                filter: filter.into(),
+                filter,
             });
         }
 
@@ -79,7 +78,7 @@ impl<H, L> UnionFindBitFilterHL<H, L> {
             pointers.push(index);
             light_data.push(BitFilterData {
                 data: Some(d),
-                filter: filter.into(),
+                filter,
             });
         }
 
@@ -140,11 +139,11 @@ impl<H, L> UnionFindBitFilterHL<H, L> {
     }
 
     pub fn find_from_heavy(&self, h: HeavyIndex) -> ParentPointer {
-        self.find(Hedge(self[&h].filter.hairs.iter_ones().next().unwrap()))
+        self.find(Hedge(self[&h].filter.iter_ones().next().unwrap()))
     }
 
     pub fn find_from_light(&self, l: LightIndex) -> ParentPointer {
-        self.find(Hedge(self[&l].filter.hairs.iter_ones().next().unwrap()))
+        self.find(Hedge(self[&l].filter.iter_ones().next().unwrap()))
     }
 
     /// Returns a reference to the BitVec filter for the set containing the element at ParentPointer x.
@@ -199,10 +198,10 @@ impl<H, L> UnionFindBitFilterHL<H, L> {
                     self.heavy_data[widx].data = Some(merge_h(wval, lval));
                     if widx < lidx {
                         let (wslice, lslice) = self.heavy_data.split_at_mut(lidx);
-                        wslice[widx].filter.hairs |= &lslice[0].filter.hairs;
+                        wslice[widx].filter |= &lslice[0].filter;
                     } else {
                         let (lslice, wslice) = self.heavy_data.split_at_mut(widx);
-                        wslice[0].filter.hairs |= &lslice[lidx].filter.hairs;
+                        wslice[0].filter |= &lslice[lidx].filter;
                     }
                 }
 
@@ -227,10 +226,10 @@ impl<H, L> UnionFindBitFilterHL<H, L> {
                     // 2) Merge filters
                     if widx < lidx {
                         let (wslice, lslice) = self.light_data.split_at_mut(lidx);
-                        wslice[widx].filter.hairs |= &lslice[0].filter.hairs;
+                        wslice[widx].filter |= &lslice[0].filter;
                     } else {
                         let (lslice, wslice) = self.light_data.split_at_mut(widx);
-                        wslice[0].filter.hairs |= &lslice[lidx].filter.hairs;
+                        wslice[0].filter |= &lslice[lidx].filter;
                     }
                 }
 
@@ -267,9 +266,9 @@ impl<H, L> UnionFindBitFilterHL<H, L> {
         out
     }
 
-    fn root_hedge(&self, node: NodeIndex) -> Hedge {
-        self.inner[&SetIndex(node.0)].root_pointer
-    }
+    // fn root_hedge(&self, node: NodeIndex) -> Hedge {
+    //     self.inner[&SetIndex(node.0)].root_pointer
+    // }
 }
 
 impl<H, L> Index<HeavyIndex> for UnionFindBitFilterHL<H, L> {
@@ -339,6 +338,11 @@ impl<H, L> IndexMut<&LightIndex> for UnionFindBitFilterHL<H, L> {
 impl<H, L> NodeStorage for UnionFindBitFilterHL<H, L> {
     type Storage<N> = UnionFindBitFilterHL<N, L>;
     type NodeData = H;
+    type Neighbors = BitVec;
+    type NeighborsIter<'a>
+        = BitVecNeighborIter<'a>
+    where
+        Self: 'a;
 }
 
 // impl<H, L> NodeStorageOps for UnionFindBitFilterHL<H, L> {

@@ -1,17 +1,19 @@
+use std::ops::{Range, RangeFrom, RangeInclusive, RangeTo, RangeToInclusive};
+
 use super::{Cycle, Inclusion, SubGraph, SubGraphHedgeIter, SubGraphOps};
 use crate::dot_parser::DotEdgeData;
 use crate::half_edge::hedgevec::Accessors;
 use crate::half_edge::involution::{EdgeIndex, HedgePair};
-use crate::half_edge::nodestorage::NodeStorageOps;
+use crate::half_edge::nodestore::NodeStorageOps;
 use crate::half_edge::EdgeAccessors;
 use crate::half_edge::{
     involution::SignOrZero, EdgeData, Flow, Hedge, HedgeGraph, InvolutiveMapping, NodeStorage,
     Orientation, PowersetIterator,
 };
-#[cfg(feature = "layout")]
+#[cfg(feature = "drawing")]
 use crate::half_edge::{
     layout::{LayoutEdge, LayoutIters, LayoutParams, LayoutSettings, LayoutVertex},
-    nodestorage::NodeStorageVec,
+    nodestore::NodeStorageVec,
 };
 use bitvec::vec::BitVec;
 use std::cmp::Ordering;
@@ -316,11 +318,11 @@ impl OrientedCut {
         let orientation = self.get_from_pair(pair);
         match orientation {
             Orientation::Default => {
-                println!("Source:{id:?}");
+                // println!("Source:{id:?}");
                 edge.cut(Flow::Source);
             }
             Orientation::Reversed => {
-                println!("Sink:{id:?}");
+                // println!("Sink:{id:?}");
                 edge.cut(Flow::Sink);
             }
             Orientation::Undirected => {}
@@ -358,6 +360,55 @@ impl Inclusion<OrientedCut> for OrientedCut {
         self.left.intersects(&other.left)
     }
 }
+impl Inclusion<Range<Hedge>> for OrientedCut {
+    fn includes(&self, other: &Range<Hedge>) -> bool {
+        (other.start.0..other.end.0).all(|a| self.includes(&Hedge(a)))
+    }
+
+    fn intersects(&self, other: &Range<Hedge>) -> bool {
+        (other.start.0..other.end.0).any(|a| self.includes(&Hedge(a)))
+    }
+}
+
+impl Inclusion<RangeTo<Hedge>> for OrientedCut {
+    fn includes(&self, other: &RangeTo<Hedge>) -> bool {
+        (0..other.end.0).all(|a| self.includes(&Hedge(a)))
+    }
+
+    fn intersects(&self, other: &RangeTo<Hedge>) -> bool {
+        (0..other.end.0).any(|a| self.includes(&Hedge(a)))
+    }
+}
+
+impl Inclusion<RangeToInclusive<Hedge>> for OrientedCut {
+    fn includes(&self, other: &RangeToInclusive<Hedge>) -> bool {
+        (0..=other.end.0).all(|a| self.includes(&Hedge(a)))
+    }
+
+    fn intersects(&self, other: &RangeToInclusive<Hedge>) -> bool {
+        (0..=other.end.0).any(|a| self.includes(&Hedge(a)))
+    }
+}
+
+impl Inclusion<RangeFrom<Hedge>> for OrientedCut {
+    fn includes(&self, other: &RangeFrom<Hedge>) -> bool {
+        (other.start.0..).all(|a| self.includes(&Hedge(a)))
+    }
+
+    fn intersects(&self, other: &RangeFrom<Hedge>) -> bool {
+        (other.start.0..).any(|a| self.includes(&Hedge(a)))
+    }
+}
+
+impl Inclusion<RangeInclusive<Hedge>> for OrientedCut {
+    fn includes(&self, other: &RangeInclusive<Hedge>) -> bool {
+        (other.start().0..=other.end().0).all(|a| self.includes(&Hedge(a)))
+    }
+
+    fn intersects(&self, other: &RangeInclusive<Hedge>) -> bool {
+        (other.start().0..=other.end().0).any(|a| self.includes(&Hedge(a)))
+    }
+}
 
 impl SubGraph for OrientedCut {
     type Base = BitVec;
@@ -365,6 +416,14 @@ impl SubGraph for OrientedCut {
     type BaseIter<'a> = SubGraphHedgeIter<'a>;
     fn nedges<E, V, N: NodeStorage<NodeData = V>>(&self, _graph: &HedgeGraph<E, V, N>) -> usize {
         self.nhedges()
+    }
+
+    fn size(&self) -> usize {
+        self.left.len()
+    }
+
+    fn has_greater(&self, hedge: Hedge) -> bool {
+        self.left.has_greater(hedge) || self.right.has_greater(hedge)
     }
 
     fn join_mut(&mut self, other: Self) {
@@ -390,7 +449,7 @@ impl SubGraph for OrientedCut {
         }
     }
 
-    fn hairs(&self, node: &super::HedgeNode) -> BitVec {
+    fn hairs(&self, node: impl Iterator<Item = Hedge>) -> BitVec {
         self.left.hairs(node)
     }
 
@@ -490,7 +549,7 @@ impl OrientedCut {
         graph: HedgeGraph<E, V, N>,
     ) -> HedgeGraph<PossiblyCutEdge<E>, V, N::OpStorage<V>> {
         let mut new_graph = graph.map(
-            |_, _, _, v| v,
+            |_, _, v| v,
             |i, _, h, e| {
                 e.map(|d| {
                     let h = i[h.any_hedge()];
@@ -898,6 +957,7 @@ pub mod test {
     // use similar_asserts::assert_eq;
 
     #[test]
+    #[cfg(feature = "drawing")]
     fn cut_assembly() {
         let twocycle: DotGraph = dot!(
         digraph{

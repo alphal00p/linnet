@@ -2,7 +2,7 @@ use std::{collections::BTreeMap, fmt, ops::Index};
 
 use crate::half_edge::{
     involution::Hedge,
-    subgraph::{InternalSubGraph, SubGraph, SubGraphOps},
+    subgraph::{BaseSubgraph, InternalSubGraph, SubGraph, SubGraphOps},
     HedgeGraph, NodeIndex,
 };
 use ahash::AHashSet;
@@ -722,12 +722,16 @@ pub trait PermutationExt<Orderer: Ord = ()> {
 
 impl<E, V> HedgeGraphExt for HedgeGraph<E, V> {
     fn hedges_between(&self, a: NodeIndex, b: NodeIndex) -> BitVec {
-        let a_ext =
-            InternalSubGraph::cleaned_filter_optimist(self.hairs_from_id(a).hairs.clone(), self)
-                .filter;
-        let b_ext =
-            InternalSubGraph::cleaned_filter_optimist(self.hairs_from_id(b).hairs.clone(), self)
-                .filter;
+        let a_ext = InternalSubGraph::cleaned_filter_optimist(
+            BitVec::from_hedge_iter(self.hair_iter(a), self.n_hedges()),
+            self,
+        )
+        .filter;
+        let b_ext = InternalSubGraph::cleaned_filter_optimist(
+            BitVec::from_hedge_iter(self.hair_iter(b), self.n_hedges()),
+            self,
+        )
+        .filter;
         a_ext.intersection(&b_ext)
     }
 
@@ -786,10 +790,10 @@ impl<E, V, O: Ord> PermutationExt<O> for HedgeGraph<E, V> {
         let mut map = (0..n).collect::<Vec<_>>();
 
         for (from, &to) in transpositions.iter().enumerate() {
-            let from_hairs = &self.hairs_from_id(NodeIndex(from)).hairs;
-            let mut from_hedges = from_hairs.included_iter().collect::<Vec<_>>();
-            let to_hairs = &self.hairs_from_id(NodeIndex(to)).hairs;
-            let mut to_hedges = to_hairs.included_iter().collect::<Vec<_>>();
+            let from_hairs = self.hair_iter(NodeIndex(from));
+            let mut from_hedges = from_hairs.collect::<Vec<_>>();
+            let to_hairs = self.hair_iter(NodeIndex(to));
+            let mut to_hedges = to_hairs.collect::<Vec<_>>();
 
             let mut to = BTreeMap::new();
 
@@ -810,7 +814,7 @@ impl<E, V, O: Ord> PermutationExt<O> for HedgeGraph<E, V> {
                         let cycle = gen_pair[0].apply_slice(values);
                         let trans = gen_pair[1].apply_slice(values);
 
-                        println!("{values:?}{cycle:?}{trans:?}");
+                        // println!("{values:?}{cycle:?}{trans:?}");
 
                         let mut cycle_map = (0..n).collect::<Vec<_>>();
                         let mut trans_map = (0..n).collect::<Vec<_>>();
@@ -855,8 +859,8 @@ impl<E, V, O: Ord> PermutationExt<O> for HedgeGraph<E, V> {
         match Permutation::generate_all(&perms) {
             Ok(a) => {
                 for p in a {
-                    println!("Permutation:{p}");
-                    println!("Composition:{}", map.compose(&p));
+                    // println!("Permutation:{p}");
+                    // println!("Composition:{}", map.compose(&p));
                     maps.push(map.compose(&p));
                 }
             }

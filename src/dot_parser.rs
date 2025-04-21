@@ -6,9 +6,19 @@ use itertools::{Either, Itertools};
 use crate::half_edge::{
     builder::HedgeGraphBuilder,
     involution::{EdgeData, Flow, Orientation},
-    nodestorage::NodeStorageOps,
+    nodestore::{NodeStorage, NodeStorageOps},
     GVEdgeAttrs, HedgeGraph, NodeIndex,
 };
+
+pub struct GlobalGraph<E, V, G, N: NodeStorage<NodeData = V>> {
+    pub global_data: G,
+    pub graph: HedgeGraph<E, V, N>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GlobalData {
+    pub statements: BTreeMap<String, String>,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DotEdgeData {
@@ -421,7 +431,7 @@ where
 {
     pub fn back_and_forth_dot(self) -> HedgeGraph<E, V, S::OpStorage<V>> {
         let mapped: HedgeGraph<DotEdgeData, DotVertexData, S::OpStorage<DotVertexData>> = self.map(
-            |_, _, _, v: V| v.into(),
+            |_, _, v: V| v.into(),
             |_, _, _, e: EdgeData<E>| e.map(|data| data.into()),
         );
 
@@ -435,7 +445,7 @@ where
 
     pub fn debug_dot(self) -> String {
         let mapped: HedgeGraph<DotEdgeData, DotVertexData, S::OpStorage<DotVertexData>> = self.map(
-            |_, _, _, v: V| v.into(),
+            |_, _, v: V| v.into(),
             |_, _, _, e: EdgeData<E>| e.map(|data| data.into()),
         );
         let mut out = String::new();
@@ -451,7 +461,7 @@ where
         vertex_format: impl AsRef<str>,
     ) -> String {
         let mapped: HedgeGraph<DotEdgeData, DotVertexData, S::OpStorage<DotVertexData>> = self.map(
-            |_, _, _, v: V| v.into(),
+            |_, _, v: V| v.into(),
             |_, _, _, e: EdgeData<E>| e.map(|data| data.into()),
         );
         mapped.dot_impl(

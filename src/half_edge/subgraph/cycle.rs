@@ -4,9 +4,9 @@ use ahash::AHashSet;
 use bitvec::vec::BitVec;
 use serde::{Deserialize, Serialize};
 
-use crate::half_edge::{nodestorage::NodeStorageOps, Hedge, HedgeGraph, PowersetIterator};
+use crate::half_edge::{nodestore::NodeStorageOps, Hedge, HedgeGraph, PowersetIterator};
 
-use super::{Inclusion, InternalSubGraph, SubGraph, SubGraphOps};
+use super::{Inclusion, InternalSubGraph};
 
 #[derive(Clone, Debug, Serialize, Deserialize, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct SignedCycle {
@@ -40,9 +40,7 @@ impl SignedCycle {
 
             current_hedge = graph.inv(
                 graph
-                    .hairs_from_id(graph.node_id(current_hedge))
-                    .hairs
-                    .included_iter()
+                    .hair_iter(graph.node_id(current_hedge))
                     .find(|h| cycle.filter.includes(h) && (*h != current_hedge))?,
             );
         }
@@ -77,8 +75,8 @@ impl Cycle {
         graph: &HedgeGraph<E, V, N>,
     ) -> bool {
         for e in graph.iter_egde_node(&self.filter) {
-            let adgacent = self.filter.intersection(&e.hairs);
-            if adgacent.count_ones() != 2 {
+            let adgacent = e.filter(|a| self.filter.includes(a));
+            if adgacent.count() != 2 {
                 return false;
             }
         }
@@ -106,8 +104,8 @@ impl Cycle {
         graph: &HedgeGraph<E, V, N>,
     ) -> Option<Self> {
         for e in graph.iter_egde_node(&filter) {
-            let adgacent = filter.intersection(&e.hairs);
-            if adgacent.count_ones() % 2 == 1 {
+            let adgacent = e.filter(|a| filter.includes(a));
+            if adgacent.count() % 2 == 1 {
                 return None;
             }
         }

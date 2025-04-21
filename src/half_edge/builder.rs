@@ -1,7 +1,8 @@
 use super::{
     hedgevec::SmartHedgeVec,
     involution::{Flow, Hedge, Involution, Orientation},
-    nodestorage::NodeStorageOps,
+    nodestore::NodeStorageOps,
+    subgraph::BaseSubgraph,
     HedgeGraph, NodeIndex,
 };
 
@@ -9,6 +10,18 @@ use super::{
 pub struct HedgeNodeBuilder<V> {
     pub(crate) data: V,
     pub(crate) hedges: Vec<Hedge>,
+}
+
+impl<V> HedgeNodeBuilder<V> {
+    pub fn to_base<S: BaseSubgraph>(&self, len: usize) -> S {
+        let mut subgraph = S::empty(len);
+
+        for hedge in &self.hedges {
+            subgraph.add(*hedge);
+        }
+
+        subgraph
+    }
 }
 
 #[derive(Clone, Debug)]
