@@ -723,12 +723,12 @@ pub trait PermutationExt<Orderer: Ord = ()> {
 impl<E, V> HedgeGraphExt for HedgeGraph<E, V> {
     fn hedges_between(&self, a: NodeIndex, b: NodeIndex) -> BitVec {
         let a_ext = InternalSubGraph::cleaned_filter_optimist(
-            BitVec::from_hedge_iter(self.boundary_iter(a), self.n_hedges()),
+            BitVec::from_hedge_iter(self.iter_crown(a), self.n_hedges()),
             self,
         )
         .filter;
         let b_ext = InternalSubGraph::cleaned_filter_optimist(
-            BitVec::from_hedge_iter(self.boundary_iter(b), self.n_hedges()),
+            BitVec::from_hedge_iter(self.iter_crown(b), self.n_hedges()),
             self,
         )
         .filter;
@@ -790,9 +790,9 @@ impl<E, V, O: Ord> PermutationExt<O> for HedgeGraph<E, V> {
         let mut map = (0..n).collect::<Vec<_>>();
 
         for (from, &to) in transpositions.iter().enumerate() {
-            let from_hairs = self.boundary_iter(NodeIndex(from));
+            let from_hairs = self.iter_crown(NodeIndex(from));
             let mut from_hedges = from_hairs.collect::<Vec<_>>();
-            let to_hairs = self.boundary_iter(NodeIndex(to));
+            let to_hairs = self.iter_crown(NodeIndex(to));
             let mut to_hedges = to_hairs.collect::<Vec<_>>();
 
             let mut to = BTreeMap::new();

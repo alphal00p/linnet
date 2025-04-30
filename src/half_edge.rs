@@ -239,6 +239,11 @@ impl<E, V: Default, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
 }
 
 impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
+    pub fn delete_hedges<S: SubGraph<Base = N::Base>>(&mut self, subgraph: &S) {
+        self.edge_store.delete(subgraph);
+        self.node_store.delete(subgraph);
+    }
+
     pub fn concretize<'a, S: SubGraph>(
         &'a self,
         subgraph: &'a S,
@@ -247,8 +252,8 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
 
         let mut node_map = AHashMap::new();
 
-        for (n, d) in self.iter_node_data(subgraph) {
-            node_map.insert(self.id_from_neighbors(n).unwrap(), builder.add_node(d));
+        for (n, _, d) in self.iter_node_data(subgraph) {
+            node_map.insert(n, builder.add_node(d));
         }
 
         for (pair, _, d) in self.iter_edges(subgraph) {
@@ -431,9 +436,7 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
             has_branch = false;
 
             for n in &nodes {
-                let int = self
-                    .boundary_with_subgraph(*n, subgraph)
-                    .collect::<Vec<_>>();
+                let int = self.sub_iter_crown(*n, subgraph).collect::<Vec<_>>();
                 let first = int.first();
                 let next = int.get(1);
 
@@ -625,14 +628,12 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
     ) -> AHashMap<NodeIndex, usize> {
         let mut degrees = AHashMap::new();
 
-        for (node, _) in self.iter_node_data(subgraph) {
-            let node_pos = self.id_from_neighbors(node).unwrap();
+        for (_, node, _) in self.iter_node_data(subgraph) {
+            let node_pos = self.id_from_crown(node).unwrap();
 
             // Count the number of edges in the subgraph incident to this node
-            let incident_edges = BitVec::from_hedge_iter(
-                self.boundary_with_subgraph(node_pos, subgraph),
-                subgraph.size(),
-            );
+            let incident_edges =
+                BitVec::from_hedge_iter(self.sub_iter_crown(node_pos, subgraph), subgraph.size());
             let degree = incident_edges.count_ones();
 
             degrees.insert(node_pos, degree);
@@ -686,7 +687,7 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
     }
 
     pub fn connected_neighbors<S: SubGraph>(&self, subgraph: &S, pos: Hedge) -> Option<BitVec> {
-        Some(subgraph.hairs(self.involved_node_boundary(pos)?))
+        Some(subgraph.hairs(self.involved_node_crown(pos)?))
     }
     pub fn get_edge_data(&self, edge: Hedge) -> &E {
         &self[self[&edge]]
@@ -715,32 +716,28 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
     }
 
     pub fn neighbors(&self, hedge: Hedge) -> N::NeighborsIter<'_> {
-        self.boundary_iter(self.node_id(hedge))
+        self.iter_crown(self.node_id(hedge))
     }
 
-    pub fn boundary_iter(&self, id: NodeIndex) -> N::NeighborsIter<'_> {
+    pub fn iter_crown(&self, id: NodeIndex) -> N::NeighborsIter<'_> {
         self.node_store.get_neighbor_iterator(id)
     }
 
-    pub fn boundary_with_subgraph<'a, S: SubGraph>(
+    pub fn sub_iter_crown<'a, S: SubGraph>(
         &'a self,
         id: NodeIndex,
         subgraph: &'a S,
     ) -> impl Iterator<Item = Hedge> + 'a {
-        self.boundary_iter(id).filter(|i| subgraph.includes(i))
+        self.iter_crown(id).filter(|i| subgraph.includes(i))
     }
 
-    pub fn id_from_neighbors<'a>(
-        &'a self,
-        mut neighbors: N::NeighborsIter<'a>,
-    ) -> Option<NodeIndex> {
+    pub fn id_from_crown<'a>(&'a self, mut neighbors: N::NeighborsIter<'a>) -> Option<NodeIndex> {
         let e = neighbors.next()?;
         Some(self.node_id(e))
     }
 
-    pub fn involved_node_boundary(&self, hedge: Hedge) -> Option<N::NeighborsIter<'_>> {
-        self.involved_node_id(hedge)
-            .map(|id| self.boundary_iter(id))
+    pub fn involved_node_crown(&self, hedge: Hedge) -> Option<N::NeighborsIter<'_>> {
+        self.involved_node_id(hedge).map(|id| self.iter_crown(id))
     }
 
     pub fn involved_node_id(&self, hedge: Hedge) -> Option<NodeIndex> {
@@ -753,6 +750,14 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
 
     pub fn node_id(&self, hedge: Hedge) -> NodeIndex {
         self.node_store.node_id_ref(hedge)
+    }
+
+    pub fn is_self_loop(&self, hedge: Hedge) -> bool {
+        !self.is_dangling(hedge) && self.node_id(hedge) == self.node_id(self.inv(hedge))
+    }
+
+    pub fn is_dangling(&self, hedge: Hedge) -> bool {
+        self.inv(hedge) == hedge
     }
 
     /// Collect all nodes in the subgraph (all nodes that the hedges are connected to)
@@ -778,6 +783,37 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
     ///Retains the NodeIndex ordering and just appends a new node.
     pub fn identify_nodes(&mut self, nodes: &[NodeIndex], node_data_merge: V) -> NodeIndex {
         self.node_store.identify_nodes(nodes, node_data_merge)
+    }
+
+    ///Retains the NodeIndex ordering and just appends a new node.
+    pub fn identify_nodes_without_self_edges<S: BaseSubgraph>(
+        &mut self,
+        nodes: &[NodeIndex],
+        node_data_merge: V,
+    ) -> (NodeIndex, S) {
+        let mut self_edges: S = self.empty_subgraph();
+        for n in nodes {
+            for h in self.iter_crown(*n) {
+                if self.is_self_loop(h) {
+                    self_edges.add(h);
+                }
+            }
+        }
+        let n = self.node_store.identify_nodes(nodes, node_data_merge);
+
+        for h in self.iter_crown(n) {
+            if self.is_self_loop(h) {
+                if self_edges.includes(&h) {
+                    self_edges.sub(h);
+                } else {
+                    self_edges.add(h);
+                }
+            }
+        }
+
+        // self_edges
+
+        (n, self_edges)
     }
 
     /// Collect all edges in the subgraph
@@ -1035,13 +1071,14 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
     }
 
     pub fn combine_to_single_hedgenode(&self, source: &[NodeIndex]) -> HedgeNode {
-        let s: BitVec = source.iter().map(|a| self.boundary_iter(*a)).fold(
-            self.empty_subgraph(),
-            |mut acc, e| {
-                acc.union_with_iter(e);
-                acc
-            },
-        );
+        let s: BitVec =
+            source
+                .iter()
+                .map(|a| self.iter_crown(*a))
+                .fold(self.empty_subgraph(), |mut acc, e| {
+                    acc.union_with_iter(e);
+                    acc
+                });
 
         let (hairs, internal_graph) = self.split_hairs_and_internal_hedges(s);
 
@@ -1069,7 +1106,7 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
             self.map_data_ref(|_, _, _| (), |_, _, _, d| d.map(|_| ()));
 
         let n = identified.identify_nodes(externals, ());
-        let hairs = identified.boundary_iter(n).next().unwrap();
+        let hairs = identified.iter_crown(n).next().unwrap();
 
         let non_bridges = identified.non_bridges();
         identified
@@ -1112,11 +1149,11 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
             self.map_data_ref(|_, _, _| (), |_, _, _, d| d.map(|_| ()));
         let s_nodes = self
             .iter_node_data(&source)
-            .map(|a| self.id_from_neighbors(a.0).unwrap())
+            .map(|a| self.id_from_crown(a.1).unwrap())
             .collect::<Vec<_>>();
         let t_nodes = self
             .iter_node_data(&target)
-            .map(|a| self.id_from_neighbors(a.0).unwrap())
+            .map(|a| self.id_from_crown(a.1).unwrap())
             .collect::<Vec<_>>();
 
         let t_node = t_nodes[0];
@@ -1672,7 +1709,7 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
     pub fn iter_node_data<'a, S: SubGraph>(
         &'a self,
         subgraph: &'a S,
-    ) -> impl Iterator<Item = (N::NeighborsIter<'a>, &'a V)>
+    ) -> impl Iterator<Item = (NodeIndex, N::NeighborsIter<'a>, &'a V)>
     where
         N::NeighborsIter<'a>: Clone,
     {
@@ -1689,33 +1726,33 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
     pub fn dot_impl_fmt<S: SubGraph, Str1: AsRef<str>>(
         &self,
         writer: &mut impl std::fmt::Write,
-        node_as_graph: &S,
+        subgraph: &S,
         graph_info: Str1,
         edge_attr: &impl Fn(&E) -> Option<String>,
         node_attr: &impl Fn(&V) -> Option<String>,
     ) -> Result<(), std::fmt::Error> {
-        node_as_graph.dot_fmt(writer, self, graph_info, edge_attr, node_attr)
+        subgraph.dot_fmt(writer, self, graph_info, edge_attr, node_attr)
     }
     pub fn dot_impl_io<S: SubGraph, Str1: AsRef<str>>(
         &self,
         writer: &mut impl std::io::Write,
-        node_as_graph: &S,
+        subgraph: &S,
         graph_info: Str1,
         edge_attr: &impl Fn(&E) -> Option<String>,
         node_attr: &impl Fn(&V) -> Option<String>,
     ) -> Result<(), std::io::Error> {
-        node_as_graph.dot_io(writer, self, graph_info, edge_attr, node_attr)
+        subgraph.dot_io(writer, self, graph_info, edge_attr, node_attr)
     }
 
     pub fn dot_impl<S: SubGraph, Str1: AsRef<str>>(
         &self,
-        node_as_graph: &S,
+        subgraph: &S,
         graph_info: Str1,
         edge_attr: &impl Fn(&E) -> Option<String>,
         node_attr: &impl Fn(&V) -> Option<String>,
     ) -> String {
         let mut output = String::new();
-        node_as_graph
+        subgraph
             .dot_fmt(&mut output, self, graph_info, edge_attr, node_attr)
             .unwrap();
         output
@@ -1860,18 +1897,18 @@ impl<'a, E, V, I: Iterator<Item = Hedge>, N: NodeStorageOps<NodeData = V>> Itera
 where
     N::NeighborsIter<'a>: Clone,
 {
-    type Item = (N::NeighborsIter<'a>, &'a V);
+    type Item = (NodeIndex, N::NeighborsIter<'a>, &'a V);
 
     fn next(&mut self) -> Option<Self::Item> {
         if let Some(next) = self.edges.next() {
             let node = self.graph.neighbors(next);
-            let node_pos = self.graph.id_from_neighbors(node.clone()).unwrap();
+            let node_pos = self.graph.id_from_crown(node.clone()).unwrap();
 
             if self.seen[node_pos.0] {
                 self.next()
             } else {
                 self.seen.set(node_pos.0, true);
-                Some((node, &self.graph[node_pos]))
+                Some((node_pos, node, &self.graph[node_pos]))
             }
         } else {
             None

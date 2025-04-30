@@ -307,6 +307,7 @@ impl<S: ForestNodeStoreDown + ForestNodeStore<NodeData = ()>> Iterator
             .into_iter()
             .rev()
         {
+            println!("child: {child}");
             self.stack.push(child);
         }
 
@@ -323,14 +324,33 @@ impl<P: ForestNodeStore<NodeData = ()>> SimpleTraversalTree<P> {
     where
         P: ForestNodeStoreDown,
     {
+        let root_node = self.forest[&RootId::from(node_id)];
         self.forest
             .iter_root_leaves(node_id.into())
-            .filter_map(|a| {
-                let child = self.node_id(inv.as_ref().inv(a.into()));
-                let root = RootId::from(child);
+            .filter_map(move |a| {
+                if &root_node == &a {
+                    return None;
+                }
+                let h = Hedge::from(a);
+                if self.tree_subgraph.includes(&h) {
+                    let invh = inv.as_ref().inv(a.into());
+                    if invh != h {
+                        if self.tree_subgraph.includes(&invh) {
+                            let child = self.node_id(invh);
 
-                if self.forest[root].is_child() {
-                    Some(child)
+                            let root = RootId::from(child);
+
+                            if self.forest[root].is_child() {
+                                Some(child)
+                            } else {
+                                None
+                            }
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    }
                 } else {
                     None
                 }
@@ -487,7 +507,7 @@ impl SimpleTraversalTree {
         root_node: &NodeIndex,
         include_hedge: Option<Hedge>,
     ) -> Result<Self, HedgeGraphError> {
-        let mut seen = subgraph.hairs(graph.boundary_iter(*root_node));
+        let mut seen = subgraph.hairs(graph.iter_crown(*root_node));
 
         if seen.count_ones() == 0 {
             // if the root node is not in the subgraph
@@ -515,7 +535,7 @@ impl SimpleTraversalTree {
 
         while let Some(hedge) = stack.pop() {
             // if the hedge is not external get the neighbors of the paired hedge
-            if let Some(cn) = graph.involved_node_boundary(hedge) {
+            if let Some(cn) = graph.involved_node_crown(hedge) {
                 let connected = graph.inv(hedge);
 
                 if !seen.includes(&connected) && subgraph.includes(&connected) {
@@ -553,7 +573,7 @@ impl SimpleTraversalTree {
         root_node: &NodeIndex,
         include_hedge: Option<Hedge>,
     ) -> Result<Self, HedgeGraphError> {
-        let mut seen = subgraph.hairs(graph.boundary_iter(*root_node));
+        let mut seen = subgraph.hairs(graph.iter_crown(*root_node));
 
         if seen.count_ones() == 0 {
             // if the root node is not in the subgraph

@@ -29,6 +29,12 @@ impl<'a, P: ForestNodeStorePreorder + 'a> Iterator for ForestNeighborIter<'a, P>
     }
 }
 
+impl<'a, P: ForestNodeStorePreorder + 'a> ExactSizeIterator for ForestNeighborIter<'a, P> {
+    fn len(&self) -> usize {
+        self.iter.clone().count()
+    }
+}
+
 impl<V, P: ForestNodeStore + ForestNodeStorePreorder + Clone> NodeStorage for Forest<V, P> {
     type Storage<N> = Forest<N, P>;
     type NodeData = V;
@@ -159,6 +165,115 @@ impl<V, P: ForestNodeStore + ForestNodeStorePreorder + Clone> NodeStorageOps for
             roots: a.roots,
             nodes: P::from_pp(a.nodes),
         }
+    }
+
+    fn delete<S: crate::half_edge::subgraph::SubGraph<Base = Self::Base>>(&mut self, subgraph: &S) {
+        let mut left = Hedge(0);
+        let mut extracted = Hedge(self.hedge_len());
+        // println!("{}", self.nodes.debug_draw(|_| None));
+        // Do the same swapping as for the edge store, so that they line up
+        while left < extracted {
+            // println!("{left},{extracted}");
+            if !subgraph.includes(&left) {
+                //left is in the right place
+                left.0 += 1;
+            } else {
+                //left needs to be swapped
+                extracted.0 -= 1;
+                if !subgraph.includes(&extracted) {
+                    //only with an extracted that is in the wrong spot
+                    // println!("{left}<->{extracted}");
+                    self.swap(left, extracted);
+                    left.0 += 1;
+                }
+            }
+        }
+        // println!("{}", self.nodes.debug_draw(|_| None));
+
+        // Now need to partition the nodes into 3 ranges,
+        // - 0..left_nodes do not contain any half edges in the subgraph,
+        // - left_nodes..overlapping_nodes are all nodes who have incident half-edges inside the subgraph, but not all of them. These ones need to be split
+        // - overlapping_nodes..len are the nodes containing only half-edges in the subgraph
+        let mut left_nodes = NodeIndex(0);
+        let mut extracted_nodes = NodeIndex(self.node_len());
+
+        // first we swap to the front all nodes that contain no edges from subgraph. Since we have swapped all edges in the subgraph to be after left, in the above, now we check if the neighbor iter contains no hedge>=left
+        while left_nodes < extracted_nodes {
+            if self.get_neighbor_iterator(left_nodes).all(|h| h < left) {
+                //left is in the right place
+
+                left_nodes.0 += 1;
+            } else {
+                //left needs to be swapped
+                extracted_nodes.0 -= 1;
+                if self
+                    .get_neighbor_iterator(extracted_nodes)
+                    .all(|h| h < left)
+                {
+                    //only with an extracted that is in the wrong spot
+                    self.swap_roots(left_nodes.into(), extracted_nodes.into());
+                    left_nodes.0 += 1;
+                }
+            }
+        }
+
+        let mut overlapping_nodes = left_nodes;
+        let mut non_overlapping_extracted = NodeIndex(self.node_len());
+
+        // println!(
+        //     "RootsplitnonOverlapping:{}",
+        //     self.nodes.debug_draw(|_| None)
+        // );
+
+        // now we place all overlapping nodes after all nodes totally outside. We can check whether a node is overlapping if it now contains a hedge<left.
+        while overlapping_nodes < non_overlapping_extracted {
+            // println!("looking at possibly overlapping:{overlapping_nodes}");
+            if self
+                .get_neighbor_iterator(overlapping_nodes)
+                .any(|h| h < left)
+            {
+                //overlapping is in the right place, as it intersects (is after left_nodes) but isn't fully included
+                overlapping_nodes.0 += 1;
+                // println!("found overlap");
+            } else {
+                //overlapping needs to be swapped
+                non_overlapping_extracted.0 -= 1;
+                if self
+                    .get_neighbor_iterator(non_overlapping_extracted)
+                    .any(|h| h < left)
+                {
+                    //only with an extracted that is in the wrong spot
+                    self.swap_roots(overlapping_nodes.into(), non_overlapping_extracted.into());
+                    // println!("swap overlapping");
+                    overlapping_nodes.0 += 1;
+                }
+            }
+        }
+
+        // println!("Rootsplit:{}", self.nodes.debug_draw(|_| None));
+
+        // Now all hedges in the subgraph are at the end of the storage (swapped)
+        // and all nodes in the subgraph are also at the end of the nodestore
+        //
+        // We can safely split off the roots after the ones with overlap.
+        let _ = self.roots.split_off(overlapping_nodes.0);
+
+        // We now need to adjust the pointer structure that associates a hedge with its node.
+        // Splitting it off aswell.
+        let _ = self.nodes.split_off(left.into());
+
+        // we need to adjust the root_node_pointer that the root stores, and also shift the root_id that the root node stores.
+        //
+
+        for n in self.nodes.iter_node_id() {
+            let rid = self.nodes.root_node(n);
+            let r = self.nodes.root(rid);
+
+            self.roots[r.0].root_id = rid;
+        }
+
+        #[cfg(test)]
+        self.nodes.validate().unwrap();
     }
 
     fn extract<S: crate::half_edge::subgraph::SubGraph<Base = Self::Base>, V2>(

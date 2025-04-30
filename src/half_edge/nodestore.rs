@@ -20,6 +20,8 @@ pub trait NodeStorageOps: NodeStorage {
         split_node: impl FnMut(&Self::NodeData) -> V2,
         owned_node: impl FnMut(Self::NodeData) -> V2,
     ) -> Self::OpStorage<V2>;
+
+    fn delete<S: SubGraph<Base = Self::Base>>(&mut self, subgraph: &S);
     fn swap(&mut self, a: Hedge, b: Hedge);
 
     // fn add_node(&mut self, node_data: Self::NodeData) -> NodeIndex;
@@ -108,7 +110,7 @@ pub trait NodeStorage: Sized {
     type Storage<N>;
 
     type Neighbors: SubGraph;
-    type NeighborsIter<'a>: Iterator<Item = Hedge> + Clone
+    type NeighborsIter<'a>: ExactSizeIterator<Item = Hedge> + Clone
     where
         Self: 'a;
 }

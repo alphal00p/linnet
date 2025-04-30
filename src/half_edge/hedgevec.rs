@@ -502,6 +502,157 @@ impl<T> SmartHedgeVec<T> {
         Ok(())
     }
 
+    pub fn delete<S: SubGraph>(&mut self, graph: &S) {
+        let mut left = Hedge(0);
+        let mut extracted = Hedge(self.involution.len());
+        while left < extracted {
+            if !graph.includes(&left) {
+                //left is in the right place
+                left.0 += 1;
+            } else {
+                //left needs to be swapped
+                extracted.0 -= 1;
+                if !graph.includes(&extracted) {
+                    println!("{extracted}<=>{left}");
+                    //only with an extracted that is in the wrong spot
+                    self.swap_hedges(left, extracted);
+                    left.0 += 1;
+                }
+            }
+        }
+
+        for i in 0..(left.0) {
+            if self.inv(Hedge(i)) >= left {
+                let flow = if self.involution.set_as_source(Hedge(i)) {
+                    Flow::Sink
+                } else {
+                    Flow::Source
+                };
+
+                println!("Split:{i}");
+                self.data[self.involution[Hedge(i)].0].1 = HedgePair::Unpaired {
+                    hedge: Hedge(i),
+                    flow,
+                };
+
+                self.involution
+                    .source_to_identity_impl(Hedge(i), flow, flow == Flow::Sink);
+            }
+        }
+        println!("left:{left}");
+        println!("{}", self.involution.display());
+
+        // The self involution is good and valid, but we now need to split the data carrying vec.
+
+        let mut split_at = 0;
+
+        let mut extracted = self.edge_len();
+
+        while split_at < extracted {
+            if self.data[split_at].1.any_hedge() < left {
+                //left is in the right place
+                split_at += 1;
+            } else {
+                //left needs to be swapped
+                extracted -= 1;
+                if self.data[extracted].1.any_hedge() < left {
+                    println!("{extracted}<=>{split_at}");
+                    //only with an extracted that is in the wrong spot
+                    self.swap_edges(EdgeIndex(split_at), EdgeIndex(extracted));
+                    println!("{}", self.involution.display());
+
+                    split_at += 1;
+                }
+            }
+        }
+
+        println!("{}", self.involution.display());
+
+        let _ = self.involution.inv.split_off(left.0);
+        let _ = self.data.split_off(split_at);
+        // self.fix_hedge_pairs();
+    }
+
+    fn swap_edges(&mut self, e1: EdgeIndex, e2: EdgeIndex) {
+        if e1 != e2 {
+            let a = &mut self
+                .involution
+                .edge_data_mut(self.data[e1.0].1.any_hedge())
+                .data;
+
+            println!("{a}{e1}");
+            *a = e1;
+
+            // = e1;
+            self.involution
+                .edge_data_mut(self.data[e2.0].1.any_hedge())
+                .data = e1;
+            self.data.swap(e1.0, e2.0);
+        }
+    }
+
+    fn swap_hedges(&mut self, e1: Hedge, e2: Hedge) {
+        if e1 != e2 {
+            if e1 == self.inv(e1) {
+                match &mut self.data[self.involution[e1].0].1 {
+                    HedgePair::Paired { source, sink } => {
+                        std::mem::swap(source, sink);
+                    }
+                    HedgePair::Split { source, sink, .. } => {
+                        std::mem::swap(source, sink);
+                    }
+                    _ => {}
+                };
+            } else {
+                match &mut self.data[self.involution[e1].0].1 {
+                    HedgePair::Split { source, sink, .. } | HedgePair::Paired { source, sink } => {
+                        if *source == e1 {
+                            *source = e1;
+                        } else if *source == e2 {
+                            *source = e2;
+                        }
+                        if *sink == e1 {
+                            *sink = e1;
+                        } else if *sink == e2 {
+                            *sink = e2;
+                        }
+                    }
+                    HedgePair::Unpaired { hedge, flow } => {
+                        if *hedge == e1 {
+                            *hedge = e1;
+                        } else if *hedge == e2 {
+                            *hedge = e2;
+                        }
+                    }
+                };
+
+                match &mut self.data[self.involution[e2].0].1 {
+                    HedgePair::Split { source, sink, .. } | HedgePair::Paired { source, sink } => {
+                        if *source == e1 {
+                            *source = e1;
+                        } else if *source == e2 {
+                            *source = e2;
+                        }
+                        if *sink == e1 {
+                            *sink = e1;
+                        } else if *sink == e2 {
+                            *sink = e2;
+                        }
+                    }
+                    HedgePair::Unpaired { hedge, flow } => {
+                        if *hedge == e1 {
+                            *hedge = e1;
+                        } else if *hedge == e2 {
+                            *hedge = e2;
+                        }
+                    }
+                };
+            }
+            self.involution.swap(e1, e2);
+            self.fix_hedge_pairs();
+        }
+    }
+
     pub fn extract<S: SubGraph, O>(
         &mut self,
         graph: &S,

@@ -754,22 +754,22 @@ fn double_pentagon_all_cuts() {
     // );
 
     let cuts = graph.all_cuts(
-        graph.boundary_iter(NodeIndex(10)).clone().into(),
-        graph.boundary_iter(NodeIndex(9)).clone().into(),
+        graph.iter_crown(NodeIndex(10)).clone().into(),
+        graph.iter_crown(NodeIndex(9)).clone().into(),
     );
 
     assert_eq!(cuts.len(), 9);
 
     let cuts = graph.all_cuts(
-        graph.boundary_iter(NodeIndex(10)).clone().into(),
-        graph.boundary_iter(NodeIndex(13)).clone().into(),
+        graph.iter_crown(NodeIndex(10)).clone().into(),
+        graph.iter_crown(NodeIndex(13)).clone().into(),
     );
 
     assert_eq!(cuts.len(), 14);
 
     let cuts = graph.all_cuts(
-        graph.boundary_iter(NodeIndex(1)).clone().into(),
-        graph.boundary_iter(NodeIndex(2)).clone().into(),
+        graph.iter_crown(NodeIndex(1)).clone().into(),
+        graph.iter_crown(NodeIndex(2)).clone().into(),
     );
 
     assert_eq!(cuts.len(), 16);

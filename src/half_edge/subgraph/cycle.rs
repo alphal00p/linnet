@@ -42,7 +42,7 @@ impl SignedCycle {
 
             current_hedge = graph.inv(
                 graph
-                    .boundary_iter(graph.node_id(current_hedge))
+                    .iter_crown(graph.node_id(current_hedge))
                     .find(|h| cycle.filter.includes(h) && (*h != current_hedge))?,
             );
         }

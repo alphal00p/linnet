@@ -551,6 +551,16 @@ pub struct EdgeData<E> {
     pub data: E,
 }
 
+impl<E: Display> Display for EdgeData<E> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.orientation {
+            Orientation::Default => write!(f, "+{}", self.data),
+            Orientation::Reversed => write!(f, "-{}", self.data),
+            Orientation::Undirected => write!(f, "{}", self.data),
+        }
+    }
+}
+
 impl<E> From<Orientation> for EdgeData<Option<E>> {
     fn from(orientation: Orientation) -> Self {
         EdgeData::empty(orientation)
@@ -1107,6 +1117,28 @@ impl<E> Default for Involution<E> {
 }
 
 impl<E> Involution<E> {
+    pub fn display(&self) -> String
+    where
+        E: Display,
+    {
+        let mut out = "".to_string();
+        for (i, e) in self.inv.iter().enumerate() {
+            match e {
+                InvolutiveMapping::Identity { underlying, data } => match underlying {
+                    Flow::Sink => out.push_str(&format!("{}<< :{data}\n", i)),
+                    Flow::Source => out.push_str(&format!("{}>> :{data}\n", i)),
+                },
+                InvolutiveMapping::Source { sink_idx, data } => {
+                    out.push_str(&format!("{}->{}: {data}\n", i, sink_idx));
+                }
+                InvolutiveMapping::Sink { source_idx } => {
+                    out.push_str(&format!("{}<-{}\n", i, source_idx));
+                }
+            }
+        }
+        out
+    }
+
     /// The fundamental function of involutions is to pair edges. This function provides this pairing.
     /// It is a bijective map inv: H -> H, where H is the set of half-edges.
     /// The map is involutive, meaning that inv(inv(h)) = h.
@@ -1361,35 +1393,7 @@ impl<E> Involution<E> {
         mut split_edge_fn: impl FnMut(EdgeData<&E>) -> EdgeData<O>,
         mut internal_data: impl FnMut(EdgeData<E>) -> EdgeData<O>,
     ) -> Involution<O> {
-        let mut left = Hedge(0);
-        let mut extracted = Hedge(self.inv.len());
-        while left < extracted {
-            if !graph.includes(&left) {
-                //left is in the right place
-                left.0 += 1;
-            } else {
-                //left needs to be swapped
-                extracted.0 -= 1;
-                if !graph.includes(&extracted) {
-                    //only with an extracted that is in the wrong spot
-                    self.swap(left, extracted);
-                    left.0 += 1;
-                }
-            }
-        }
-
-        for i in 0..(left.0) {
-            if self.inv(Hedge(i)) >= left {
-                let flow = if self.set_as_source(Hedge(i)) {
-                    Flow::Sink
-                } else {
-                    Flow::Source
-                };
-
-                self.source_to_identity_impl(Hedge(i), flow, flow == Flow::Sink);
-            }
-        }
-        let extract = self.inv.split_off(left.0);
+        let (extract, left) = self.delete_impl(graph);
 
         let extracted_inv = extract
             .into_iter()
@@ -1419,6 +1423,42 @@ impl<E> Involution<E> {
             .collect();
 
         Involution { inv: extracted_inv }
+    }
+
+    pub fn delete<S: SubGraph>(&mut self, graph: &S) {
+        self.delete_impl(graph);
+    }
+
+    fn delete_impl<S: SubGraph>(&mut self, graph: &S) -> (Vec<InvolutiveMapping<E>>, Hedge) {
+        let mut left = Hedge(0);
+        let mut extracted = Hedge(self.inv.len());
+        while left < extracted {
+            if !graph.includes(&left) {
+                //left is in the right place
+                left.0 += 1;
+            } else {
+                //left needs to be swapped
+                extracted.0 -= 1;
+                if !graph.includes(&extracted) {
+                    //only with an extracted that is in the wrong spot
+                    self.swap(left, extracted);
+                    left.0 += 1;
+                }
+            }
+        }
+
+        for i in 0..(left.0) {
+            if self.inv(Hedge(i)) >= left {
+                let flow = if self.set_as_source(Hedge(i)) {
+                    Flow::Sink
+                } else {
+                    Flow::Source
+                };
+
+                self.source_to_identity_impl(Hedge(i), flow, flow == Flow::Sink);
+            }
+        }
+        (self.inv.split_off(left.0), left)
     }
 
     pub fn hedge_pair(&self, hedge: Hedge) -> HedgePair {
@@ -1656,7 +1696,7 @@ impl<E> Involution<E> {
         self.source_to_identity_impl(hedge, underlying, false);
     }
 
-    fn source_to_identity_impl(
+    pub(crate) fn source_to_identity_impl(
         &mut self,
         hedge: Hedge,
         underlying: Flow,
@@ -1753,11 +1793,11 @@ impl<E> Involution<E> {
         &self.inv[hedge.0]
     }
 
-    pub(super) fn hedge_data_mut(&mut self, hedge: Hedge) -> &mut InvolutiveMapping<E> {
+    pub(crate) fn hedge_data_mut(&mut self, hedge: Hedge) -> &mut InvolutiveMapping<E> {
         &mut self.inv[hedge.0]
     }
 
-    fn data_inv(&self, hedge: Hedge) -> Hedge {
+    pub(crate) fn data_inv(&self, hedge: Hedge) -> Hedge {
         match self.hedge_data(hedge) {
             InvolutiveMapping::Sink { source_idx } => *source_idx,
             _ => hedge,

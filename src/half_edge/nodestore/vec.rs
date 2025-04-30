@@ -63,6 +63,12 @@ impl<'a> Iterator for BitVecNeighborIter<'a> {
     }
 }
 
+impl<'a> ExactSizeIterator for BitVecNeighborIter<'a> {
+    fn len(&self) -> usize {
+        self.len
+    }
+}
+
 impl<N> NodeStorage for NodeStorageVec<N> {
     type NodeData = N;
     type Neighbors = BitVec;
@@ -122,6 +128,75 @@ impl<N> NodeStorageOps for NodeStorageVec<N> {
 
             self.nodes[node_a.0].swap(a.0, b.0);
             self.nodes[node_b.0].swap(a.0, b.0);
+        }
+    }
+
+    fn delete<S: SubGraph<Base = Self::Base>>(&mut self, subgraph: &S) {
+        let mut left = Hedge(0);
+        let mut extracted = Hedge(self.hedge_data.len());
+        while left < extracted {
+            if !subgraph.includes(&left) {
+                //left is in the right place
+                left.0 += 1;
+            } else {
+                //left needs to be swapped
+                extracted.0 -= 1;
+                if !subgraph.includes(&extracted) {
+                    //only with an extracted that is in the wrong spot
+                    self.swap(left, extracted);
+                    left.0 += 1;
+                }
+            }
+        }
+
+        // println!("left{}", left);
+
+        let mut left_nodes = NodeIndex(0);
+        let mut extracted_nodes = NodeIndex(self.node_data.len());
+        while left_nodes < extracted_nodes {
+            if !self.nodes[left_nodes.0].has_greater(left) {
+                //left is in the right place
+                left_nodes.0 += 1;
+            } else {
+                //left needs to be swapped
+                extracted_nodes.0 -= 1;
+                if !self.nodes[extracted_nodes.0].has_greater(left) {
+                    //only with an extracted that is in the wrong spot
+                    self.swap_nodes(left_nodes, extracted_nodes);
+                    left_nodes.0 += 1;
+                }
+            }
+        }
+
+        let mut overlapping_nodes = left_nodes;
+        let mut non_overlapping_extracted = NodeIndex(self.node_len());
+
+        while overlapping_nodes < non_overlapping_extracted {
+            if self.nodes[overlapping_nodes.0].intersects(&(..left)) {
+                //overlapping is in the right place, as it intersects (is after left_nodes) but isn't fully included
+                overlapping_nodes.0 += 1;
+            } else {
+                //overlapping needs to be swapped
+                non_overlapping_extracted.0 -= 1;
+                if self.nodes[non_overlapping_extracted.0].intersects(&(..left)) {
+                    //only with an extracted that is in the wrong spot
+                    self.swap_nodes(overlapping_nodes, non_overlapping_extracted);
+                    overlapping_nodes.0 += 1;
+                }
+            }
+        }
+
+        let _ = self.nodes.split_off(overlapping_nodes.0);
+        let _ = self.node_data.split_off(overlapping_nodes.0);
+
+        for i in 0..(left_nodes.0) {
+            let _ = self.nodes[i].split_off(left.0);
+            // self.nodes[i].internal_graph.filter.split_off(left.0);
+
+            // split == 0;
+        }
+        for i in (left_nodes.0)..(overlapping_nodes.0) {
+            let _ = self.nodes[i].split_off(left.0);
         }
     }
 

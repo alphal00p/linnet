@@ -74,6 +74,10 @@ impl<V> NodeStorageOps for UnionFindNodeStore<V> {
         todo!()
     }
 
+    fn delete<S: crate::half_edge::subgraph::SubGraph<Base = Self::Base>>(&mut self, subgraph: &S) {
+        todo!()
+    }
+
     fn extract<S: crate::half_edge::subgraph::SubGraph<Base = Self::Base>, V2>(
         &mut self,
         subgraph: &S,

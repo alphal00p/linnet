@@ -288,14 +288,9 @@ pub trait SubGraph:
         )?;
         writeln!(writer, "{}", graph_info.as_ref())?;
 
-        for (n, v) in graph.iter_node_data(self) {
+        for (n, _, v) in graph.iter_node_data(self) {
             if let Some(a) = node_attr(v) {
-                writeln!(
-                    writer,
-                    "  {} [{}];",
-                    graph.id_from_neighbors(n).unwrap().0,
-                    a
-                )?;
+                writeln!(writer, "  {} [{}];", n.0, a)?;
             }
         }
 
@@ -335,14 +330,9 @@ pub trait SubGraph:
         )?;
         writeln!(writer, "{}", graph_info.as_ref())?;
 
-        for (n, v) in graph.iter_node_data(self) {
+        for (n, _, v) in graph.iter_node_data(self) {
             if let Some(a) = node_attr(v) {
-                writeln!(
-                    writer,
-                    "  {} [{}];",
-                    graph.id_from_neighbors(n).unwrap().0,
-                    a
-                )?;
+                writeln!(writer, "  {} [{}];", n.0, a)?;
             }
         }
 

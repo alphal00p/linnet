@@ -586,7 +586,7 @@ impl TestGraph {
         let mut max_degree = 0;
 
         for i in 0..graph.n_nodes() {
-            let degree = graph.boundary_iter(NodeIndex(i)).count();
+            let degree = graph.iter_crown(NodeIndex(i)).count();
             min_degree = min_degree.min(degree);
             max_degree = max_degree.max(degree);
         }

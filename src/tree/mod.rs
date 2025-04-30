@@ -382,6 +382,9 @@ pub enum ForestError {
 }
 
 impl<U, P: ForestNodeStore> Forest<U, P> {
+    fn root_node(&self, nodeid: TreeNodeId) -> TreeNodeId {
+        self.nodes.root_node(nodeid)
+    }
     pub fn validate_structure(&self) -> Result<(), ForestError> {
         let roots = self.nodes.validate()?;
 

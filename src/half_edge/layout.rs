@@ -636,7 +636,7 @@ impl<E, V> CostFunction for GraphLayout<'_, E, V> {
                 let dist = (dx * dx + dy * dy).sqrt();
                 cost += self.params.edge_vertex_repulsion / dist;
             }
-            for e in self.graph.boundary_iter(node) {
+            for e in self.graph.iter_crown(node) {
                 let (ex, ey) = self.positions.get_edge_position(self.graph[&e], param);
 
                 let dx = x - ex;
@@ -648,7 +648,7 @@ impl<E, V> CostFunction for GraphLayout<'_, E, V> {
                     0.5 * self.params.spring_constant * (self.params.spring_length - dist).powi(2);
                 // cost += self.params.charge_constant_e / dist;
 
-                for othere in self.graph.boundary_iter(node) {
+                for othere in self.graph.iter_crown(node) {
                     let a = self.graph.inv(othere);
                     if e > othere && a != e {
                         let (ox, oy) = self.positions.get_edge_position(self.graph[&othere], param);
