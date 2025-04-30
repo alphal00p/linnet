@@ -24,12 +24,16 @@ use std::{
 use thiserror::Error;
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
 pub struct OrientedCut {
     ///gives the hedges to the left of the cut (the one you would drag to the right of a forward scattering diagram)
+    #[cfg_attr(feature = "bincode", bincode(with_serde))]
     pub left: BitVec,
     ///gives the hedges to the right of the cut (the one you would drag to the left of a forward scattering diagram)
     ///
     /// right = inv(left)
+    #[cfg_attr(feature = "bincode", bincode(with_serde))]
     pub right: BitVec,
 }
 
@@ -464,7 +468,7 @@ impl SubGraph for OrientedCut {
 
 impl OrientedCut {
     #[allow(clippy::too_many_arguments, clippy::type_complexity)]
-    #[cfg(feature = "layout")]
+    #[cfg(feature = "drawing")]
     /// draws hedges in the left set on the right side of the diagram
     /// draws hedges in the right set on the left side of the diagram (so they are on the correct side of the cut)
     ///
@@ -955,6 +959,7 @@ pub mod test {
     use super::*;
     use crate::{dot, dot_parser::DotGraph};
     // use similar_asserts::assert_eq;
+    //
 
     #[test]
     #[cfg(feature = "drawing")]

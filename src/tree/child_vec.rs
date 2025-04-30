@@ -2,7 +2,6 @@ use std::fmt::Write;
 
 use bitvec::vec::BitVec;
 use itertools::Itertools;
-use serde::{Deserialize, Serialize};
 
 use crate::half_edge::{
     involution::Hedge,
@@ -18,7 +17,9 @@ use super::{
 };
 
 /// A node in the ChildVecStore. It contains a PPNode plus an ordered vector of children.
-#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
 pub struct CVNode<V> {
     pub parent_pointer: PPNode<V>,
     pub children: Vec<TreeNodeId>,
@@ -52,7 +53,9 @@ impl<V> CVNode<V> {
 }
 
 /// The ChildVecStore itself.
-#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
 pub struct ChildVecStore<V> {
     pub nodes: Vec<CVNode<V>>,
 }

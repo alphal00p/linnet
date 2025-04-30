@@ -1,6 +1,5 @@
 use bitvec::vec::BitVec;
 use bitvec::{bitvec, order::Lsb0};
-use serde::{Deserialize, Serialize};
 use std::ops::{Range, RangeFrom, RangeInclusive, RangeTo, RangeToInclusive};
 
 use crate::half_edge::builder::HedgeNodeBuilder;
@@ -9,14 +8,13 @@ use crate::half_edge::{Hedge, HedgeGraph, NodeStorageOps};
 use super::contracted::ContractedSubGraph;
 use super::{internal::InternalSubGraph, SubGraph, SubGraphOps};
 use super::{Inclusion, ModifySubgraph, SubGraphHedgeIter};
-use bincode::{Decode, Encode};
 
-#[derive(
-    Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash, PartialOrd, Ord, Encode, Decode,
-)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
 pub struct HedgeNode {
     pub internal_graph: InternalSubGraph,
-    #[bincode(with_serde)]
+    #[cfg_attr(feature = "bincode", bincode(with_serde))]
     pub hairs: BitVec,
 }
 

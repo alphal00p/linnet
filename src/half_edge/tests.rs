@@ -17,6 +17,7 @@ fn threeloop() {
     let graph: HedgeGraph<(), ()> = builder.build();
 
     insta::assert_snapshot!("three_loop_dot", graph.base_dot());
+    #[cfg(feature = "serde")]
     insta::assert_ron_snapshot!("three_loop", graph);
 
     for i in 0..graph.n_hedges() {
@@ -39,6 +40,7 @@ fn threeloop() {
 
     assert_eq!(6, all_cycles.len());
 
+    #[cfg(feature = "serde")]
     insta::assert_ron_snapshot!("three_loop_cycles", cycles);
 }
 
@@ -65,6 +67,8 @@ fn hairythreeloop() {
     let graph: HedgeGraph<(), ()> = builder.build();
 
     insta::assert_snapshot!("hairy_three_loop_dot", graph.base_dot());
+
+    #[cfg(feature = "serde")]
     insta::assert_ron_snapshot!("hairy_three_loop", graph);
     insta::assert_snapshot!(
         "hairy_three_loop_dot_internal",
@@ -84,6 +88,7 @@ fn hairythreeloop() {
 
     let cycles = graph.cycle_basis().0;
 
+    #[cfg(feature = "serde")]
     insta::assert_ron_snapshot!("hairy_three_loop_cycles", cycles);
 }
 
@@ -863,8 +868,13 @@ fn self_energy_box() {
         edges_in_cut.sort();
 
         if cut_to_look_for == edges_in_cut {
+            #[cfg(feature = "serde")]
             insta::assert_ron_snapshot!(left);
+
+            #[cfg(feature = "serde")]
             insta::assert_ron_snapshot!(right);
+
+            #[cfg(feature = "serde")]
             insta::assert_ron_snapshot!(cut.left);
         }
     }

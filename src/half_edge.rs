@@ -6,7 +6,7 @@ use std::num::TryFromIntError;
 use std::ops::{Index, IndexMut};
 
 use ahash::{AHashMap, AHashSet};
-use bincode::{Decode, Encode};
+
 use bitvec::prelude::*;
 use bitvec::{slice::IterOnes, vec::BitVec};
 use builder::HedgeGraphBuilder;
@@ -20,23 +20,10 @@ use involution::{
 use itertools::Itertools;
 use nodestore::{NodeStorage, NodeStorageOps, NodeStorageVec};
 use rand::{rngs::SmallRng, Rng, SeedableRng};
-use serde::{Deserialize, Serialize};
-#[derive(
-    Clone,
-    Copy,
-    Debug,
-    Eq,
-    Hash,
-    PartialEq,
-    Serialize,
-    Deserialize,
-    From,
-    Into,
-    PartialOrd,
-    Ord,
-    Encode,
-    Decode,
-)]
+
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, From, Into, PartialOrd, Ord)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
 pub struct NodeIndex(pub usize);
 
 impl std::fmt::Display for NodeIndex {
@@ -75,7 +62,9 @@ impl Iterator for PowersetIterator {
 }
 pub mod involution;
 
-#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+#[derive(Clone, Debug, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
 pub struct GVEdgeAttrs {
     pub label: Option<String>,
     pub color: Option<String>,
@@ -106,12 +95,14 @@ pub mod builder;
 pub mod nodestore;
 pub mod subgraph;
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct HedgeGraph<E, V, S: NodeStorage<NodeData = V> = NodeStorageVec<V>> {
     edge_store: SmartHedgeVec<E>,
     node_store: S,
 }
 
+#[cfg(feature = "bincode")]
 impl<E, V, S: NodeStorage<NodeData = V>> ::bincode::Encode for HedgeGraph<E, V, S>
 where
     E: ::bincode::Encode,
@@ -128,6 +119,7 @@ where
     }
 }
 
+#[cfg(feature = "bincode")]
 impl<E, V, S: NodeStorage<NodeData = V>, __Context> ::bincode::Decode<__Context>
     for HedgeGraph<E, V, S>
 where
@@ -144,6 +136,8 @@ where
         })
     }
 }
+
+#[cfg(feature = "bincode")]
 impl<'__de, E, V, S: NodeStorage<NodeData = V>, __Context> ::bincode::BorrowDecode<'__de, __Context>
     for HedgeGraph<E, V, S>
 where

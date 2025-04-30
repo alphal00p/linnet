@@ -4,17 +4,15 @@ use std::{
 };
 
 use crate::num_traits::RefZero;
-use bincode::{Decode, Encode};
 use derive_more::{From, Into};
 use rand::{rngs::SmallRng, Rng, SeedableRng};
-use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use super::{nodestore::NodeStorageOps, subgraph::SubGraph, GVEdgeAttrs, HedgeGraph, NodeIndex};
 
-#[derive(
-    Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash, Encode, Decode,
-)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
 pub struct Hedge(pub usize);
 
 impl Hedge {
@@ -31,9 +29,9 @@ impl Hedge {
     }
 }
 
-#[derive(
-    Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash, Encode, Decode,
-)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
 pub enum HedgePair {
     Unpaired {
         hedge: Hedge,
@@ -520,9 +518,9 @@ impl Display for Hedge {
     }
 }
 
-#[derive(
-    Clone, Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash, Encode, Decode,
-)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
 pub enum InvolutiveMapping<E> {
     Identity { data: EdgeData<E>, underlying: Flow },
     Source { data: EdgeData<E>, sink_idx: Hedge },
@@ -545,9 +543,9 @@ impl<E> InvolutiveMapping<E> {
     }
 }
 
-#[derive(
-    Clone, Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash, Encode, Decode,
-)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
 pub struct EdgeData<E> {
     pub orientation: Orientation,
     pub data: E,
@@ -650,9 +648,9 @@ impl<E> EdgeData<E> {
     }
 }
 
-#[derive(
-    Clone, Debug, Serialize, Deserialize, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Encode, Decode,
-)]
+#[derive(Clone, Debug, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
 pub enum Orientation {
     Default,
     Reversed,
@@ -673,9 +671,9 @@ impl Mul for Orientation {
     }
 }
 
-#[derive(
-    Clone, Debug, Serialize, Deserialize, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Encode, Decode,
-)]
+#[derive(Clone, Debug, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
 pub enum Flow {
     Source, // outgoing
     Sink,   // incoming
@@ -1080,17 +1078,18 @@ impl<E> InvolutiveMapping<E> {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, Error)]
+#[derive(Clone, Debug, Error)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
 pub enum InvolutionError {
     #[error("Should have been identity")]
     NotIdentity,
     #[error("Should have been an paired hedge")]
     NotPaired,
 }
-pub mod newinv;
-#[derive(
-    Clone, Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash, Encode, Decode,
-)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
 pub struct Involution<E = EdgeIndex> {
     pub(super) inv: Vec<InvolutiveMapping<E>>,
 }
@@ -1828,22 +1827,9 @@ impl<E> IndexMut<Hedge> for Involution<E> {
     }
 }
 
-#[derive(
-    Clone,
-    Copy,
-    Debug,
-    Serialize,
-    Deserialize,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    From,
-    Into,
-    Hash,
-    Encode,
-    Decode,
-)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, From, Into, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
 pub struct EdgeIndex(pub(crate) usize);
 
 impl Display for EdgeIndex {

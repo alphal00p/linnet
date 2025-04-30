@@ -1,6 +1,4 @@
-use bincode::{Decode, Encode};
 use bitvec::{order::Lsb0, slice::IterOnes, vec::BitVec};
-use serde::{Deserialize, Serialize};
 
 use crate::{
     half_edge::{
@@ -17,13 +15,13 @@ use crate::{
 
 use super::{NodeStorage, NodeStorageOps};
 
-#[derive(
-    Clone, Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash, Encode, Decode,
-)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
 pub struct NodeStorageVec<N> {
     pub(crate) node_data: Vec<N>,
     pub(crate) hedge_data: Vec<NodeIndex>,
-    #[bincode(with_serde)]
+    #[cfg_attr(feature = "bincode", bincode(with_serde))]
     pub(crate) nodes: Vec<BitVec>, // Nodes
 }
 

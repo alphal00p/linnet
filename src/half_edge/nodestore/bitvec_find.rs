@@ -1,6 +1,4 @@
-use bincode::{Decode, Encode};
 use bitvec::vec::BitVec;
-use serde::{Deserialize, Serialize};
 
 use crate::{
     half_edge::{
@@ -12,14 +10,18 @@ use crate::{
     union_find::{SetIndex, UFNode, UnionFind},
 };
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Encode, Decode)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
 pub struct HedgeNodeStore<V> {
     data: V,
-    #[bincode(with_serde)]
+    #[cfg_attr(feature = "bincode", bincode(with_serde))]
     node: BitVec,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Encode, Decode)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
 pub struct UnionFindNodeStore<V> {
     pub nodes: UnionFind<HedgeNodeStore<V>>,
 }

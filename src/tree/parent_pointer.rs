@@ -6,7 +6,6 @@ use std::{
 };
 
 use bitvec::vec::BitVec;
-use serde::{Deserialize, Serialize};
 
 use crate::half_edge::{
     involution::Hedge,
@@ -19,7 +18,9 @@ use super::{Forest, ForestNodeStore, ForestNodeStoreAncestors, RootId, TreeNodeI
 ///
 /// Contains the actual data (`V`) and a [ParentId] which points
 /// either to the parent [TreeNodeId] or identifies this node as a root via `RootId`.
-#[derive(Clone, Debug, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Clone, Debug, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
 pub struct PPNode<V> {
     /// Pointer to the parent node or the root ID if this is a root node.
     pub(crate) parent: ParentId,
@@ -115,7 +116,9 @@ impl<V> PPNode<V> {
 ///
 /// A node is either a child of another `Node` or it's the `Root` of a tree,
 /// identified by a `RootId`.
-#[derive(Clone, Debug, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Clone, Debug, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
 pub enum ParentId {
     /// This node is a root node belonging to the tree identified by `RootId`.
     Root(RootId),
@@ -157,7 +160,9 @@ impl ParentId {
 /// specific parent, which can be slow.
 ///
 /// It implements the `ForestNodeStore` trait.
-#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, Default)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
 pub struct ParentPointerStore<V> {
     /// The flat list of nodes. The index in the vector corresponds to the `TreeNodeId`.
     pub(crate) nodes: Vec<PPNode<V>>,

@@ -5,7 +5,6 @@
 use std::{collections::VecDeque, fmt::Write};
 
 use bitvec::vec::BitVec;
-use serde::{Deserialize, Serialize};
 
 use crate::half_edge::{
     involution::Hedge,
@@ -25,7 +24,9 @@ use super::{
 /// *first* child, and pointers to the left and right siblings. The sibling
 /// pointers form a cyclic doubly linked list among all children of the same parent.
 /// If a node is the only child, its `neighbor_left` and `neighbor_right` point to itself.
-#[derive(Clone, Debug, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Clone, Debug, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
 pub struct PCNode<V> {
     /// Parent pointer and node data.
     pub(crate) parent_pointer: PPNode<V>,
@@ -98,7 +99,9 @@ impl<V> PCNode<V> {
 ///
 /// This representation allows for efficient iteration over children and siblings.
 /// It implements `ForestNodeStore` and `ForestNodeStoreDown`.
-#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, Default)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
 pub struct ParentChildStore<V> {
     /// The flat list of nodes. The index in the vector corresponds to the `TreeNodeId`.
     pub(crate) nodes: Vec<PCNode<V>>,

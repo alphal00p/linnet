@@ -2,14 +2,16 @@ use std::{num::TryFromIntError, ops::Add};
 
 use ahash::AHashSet;
 use bitvec::vec::BitVec;
-use serde::{Deserialize, Serialize};
 
 use crate::half_edge::{nodestore::NodeStorageOps, Hedge, HedgeGraph, PowersetIterator};
 
 use super::{Inclusion, InternalSubGraph};
 
-#[derive(Clone, Debug, Serialize, Deserialize, Hash, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
 pub struct SignedCycle {
+    #[cfg_attr(feature = "bincode", bincode(with_serde))]
     pub filter: BitVec,
     pub loop_count: Option<usize>,
 }
@@ -52,8 +54,11 @@ impl SignedCycle {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, Hash, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
 pub struct Cycle {
+    #[cfg_attr(feature = "bincode", bincode(with_serde))]
     pub filter: BitVec,
     pub loop_count: Option<usize>,
 }

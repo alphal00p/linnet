@@ -2,7 +2,6 @@ use std::ops::{Range, RangeFrom, RangeInclusive, RangeTo, RangeToInclusive};
 
 use bitvec::vec::BitVec;
 use bitvec::{bitvec, order::Lsb0};
-use serde::{Deserialize, Serialize};
 
 use crate::half_edge::builder::HedgeNodeBuilder;
 use crate::half_edge::nodestore::NodeStorageOps;
@@ -11,10 +10,13 @@ use crate::half_edge::{Hedge, HedgeGraph};
 use super::{internal::InternalSubGraph, SubGraph, SubGraphOps};
 use super::{Inclusion, ModifySubgraph, SubGraphHedgeIter};
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
 pub struct ContractedSubGraph {
     pub internal_graph: InternalSubGraph, // cannot have any external hedges (i.e. unpaired hedges)
-    pub allhedges: BitVec,                // all hedges , including that are in the internal graph.
+    #[cfg_attr(feature = "bincode", bincode(with_serde))]
+    pub allhedges: BitVec, // all hedges , including that are in the internal graph.
 }
 
 impl Inclusion<Hedge> for ContractedSubGraph {

@@ -1,6 +1,4 @@
-use bincode::{Decode, Encode};
 use bitvec::vec::BitVec;
-use serde::{Deserialize, Serialize};
 use std::hash::Hash;
 use std::ops::Index;
 use std::ops::{Range, RangeFrom, RangeInclusive, RangeTo, RangeToInclusive};
@@ -14,11 +12,13 @@ use super::{
     node::HedgeNode, Cycle, Inclusion, ModifySubgraph, SubGraph, SubGraphHedgeIter, SubGraphOps,
 };
 
-#[derive(Clone, Debug, Serialize, Deserialize, Eq, Ord, Encode, Decode)]
+#[derive(Clone, Debug, Eq, Ord)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
 pub struct InternalSubGraph {
     // cannot be hairy. I.e. it must always have paired hedges.
     // To represent a hairy subgraph, use a ContractedSubGraph
-    #[bincode(with_serde)]
+    #[cfg_attr(feature = "bincode", bincode(with_serde))]
     pub filter: BitVec,
     pub loopcount: Option<usize>,
 }

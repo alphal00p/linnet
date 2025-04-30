@@ -1,8 +1,5 @@
 use std::ops::{Index, IndexMut, Neg};
 
-use bincode::{Decode, Encode};
-use serde::{Deserialize, Serialize};
-
 use bitvec::vec::BitVec;
 
 use crate::permutation::Permutation;
@@ -16,9 +13,9 @@ use super::{
     HedgeGraph, HedgeGraphError, NodeStorage,
 };
 
-#[derive(
-    Clone, Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash, Encode, Decode,
-)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
 pub struct SmartHedgeVec<T> {
     pub(super) data: Vec<(T, HedgePair)>,
     involution: Involution,
@@ -990,7 +987,9 @@ impl<T> Index<&Hedge> for SmartHedgeVec<T> {
 }
 
 // Data stored once per edge (pair of half-edges or external edge)
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
 pub struct HedgeVec<T>(pub(super) Vec<T>);
 
 impl<T> IntoIterator for HedgeVec<T> {

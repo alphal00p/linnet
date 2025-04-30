@@ -3,9 +3,7 @@ use std::{
     ops::{Index, IndexMut},
 };
 
-use bincode::{Decode, Encode};
 use bitvec::vec::BitVec;
-use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::half_edge::{
@@ -18,9 +16,9 @@ use crate::half_edge::{
 pub type ParentPointer = Hedge;
 
 /// A newtype for the set–data index (index into `UnionFind::set_data`).
-#[derive(
-    Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Encode, Decode,
-)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
 pub struct SetIndex(pub usize);
 
 impl From<usize> for SetIndex {
@@ -33,7 +31,9 @@ impl From<usize> for SetIndex {
 /// - `Root { set_data_idx, rank }`: this node is a root, with `rank` for union–by–rank,
 ///   and it owns the data at `set_data_idx`.
 /// - `Child(parent)`: a non–root pointing to another node's index.
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Encode, Decode)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
 pub enum UFNode {
     Root { set_data_idx: SetIndex, rank: usize },
     Child(ParentPointer),
@@ -47,7 +47,9 @@ pub enum UnionFindError {
     LengthMismatch,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Encode, Decode)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
 /// A UnionFind structure that:
 /// - Stores a parallel `elements: Vec<T>` (one per node).
 /// - Maintains a parent–pointer forest (`Vec<Cell<UFNode>>`).
@@ -65,13 +67,17 @@ pub struct UnionFind<U> {
     // forest:Forest<>
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize, Encode, Decode)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
 pub struct SetData<U> {
     pub(crate) root_pointer: ParentPointer,
     pub(crate) data: Option<U>,
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize, Encode, Decode)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
 enum SetSplit {
     Left,
     FullyExtracted,

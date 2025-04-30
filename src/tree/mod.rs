@@ -30,7 +30,6 @@ use bitvec::vec::BitVec;
 use child_pointer::ParentChildStore;
 use child_vec::ChildVecStore;
 use parent_pointer::{PPNode, ParentId, ParentPointerStore};
-use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::half_edge::{
@@ -45,7 +44,9 @@ pub mod iterato;
 pub mod parent_pointer;
 /// A type-safe identifier for a node within a `Forest`.
 /// Wraps a `usize` index into the underlying node storage vector.
-#[derive(Clone, Debug, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Clone, Debug, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
 pub struct TreeNodeId(pub usize);
 
 impl Display for TreeNodeId {
@@ -73,7 +74,9 @@ impl From<TreeNodeId> for Hedge {
 }
 
 /// Internal data associated with the root of a tree in the `Forest`.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Debug, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
 pub struct RootData<R> {
     pub(crate) data: R,
     pub(crate) root_id: TreeNodeId,
@@ -81,7 +84,9 @@ pub struct RootData<R> {
 
 /// A type-safe identifier for a tree within a `Forest`.
 /// Wraps a `usize` index into the `Forest`'s roots vector.
-#[derive(Clone, Debug, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Clone, Debug, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
 pub struct RootId(pub(crate) usize);
 
 impl Display for RootId {
@@ -107,7 +112,9 @@ impl From<usize> for RootId {
 /// `N` is the storage implementation for the nodes, which must implement [`ForestNodeStore`].
 /// Typically `N` will be one of [`ParentPointerStore<V>`], [`ParentChildStore<V>`], or [`ChildVecStore<V>`],
 /// where `V` is the type of data associated with each node.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
 pub struct Forest<R, N> {
     /// The underlying storage for all nodes in the forest.
     pub(crate) nodes: N,
@@ -346,7 +353,9 @@ impl<R, N: Default> Forest<R, N> {
 }
 
 /// Errors that can occur during forest operations.
-#[derive(Debug, Clone, Error, Serialize, Deserialize)]
+#[derive(Debug, Clone, Error)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
 pub enum ForestError {
     #[error("Length mismatch")]
     LengthMismatch,

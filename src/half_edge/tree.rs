@@ -2,7 +2,6 @@ use std::{cmp::Ordering, collections::VecDeque};
 
 use bitvec::vec::BitVec;
 use itertools::Itertools;
-use serde::{Deserialize, Serialize};
 
 use crate::tree::{
     parent_pointer::ParentPointerStore, Forest, ForestNodeStore, ForestNodeStoreDown,
@@ -40,7 +39,9 @@ use super::{
 //     tree_subgraph: InternalSubGraph,
 // }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
 pub enum TTRoot {
     Child,
     Root,
@@ -73,12 +74,67 @@ impl TTRoot {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+// #[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
 pub struct SimpleTraversalTree<P: ForestNodeStore<NodeData = ()> = ParentPointerStore<()>> {
     forest: Forest<TTRoot, P>,
+    // #[cfg_attr(feature = "bincode", bincode(with_serde))]
     pub tree_subgraph: BitVec,
 }
+#[cfg(feature = "bincode")]
+impl<P: ForestNodeStore<NodeData = ()>> ::bincode::Encode for SimpleTraversalTree<P>
+where
+    P: ::bincode::Encode,
+{
+    fn encode<__E: ::bincode::enc::Encoder>(
+        &self,
+        encoder: &mut __E,
+    ) -> core::result::Result<(), ::bincode::error::EncodeError> {
+        ::bincode::Encode::encode(&self.forest, encoder)?;
+        ::bincode::Encode::encode(&::bincode::serde::Compat(&self.tree_subgraph), encoder)?;
+        core::result::Result::Ok(())
+    }
+}
 
+#[cfg(feature = "bincode")]
+impl<P: ForestNodeStore<NodeData = ()>, __Context> ::bincode::Decode<__Context>
+    for SimpleTraversalTree<P>
+where
+    P: ::bincode::Decode<__Context>,
+{
+    fn decode<__D: ::bincode::de::Decoder<Context = __Context>>(
+        decoder: &mut __D,
+    ) -> core::result::Result<Self, ::bincode::error::DecodeError> {
+        core::result::Result::Ok(Self {
+            forest: ::bincode::Decode::decode(decoder)?,
+            tree_subgraph: (<::bincode::serde::Compat<_> as ::bincode::Decode<__Context>>::decode(
+                decoder,
+            )?)
+            .0,
+        })
+    }
+}
+
+#[cfg(feature = "bincode")]
+impl<'__de, P: ForestNodeStore<NodeData = ()>, __Context> ::bincode::BorrowDecode<'__de, __Context>
+    for SimpleTraversalTree<P>
+where
+    P: ::bincode::de::BorrowDecode<'__de, __Context>,
+{
+    fn borrow_decode<__D: ::bincode::de::BorrowDecoder<'__de, Context = __Context>>(
+        decoder: &mut __D,
+    ) -> core::result::Result<Self, ::bincode::error::DecodeError> {
+        core::result::Result::Ok(Self {
+            forest: ::bincode::BorrowDecode::<'_, __Context>::borrow_decode(decoder)?,
+            tree_subgraph: (<::bincode::serde::BorrowCompat<_> as ::bincode::BorrowDecode<
+                '_,
+                __Context,
+            >>::borrow_decode(decoder)?)
+            .0,
+        })
+    }
+}
 impl<P: ForestNodeStore<NodeData = ()>> SimpleTraversalTree<P> {
     pub fn cast<P2: ForestNodeStore<NodeData = ()>>(self) -> SimpleTraversalTree<P2>
     where
@@ -552,10 +608,13 @@ impl SimpleTraversalTree {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
 pub struct OwnedTraversalTree<P: ForestNodeStore<NodeData = ()> + Clone + ForestNodeStorePreorder> {
     graph: HedgeGraph<(), bool, Forest<bool, P>>,
     tree_subgraph: InternalSubGraph,
+    #[cfg_attr(feature = "bincode", bincode(with_serde))]
     covers: BitVec,
 }
 

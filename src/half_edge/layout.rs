@@ -12,7 +12,6 @@ use argmin::{
 // #[cfg(feature = "drawing")]
 use cgmath::{Angle, InnerSpace, Rad, Vector2, Zero};
 use rand::{rngs::SmallRng, Rng, SeedableRng};
-use serde::{Deserialize, Serialize};
 
 // #[cfg(feature = "drawing")]
 use super::drawing::{CetzEdge, CetzString, Decoration, EdgeGeometry};
@@ -205,7 +204,9 @@ let edge(..points,decoration:"",angle:0deg)={
 }
 "#;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
 pub struct FancySettings {
     pub label_shift: f64,
     pub arrow_angle_percentage: Option<f64>,
@@ -337,7 +338,9 @@ pub struct GraphLayout<'a, E, V> {
     pub rng: Arc<Mutex<SmallRng>>,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
 pub struct LayoutParams {
     pub spring_constant: f64,
     pub spring_length: f64,
@@ -745,7 +748,9 @@ pub struct LayoutSettings {
     init_params: Vec<f64>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
 pub struct LayoutIters {
     pub n_iters: u64,
     pub temp: f64,
