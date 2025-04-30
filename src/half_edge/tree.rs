@@ -487,7 +487,7 @@ impl SimpleTraversalTree {
         root_node: &NodeIndex,
         include_hedge: Option<Hedge>,
     ) -> Result<Self, HedgeGraphError> {
-        let mut seen = subgraph.hairs(graph.hair_iter(*root_node));
+        let mut seen = subgraph.hairs(graph.boundary_iter(*root_node));
 
         if seen.count_ones() == 0 {
             // if the root node is not in the subgraph
@@ -515,7 +515,7 @@ impl SimpleTraversalTree {
 
         while let Some(hedge) = stack.pop() {
             // if the hedge is not external get the neighbors of the paired hedge
-            if let Some(cn) = graph.involved_node_hairs(hedge) {
+            if let Some(cn) = graph.involved_node_boundary(hedge) {
                 let connected = graph.inv(hedge);
 
                 if !seen.includes(&connected) && subgraph.includes(&connected) {
@@ -553,7 +553,7 @@ impl SimpleTraversalTree {
         root_node: &NodeIndex,
         include_hedge: Option<Hedge>,
     ) -> Result<Self, HedgeGraphError> {
-        let mut seen = subgraph.hairs(graph.hair_iter(*root_node));
+        let mut seen = subgraph.hairs(graph.boundary_iter(*root_node));
 
         if seen.count_ones() == 0 {
             // if the root node is not in the subgraph

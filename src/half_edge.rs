@@ -431,7 +431,9 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
             has_branch = false;
 
             for n in &nodes {
-                let int = self.hairs_with_subgraph(*n, subgraph).collect::<Vec<_>>();
+                let int = self
+                    .boundary_with_subgraph(*n, subgraph)
+                    .collect::<Vec<_>>();
                 let first = int.first();
                 let next = int.get(1);
 
@@ -511,10 +513,6 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
         S::from_filter(self, filter)
     }
 
-    pub fn hairy_from_filter(&self, filter: BitVec) -> HedgeNode {
-        self.nesting_node_from_subgraph(InternalSubGraph::cleaned_filter_pessimist(filter, self))
-    }
-
     pub fn nesting_node_from_subgraph(&self, internal_graph: InternalSubGraph) -> HedgeNode {
         let mut hairs = bitvec![usize, Lsb0; 0; self.n_hedges()];
 
@@ -543,7 +541,7 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
         hairs
     }
 
-    pub fn split_hairs_and_internal_hedges(
+    pub(crate) fn split_hairs_and_internal_hedges(
         &self,
         mut subgraph: BitVec,
     ) -> (BitVec, InternalSubGraph) {
@@ -632,7 +630,7 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
 
             // Count the number of edges in the subgraph incident to this node
             let incident_edges = BitVec::from_hedge_iter(
-                self.hairs_with_subgraph(node_pos, subgraph),
+                self.boundary_with_subgraph(node_pos, subgraph),
                 subgraph.size(),
             );
             let degree = incident_edges.count_ones();
@@ -688,7 +686,7 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
     }
 
     pub fn connected_neighbors<S: SubGraph>(&self, subgraph: &S, pos: Hedge) -> Option<BitVec> {
-        Some(subgraph.hairs(self.involved_node_hairs(pos)?))
+        Some(subgraph.hairs(self.involved_node_boundary(pos)?))
     }
     pub fn get_edge_data(&self, edge: Hedge) -> &E {
         &self[self[&edge]]
@@ -717,19 +715,19 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
     }
 
     pub fn neighbors(&self, hedge: Hedge) -> N::NeighborsIter<'_> {
-        self.hair_iter(self.node_id(hedge))
+        self.boundary_iter(self.node_id(hedge))
     }
 
-    pub fn hair_iter(&self, id: NodeIndex) -> N::NeighborsIter<'_> {
+    pub fn boundary_iter(&self, id: NodeIndex) -> N::NeighborsIter<'_> {
         self.node_store.get_neighbor_iterator(id)
     }
 
-    pub fn hairs_with_subgraph<'a, S: SubGraph>(
+    pub fn boundary_with_subgraph<'a, S: SubGraph>(
         &'a self,
         id: NodeIndex,
         subgraph: &'a S,
     ) -> impl Iterator<Item = Hedge> + 'a {
-        self.hair_iter(id).filter(|i| subgraph.includes(i))
+        self.boundary_iter(id).filter(|i| subgraph.includes(i))
     }
 
     pub fn id_from_neighbors<'a>(
@@ -740,8 +738,9 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
         Some(self.node_id(e))
     }
 
-    pub fn involved_node_hairs(&self, hedge: Hedge) -> Option<N::NeighborsIter<'_>> {
-        self.involved_node_id(hedge).map(|id| self.hair_iter(id))
+    pub fn involved_node_boundary(&self, hedge: Hedge) -> Option<N::NeighborsIter<'_>> {
+        self.involved_node_id(hedge)
+            .map(|id| self.boundary_iter(id))
     }
 
     pub fn involved_node_id(&self, hedge: Hedge) -> Option<NodeIndex> {
@@ -1036,14 +1035,13 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
     }
 
     pub fn combine_to_single_hedgenode(&self, source: &[NodeIndex]) -> HedgeNode {
-        let s: BitVec =
-            source
-                .iter()
-                .map(|a| self.hair_iter(*a))
-                .fold(self.empty_subgraph(), |mut acc, e| {
-                    acc.union_with_iter(e);
-                    acc
-                });
+        let s: BitVec = source.iter().map(|a| self.boundary_iter(*a)).fold(
+            self.empty_subgraph(),
+            |mut acc, e| {
+                acc.union_with_iter(e);
+                acc
+            },
+        );
 
         let (hairs, internal_graph) = self.split_hairs_and_internal_hedges(s);
 
@@ -1071,7 +1069,7 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
             self.map_data_ref(|_, _, _| (), |_, _, _, d| d.map(|_| ()));
 
         let n = identified.identify_nodes(externals, ());
-        let hairs = identified.hair_iter(n).next().unwrap();
+        let hairs = identified.boundary_iter(n).next().unwrap();
 
         let non_bridges = identified.non_bridges();
         identified
