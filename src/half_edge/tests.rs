@@ -6,15 +6,16 @@ fn cycle_basis() {
         // Forest<DotVertexData, ChildVecStore<()>>,
     > = dot!(
     digraph {
-
-
-      a->b;
-      b->c;
-      c->b;
-      c->d;
+          ext0 [shape=none, label="" flow=sink];
+          ext0 -> 2[dir=none color="red"];
+          ext1 [shape=none, label="" flow=source];
+          ext1 -> 3[dir=none color="blue"];
+          2 -> 3[ dir=none color="red:blue;0.5"];
+          3 -> 2[ dir=none color="red:blue;0.5"];
     })
     .unwrap();
 
+    two.all_cycle_sym_diffs().unwrap();
     assert_eq!(two.cycle_basis().0.len(), 1);
 }
 

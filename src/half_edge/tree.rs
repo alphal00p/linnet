@@ -307,7 +307,6 @@ impl<S: ForestNodeStoreDown + ForestNodeStore<NodeData = ()>> Iterator
             .into_iter()
             .rev()
         {
-            println!("child: {child}");
             self.stack.push(child);
         }
 

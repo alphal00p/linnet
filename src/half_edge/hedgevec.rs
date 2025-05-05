@@ -513,7 +513,7 @@ impl<T> SmartHedgeVec<T> {
                 //left needs to be swapped
                 extracted.0 -= 1;
                 if !graph.includes(&extracted) {
-                    println!("{extracted}<=>{left}");
+                    // println!("{extracted}<=>{left}");
                     //only with an extracted that is in the wrong spot
                     self.swap_hedges(left, extracted);
                     left.0 += 1;
@@ -529,7 +529,7 @@ impl<T> SmartHedgeVec<T> {
                     Flow::Source
                 };
 
-                println!("Split:{i}");
+                // println!("Split:{i}");
                 self.data[self.involution[Hedge(i)].0].1 = HedgePair::Unpaired {
                     hedge: Hedge(i),
                     flow,
@@ -539,8 +539,8 @@ impl<T> SmartHedgeVec<T> {
                     .source_to_identity_impl(Hedge(i), flow, flow == Flow::Sink);
             }
         }
-        println!("left:{left}");
-        println!("{}", self.involution.display());
+        // println!("left:{left}");
+        // println!("{}", self.involution.display());
 
         // The self involution is good and valid, but we now need to split the data carrying vec.
 
@@ -556,17 +556,17 @@ impl<T> SmartHedgeVec<T> {
                 //left needs to be swapped
                 extracted -= 1;
                 if self.data[extracted].1.any_hedge() < left {
-                    println!("{extracted}<=>{split_at}");
+                    // println!("{extracted}<=>{split_at}");
                     //only with an extracted that is in the wrong spot
                     self.swap_edges(EdgeIndex(split_at), EdgeIndex(extracted));
-                    println!("{}", self.involution.display());
+                    // println!("{}", self.involution.display());
 
                     split_at += 1;
                 }
             }
         }
 
-        println!("{}", self.involution.display());
+        // println!("{}", self.involution.display());
 
         let _ = self.involution.inv.split_off(left.0);
         let _ = self.data.split_off(split_at);
@@ -580,7 +580,7 @@ impl<T> SmartHedgeVec<T> {
                 .edge_data_mut(self.data[e1.0].1.any_hedge())
                 .data;
 
-            println!("{a}{e1}");
+            // println!("{a}{e1}");
             *a = e1;
 
             // = e1;
