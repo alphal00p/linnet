@@ -70,24 +70,27 @@ impl<V> NodeStorageOps for UnionFindNodeStore<V> {
     type OpStorage<A> = Self::Storage<A>;
     type Base = BitVec;
 
-    fn swap(&mut self, a: Hedge, b: Hedge) {
+    fn swap(&mut self, _a: Hedge, _b: Hedge) {
         todo!()
     }
 
-    fn delete<S: crate::half_edge::subgraph::SubGraph<Base = Self::Base>>(&mut self, subgraph: &S) {
+    fn delete<S: crate::half_edge::subgraph::SubGraph<Base = Self::Base>>(
+        &mut self,
+        _subgraph: &S,
+    ) {
         todo!()
     }
 
     fn extract<S: crate::half_edge::subgraph::SubGraph<Base = Self::Base>, V2>(
         &mut self,
-        subgraph: &S,
-        spit_node: impl FnMut(&Self::NodeData) -> V2,
-        owned_node: impl FnMut(Self::NodeData) -> V2,
+        _subgraph: &S,
+        _spit_node: impl FnMut(&Self::NodeData) -> V2,
+        _owned_node: impl FnMut(Self::NodeData) -> V2,
     ) -> Self::OpStorage<V2> {
         todo!()
     }
 
-    fn get_neighbor_iterator<'a>(&'a self, node_id: NodeIndex) -> Self::NeighborsIter<'a> {
+    fn get_neighbor_iterator(&self, node_id: NodeIndex) -> Self::NeighborsIter<'_> {
         (&self.nodes[SetIndex(node_id.0)].node).into()
     }
 
@@ -210,16 +213,16 @@ impl<V> NodeStorageOps for UnionFindNodeStore<V> {
         })
     }
 
-    fn iter_nodes<'a>(
-        &'a self,
-    ) -> impl Iterator<Item = (Self::NeighborsIter<'a>, NodeIndex, &'a Self::NodeData)> {
+    fn iter_nodes(
+        &self,
+    ) -> impl Iterator<Item = (Self::NeighborsIter<'_>, NodeIndex, &Self::NodeData)> {
         self.nodes
             .iter_set_data()
             .map(|(i, d)| ((&d.node).into(), NodeIndex(i.0), &d.data))
     }
-    fn iter_nodes_mut<'a>(
-        &'a mut self,
-    ) -> impl Iterator<Item = (Self::NeighborsIter<'a>, NodeIndex, &mut Self::NodeData)> {
+    fn iter_nodes_mut(
+        &mut self,
+    ) -> impl Iterator<Item = (Self::NeighborsIter<'_>, NodeIndex, &mut Self::NodeData)> {
         self.nodes
             .iter_set_data_mut()
             .map(|(i, d)| ((&d.node).into(), NodeIndex(i.0), &mut d.data))

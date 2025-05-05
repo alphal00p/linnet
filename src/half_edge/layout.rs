@@ -261,6 +261,7 @@ impl<E, V> PositionalHedgeGraph<E, V> {
         out
     }
 
+    #[allow(clippy::type_complexity)]
     pub fn cetz_impl_collection(
         graphs: &[(String, String, Vec<(String, Self)>)],
         edge_label: &impl Fn(&E) -> String,

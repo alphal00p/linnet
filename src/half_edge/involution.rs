@@ -1692,9 +1692,9 @@ impl<E> Involution<E> {
         false
     }
 
-    fn source_to_identity(&mut self, hedge: Hedge, underlying: Flow) {
-        self.source_to_identity_impl(hedge, underlying, false);
-    }
+    // fn source_to_identity(&mut self, hedge: Hedge, underlying: Flow) {
+    //     self.source_to_identity_impl(hedge, underlying, false);
+    // }
 
     pub(crate) fn source_to_identity_impl(
         &mut self,

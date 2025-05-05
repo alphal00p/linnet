@@ -56,14 +56,14 @@ impl<'a> From<BitVecNeighborIter<'a>> for HedgeNode {
     }
 }
 
-impl<'a> Iterator for BitVecNeighborIter<'a> {
+impl Iterator for BitVecNeighborIter<'_> {
     type Item = Hedge;
     fn next(&mut self) -> Option<Self::Item> {
         self.iter_ones.next().map(Hedge)
     }
 }
 
-impl<'a> ExactSizeIterator for BitVecNeighborIter<'a> {
+impl ExactSizeIterator for BitVecNeighborIter<'_> {
     fn len(&self) -> usize {
         self.len
     }
@@ -188,6 +188,7 @@ impl<N> NodeStorageOps for NodeStorageVec<N> {
 
         let _ = self.nodes.split_off(overlapping_nodes.0);
         let _ = self.node_data.split_off(overlapping_nodes.0);
+        let _ = self.hedge_data.split_off(left.0);
 
         for i in 0..(left_nodes.0) {
             let _ = self.nodes[i].split_off(left.0);
@@ -267,6 +268,8 @@ impl<N> NodeStorageOps for NodeStorageVec<N> {
             .into_iter()
             .map(owned_node)
             .collect();
+
+        let _ = self.hedge_data.split_off(left.0);
 
         let mut overlapping_node_hairs = vec![];
         let mut overlapping_data = vec![];
@@ -428,9 +431,9 @@ impl<N> NodeStorageOps for NodeStorageVec<N> {
         }
     }
 
-    fn iter_nodes<'a>(
-        &'a self,
-    ) -> impl Iterator<Item = (Self::NeighborsIter<'a>, NodeIndex, &'a Self::NodeData)> {
+    fn iter_nodes(
+        &self,
+    ) -> impl Iterator<Item = (Self::NeighborsIter<'_>, NodeIndex, &Self::NodeData)> {
         self.nodes
             .iter()
             .map(Into::into)
@@ -458,7 +461,7 @@ impl<N> NodeStorageOps for NodeStorageVec<N> {
     //     &self.nodes[node_id.0]
     // }
 
-    fn get_neighbor_iterator<'a>(&'a self, node_id: NodeIndex) -> Self::NeighborsIter<'a> {
+    fn get_neighbor_iterator(&self, node_id: NodeIndex) -> Self::NeighborsIter<'_> {
         BitVecNeighborIter {
             iter_ones: self.nodes[node_id.0].iter_ones(),
             len: self.hedge_len(),
@@ -602,7 +605,9 @@ impl<N> NodeStorageOps for NodeStorageVec<N> {
         for (i, node) in self.nodes.iter().enumerate() {
             for h in node.included_iter() {
                 if cover.includes(&h) {
-                    return Err(HedgeGraphError::NodesDoNotPartition);
+                    return Err(HedgeGraphError::NodesDoNotPartition(format!(
+                        "They overlap. Cover:{cover:?}, crown: {h:?}"
+                    )));
                 } else {
                     cover.set(h.0, true);
                     self.hedge_data[h.0] = NodeIndex(i);
@@ -613,7 +618,9 @@ impl<N> NodeStorageOps for NodeStorageVec<N> {
         let full = !BitVec::empty(self.hedge_len());
 
         if cover.sym_diff(&full).count_ones() > 0 {
-            return Err(HedgeGraphError::NodesDoNotPartition);
+            return Err(HedgeGraphError::NodesDoNotPartition(format!(
+                "They do not cover the whole graph: cover {cover:?}"
+            )));
         }
 
         Ok(())

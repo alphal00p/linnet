@@ -328,7 +328,7 @@ impl<P: ForestNodeStore<NodeData = ()>> SimpleTraversalTree<P> {
         self.forest
             .iter_root_leaves(node_id.into())
             .filter_map(move |a| {
-                if &root_node == &a {
+                if root_node == a {
                     return None;
                 }
                 let h = Hedge::from(a);

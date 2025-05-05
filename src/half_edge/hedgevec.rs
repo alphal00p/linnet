@@ -617,7 +617,7 @@ impl<T> SmartHedgeVec<T> {
                             *sink = e2;
                         }
                     }
-                    HedgePair::Unpaired { hedge, flow } => {
+                    HedgePair::Unpaired { hedge, .. } => {
                         if *hedge == e1 {
                             *hedge = e1;
                         } else if *hedge == e2 {
@@ -639,7 +639,7 @@ impl<T> SmartHedgeVec<T> {
                             *sink = e2;
                         }
                     }
-                    HedgePair::Unpaired { hedge, flow } => {
+                    HedgePair::Unpaired { hedge, .. } => {
                         if *hedge == e1 {
                             *hedge = e1;
                         } else if *hedge == e2 {
@@ -767,7 +767,7 @@ impl<T> SmartHedgeVec<T> {
 
         self.involution
             .inv
-            .extend(other.involution.into_iter().map(|(i, m)| match m {
+            .extend(other.involution.into_iter().map(|(_, m)| match m {
                 InvolutiveMapping::Sink { source_idx } => InvolutiveMapping::Sink {
                     source_idx: Hedge(source_idx.0 + self_inv_shift),
                 },

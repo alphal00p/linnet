@@ -1,4 +1,71 @@
 #[test]
+fn cycle_basis() {
+    let two: HedgeGraph<
+        crate::dot_parser::DotEdgeData,
+        crate::dot_parser::DotVertexData,
+        // Forest<DotVertexData, ChildVecStore<()>>,
+    > = dot!(
+    digraph {
+
+
+      a->b;
+      b->c;
+      c->b;
+      c->d;
+    })
+    .unwrap();
+
+    assert_eq!(two.cycle_basis().0.len(), 1);
+}
+
+#[test]
+fn join_mut_simple() {
+    let two: HedgeGraph<
+        crate::dot_parser::DotEdgeData,
+        crate::dot_parser::DotVertexData,
+        // Forest<DotVertexData, ChildVecStore<()>>,
+    > = dot!(
+    digraph {
+
+      0 [label = "∑"];
+      1 [label = "S:4"];
+      ext0 [shape=none, label="" flow=sink];
+      ext0 -> 0[dir=back color="red"];
+      ext2 [shape=none, label="" flow=source];
+      ext2 -> 0[dir=forward color="blue"];
+      1 -> 0[ dir=forward color="red:blue;0.5"];
+    })
+    .unwrap();
+
+    //with
+
+    let mut one: HedgeGraph<
+        crate::dot_parser::DotEdgeData,
+        crate::dot_parser::DotVertexData,
+        // Forest<DotVertexData, ChildVecStore<()>>,
+    > = dot!(digraph {
+      node [shape=circle,height=0.1,label=""];  overlap="scale"; layout="neato";
+
+      0 [label = "S:5"];
+      ext0 [shape=none, label="" flow=sink];
+      ext0 -> 0[dir=back color="red"];
+    })
+    .unwrap();
+
+    one.join_mut(
+        two,
+        |sf, _, of, _| {
+            println!("{sf:?}vs{of:?}");
+            sf == -of
+        },
+        |sf, sd, _, _| (sf, sd),
+    )
+    .unwrap();
+
+    println!("{}", one.base_dot())
+}
+
+#[test]
 fn threeloop() {
     let mut builder: HedgeGraphBuilder<(), ()> = HedgeGraphBuilder::new();
     let a = builder.add_node(());

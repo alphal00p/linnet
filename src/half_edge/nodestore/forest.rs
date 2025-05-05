@@ -623,8 +623,8 @@ impl<V, P: ForestNodeStore + ForestNodeStorePreorder + Clone> NodeStorageOps for
             roots: self
                 .roots
                 .iter_mut()
-                .enumerate()
-                .map(|(_, r)| {
+                // .enumerate()
+                .map(|r| {
                     let root_id = r.root_id;
 
                     RootData {

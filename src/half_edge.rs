@@ -99,7 +99,7 @@ pub mod subgraph;
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct HedgeGraph<E, V, S: NodeStorage<NodeData = V> = NodeStorageVec<V>> {
     edge_store: SmartHedgeVec<E>,
-    node_store: S,
+    pub node_store: S,
 }
 
 #[cfg(feature = "bincode")]
@@ -1976,8 +1976,8 @@ where
 
 #[derive(Debug, Error)]
 pub enum HedgeGraphError {
-    #[error("Nodes do not partition")]
-    NodesDoNotPartition,
+    #[error("Nodes do not partition: {0}")]
+    NodesDoNotPartition(String),
     #[error("Invalid node")]
     NoNode,
     #[error("Invalid hedge {0}")]

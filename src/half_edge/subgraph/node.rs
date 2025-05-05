@@ -206,10 +206,6 @@ impl SubGraphOps for HedgeNode {
     }
 }
 impl HedgeNode {
-    fn all_edges(&self) -> BitVec {
-        self.internal_graph.filter.clone() | &self.hairs
-    }
-
     pub fn from_internal_graph<E, V, N: NodeStorageOps<NodeData = V>>(
         subgraph: InternalSubGraph,
         graph: &HedgeGraph<E, V, N>,

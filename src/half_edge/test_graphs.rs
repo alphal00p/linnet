@@ -49,6 +49,7 @@ fn test_coxeter() -> TestResult {
 
 // Test Graph Structures
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 enum TestGraph {
     Petersen,
     MoebiusLadder(usize),              // n rungs
@@ -437,6 +438,7 @@ use std::fmt;
 type TestResult = Result<(), TestError>;
 
 #[derive(Debug)]
+#[allow(dead_code)]
 enum TestError {
     WrongNodeCount {
         expected: usize,
@@ -510,6 +512,7 @@ impl std::fmt::Display for TestError {
 // }
 
 #[derive(Debug)]
+#[allow(dead_code)]
 struct GraphProperties {
     n_nodes: usize,
     n_edges: usize,

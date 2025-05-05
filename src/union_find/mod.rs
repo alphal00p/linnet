@@ -112,6 +112,7 @@ impl<U> UnionFind<U> {
     }
 
     // if true,then extract
+    #[allow(clippy::manual_map)]
     pub fn extract<O>(
         &mut self,
         mut part: impl FnMut(ParentPointer) -> bool,
@@ -391,11 +392,12 @@ impl<U> UnionFind<U> {
     }
 
     pub fn is_child(&self, x: ParentPointer) -> bool {
-        if let UFNode::Child(_) = self[&x].get() {
-            true
-        } else {
-            false
-        }
+        matches!(self[&x].get(), UFNode::Child(_))
+        // if let UFNode::Child(_) = self[&x].get() {
+        //     true
+        // } else {
+        //     false
+        // }
     }
 
     /// Returns the `SetIndex` for the set containing `x`.
