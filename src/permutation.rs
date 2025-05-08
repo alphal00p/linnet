@@ -1,4 +1,6 @@
-use std::{collections::BTreeMap, fmt, ops::Index};
+use std::{
+    collections::BTreeMap, fmt, iter::FusedIterator, marker::PhantomData, ops::Index, ptr::NonNull,
+};
 
 use crate::half_edge::{
     involution::Hedge,
@@ -212,6 +214,103 @@ impl Permutation {
     pub fn compose(&self, other: &Self) -> Self {
         let map = other.map.iter().map(|&i| self.map[i]).collect();
         Self::from_map(map)
+    }
+
+    // --------------------------------------------------------------------------------------------
+    // Iterating
+    // --------------------------------------------------------------------------------------------
+
+    /// Returns an iterator that yields references to the elements of the slice
+    /// in the order specified by the permutation.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use linnet::permutation::Permutation;
+    /// let p = Permutation::from_map(vec![2, 0, 1]);
+    /// let data = vec![10, 20, 30];
+    /// let mut iter = p.iter_slice(&data);
+    /// assert_eq!(iter.next(), Some(&30));
+    /// assert_eq!(iter.next(), Some(&10));
+    /// assert_eq!(iter.next(), Some(&20));
+    /// assert_eq!(iter.next(), None);
+    /// ```
+    pub fn iter_slice<'a, T>(&'a self, slice: &'a [T]) -> PermutationMapIter<'a, T> {
+        PermutationMapIter::new(slice, &self.inv)
+    }
+
+    /// Returns an iterator that yields references to the elements of the slice
+    /// in the order specified by the inverse of the permutation.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use linnet::permutation::Permutation;
+    /// let p = Permutation::from_map(vec![2, 0, 1]); // map: 0->2, 1->0, 2->1
+    ///                                             // inv: 0->1, 1->2, 2->0
+    /// let data = vec![10, 20, 30]; // p.apply_slice_inv(&data) would be [20, 30, 10]
+    /// let mut iter = p.iter_slice_inv(&data);
+    /// assert_eq!(iter.next(), Some(&20)); // data[inv[0]] = data[1]
+    /// assert_eq!(iter.next(), Some(&30)); // data[inv[1]] = data[2]
+    /// assert_eq!(iter.next(), Some(&10)); // data[inv[2]] = data[0]
+    /// assert_eq!(iter.next(), None);
+    /// ```
+    pub fn iter_slice_inv<'a, T>(&'a self, slice: &'a [T]) -> PermutationInvIter<'a, T> {
+        PermutationInvIter::new(slice, &self.inv)
+    }
+
+    /// Returns a mutable iterator that yields mutable references to the elements of the slice
+    /// in the order specified by the permutation's `map`.
+    ///
+    /// The iterator's length is `self.len()`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `slice.len()` is less than `self.len()`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use linnet::permutation::Permutation;
+    /// let p = Permutation::from_map(vec![2, 0, 1]);
+    /// let mut data = vec![10, 20, 30];
+    /// for (i, val_ref) in p.iter_slice_mut(&mut data).enumerate() {
+    ///     *val_ref += i * 100; // 0->30, 1->10, 2->20
+    /// }
+    /// // data was permuted to [10,20,30] then modified in permuted order
+    /// // Original indices: data[map[0]=2] (30) gets +0 -> 30
+    /// //                   data[map[1]=0] (10) gets +100 -> 110
+    /// //                   data[map[2]=1] (20) gets +200 -> 220
+    /// assert_eq!(data, vec![110, 220, 30]);
+    /// ```
+    pub fn iter_slice_mut<'a, T>(&'a self, slice: &'a mut [T]) -> PermutationMapIterMut<'a, T> {
+        PermutationMapIterMut::new(slice, &self.map)
+    }
+
+    /// Returns a mutable iterator that yields mutable references to the elements of the slice
+    /// in the order specified by the permutation's `inv` (inverse) map.
+    ///
+    /// The iterator's length is `self.len()`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `slice.len()` is less than `self.len()`.
+    /// # Examples
+    ///
+    /// ```
+    /// # use linnet::permutation::Permutation;
+    /// let p = Permutation::from_map(vec![2, 0, 1]); // inv: [1, 2, 0]
+    /// let mut data = vec![10, 20, 30];
+    /// for (i, val_ref) in p.iter_slice_inv_mut(&mut data).enumerate() {
+    ///     *val_ref += i * 100; // 0->data[1]=20, 1->data[2]=30, 2->data[0]=10
+    /// }
+    /// // Original indices: data[inv[0]=1] (20) gets +0 -> 20
+    /// //                   data[inv[1]=2] (30) gets +100 -> 130
+    /// //                   data[inv[2]=0] (10) gets +200 -> 210
+    /// assert_eq!(data, vec![210, 20, 130]);
+    /// ```
+    pub fn iter_slice_inv_mut<'a, T>(&'a self, slice: &'a mut [T]) -> PermutationInvIterMut<'a, T> {
+        PermutationInvIterMut::new(slice, &self.inv)
     }
 
     // --------------------------------------------------------------------------------------------
@@ -897,6 +996,246 @@ impl<E, V, O: Ord> PermutationExt<O> for HedgeGraph<E, V> {
     }
 }
 
+#[derive(Debug)]
+pub struct PermutationMapIterMut<'a, T: 'a> {
+    ptr: NonNull<T>,
+    map_indices: &'a [usize],
+    current_map_idx: usize,
+    len: usize,
+    _marker: PhantomData<&'a mut T>,
+}
+
+impl<'a, T: 'a> PermutationMapIterMut<'a, T> {
+    fn new(slice: &'a mut [T], map_indices: &'a [usize]) -> Self {
+        let slice_len = slice.len();
+        let perm_len = map_indices.len();
+        assert!(
+            slice_len >= perm_len,
+            "Slice length ({}) must be at least the permutation length ({}) for mutable iteration via map.",
+            slice_len,
+            perm_len
+        );
+        // This assertion also implicitly ensures that all indices in map_indices are valid
+        // if the permutation itself is valid (i.e., all its map indices are < perm_len).
+        PermutationMapIterMut {
+            ptr: NonNull::new(slice.as_mut_ptr()).expect("Slice pointer cannot be null"),
+            map_indices,
+            current_map_idx: 0,
+            len: perm_len,
+            _marker: PhantomData,
+        }
+    }
+}
+
+impl<'a, T> Iterator for PermutationMapIterMut<'a, T> {
+    type Item = &'a mut T;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.current_map_idx >= self.map_indices.len() {
+            None
+        } else {
+            let perm_idx = self.map_indices[self.current_map_idx];
+            self.current_map_idx += 1;
+            self.len -= 1;
+            // SAFETY:
+            // - `ptr` is valid and non-null for the lifetime 'a.
+            // - `perm_idx` is an index from the permutation's map.
+            // - `PermutationMapIterMut::new` asserts that `slice.len()` is sufficient,
+            //   and that all `map_indices` are valid for a slice of length `map_indices.len()`.
+            // - Each call to `next` uses a unique index from `map_indices`,
+            //   yielding a mutable reference to a distinct element.
+            unsafe { Some(&mut *self.ptr.as_ptr().add(perm_idx)) }
+        }
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (self.len, Some(self.len))
+    }
+}
+
+impl<T> ExactSizeIterator for PermutationMapIterMut<'_, T> {
+    fn len(&self) -> usize {
+        self.len
+    }
+}
+
+impl<T> FusedIterator for PermutationMapIterMut<'_, T> {}
+
+/// An iterator over a slice, ordered by a permutation's `map`.
+#[derive(Debug, Clone)] // Added Clone
+pub struct PermutationMapIter<'a, T: 'a> {
+    slice: &'a [T],
+    map_indices: &'a [usize],
+    current_map_idx: usize,
+    // No PhantomData needed if we don't have a mutable reference like &'a mut T.
+    // However, it's good practice for iterators holding lifetimes.
+    _marker: PhantomData<&'a T>,
+}
+
+impl<'a, T: 'a> PermutationMapIter<'a, T> {
+    fn new(slice: &'a [T], map_indices: &'a [usize]) -> Self {
+        // Assertion to ensure slice is long enough for all indices in map_indices.
+        // This relies on the Permutation's map_indices being valid for its own length.
+        if !map_indices.is_empty() {
+            assert!(
+                map_indices.iter().all(|&idx| idx < slice.len()),
+                "Slice length ({}) is too short for all indices in permutation map. Max index in map: {:?}",
+                slice.len(),
+                map_indices.iter().max()
+            );
+        }
+
+        PermutationMapIter {
+            slice,
+            map_indices,
+            current_map_idx: 0,
+            _marker: PhantomData,
+        }
+    }
+}
+
+impl<'a, T> Iterator for PermutationMapIter<'a, T> {
+    type Item = &'a T;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.current_map_idx >= self.map_indices.len() {
+            None
+        } else {
+            let perm_idx = self.map_indices[self.current_map_idx];
+            self.current_map_idx += 1;
+            // Safety: new() asserts that all map_indices are valid for the slice.
+            Some(&self.slice[perm_idx])
+        }
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let len = self.map_indices.len() - self.current_map_idx;
+        (len, Some(len))
+    }
+}
+
+impl<T> ExactSizeIterator for PermutationMapIter<'_, T> {
+    fn len(&self) -> usize {
+        self.map_indices.len() - self.current_map_idx
+    }
+}
+
+impl<T> FusedIterator for PermutationMapIter<'_, T> {}
+
+/// An iterator over a slice, ordered by a permutation's inverse `inv` map.
+#[derive(Debug, Clone)] // Added Clone
+pub struct PermutationInvIter<'a, T: 'a> {
+    slice: &'a [T],
+    inv_map_indices: &'a [usize],
+    current_map_idx: usize,
+    _marker: PhantomData<&'a T>,
+}
+
+impl<'a, T: 'a> PermutationInvIter<'a, T> {
+    fn new(slice: &'a [T], inv_map_indices: &'a [usize]) -> Self {
+        if !inv_map_indices.is_empty() {
+            assert!(
+                inv_map_indices.iter().all(|&idx| idx < slice.len()),
+                "Slice length ({}) is too short for all indices in permutation inverse map. Max index in inv_map: {:?}",
+                slice.len(),
+                inv_map_indices.iter().max()
+            );
+        }
+        PermutationInvIter {
+            slice,
+            inv_map_indices,
+            current_map_idx: 0,
+            _marker: PhantomData,
+        }
+    }
+}
+
+impl<'a, T> Iterator for PermutationInvIter<'a, T> {
+    type Item = &'a T;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.current_map_idx >= self.inv_map_indices.len() {
+            None
+        } else {
+            let perm_idx = self.inv_map_indices[self.current_map_idx];
+            self.current_map_idx += 1;
+            // Safety: new() asserts that all inv_map_indices are valid for the slice.
+            Some(&self.slice[perm_idx])
+        }
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let len = self.inv_map_indices.len() - self.current_map_idx;
+        (len, Some(len))
+    }
+}
+
+impl<T> ExactSizeIterator for PermutationInvIter<'_, T> {
+    fn len(&self) -> usize {
+        self.inv_map_indices.len() - self.current_map_idx
+    }
+}
+
+impl<T> FusedIterator for PermutationInvIter<'_, T> {}
+
+/// A mutable iterator over a slice, ordered by a permutation's inverse `inv` map.
+#[derive(Debug)]
+pub struct PermutationInvIterMut<'a, T: 'a> {
+    ptr: NonNull<T>,
+    inv_map_indices: &'a [usize],
+    current_map_idx: usize,
+    len: usize,
+    _marker: PhantomData<&'a mut T>,
+}
+
+impl<'a, T: 'a> PermutationInvIterMut<'a, T> {
+    fn new(slice: &'a mut [T], inv_map_indices: &'a [usize]) -> Self {
+        let slice_len = slice.len();
+        let perm_len = inv_map_indices.len();
+        assert!(
+            slice_len >= perm_len,
+            "Slice length ({}) must be at least the permutation length ({}) for mutable iteration via inverse map.",
+            slice_len,
+            perm_len
+        );
+        PermutationInvIterMut {
+            ptr: NonNull::new(slice.as_mut_ptr()).expect("Slice pointer cannot be null"),
+            inv_map_indices,
+            current_map_idx: 0,
+            len: perm_len,
+            _marker: PhantomData,
+        }
+    }
+}
+
+impl<'a, T> Iterator for PermutationInvIterMut<'a, T> {
+    type Item = &'a mut T;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.current_map_idx >= self.inv_map_indices.len() {
+            None
+        } else {
+            let perm_idx = self.inv_map_indices[self.current_map_idx];
+            self.current_map_idx += 1;
+            self.len -= 1;
+            // SAFETY: See PermutationMapIterMut::next
+            unsafe { Some(&mut *self.ptr.as_ptr().add(perm_idx)) }
+        }
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (self.len, Some(self.len))
+    }
+}
+
+impl<T> ExactSizeIterator for PermutationInvIterMut<'_, T> {
+    fn len(&self) -> usize {
+        self.len
+    }
+}
+
+impl<T> FusedIterator for PermutationInvIterMut<'_, T> {}
+
 impl Index<usize> for Permutation {
     type Output = usize;
 
@@ -1055,6 +1394,65 @@ mod tests {
     }
 
     #[test]
+    fn test_iter_slice_concrete_type_properties() {
+        let p = Permutation::from_map(vec![1, 0, 2]);
+        let data = vec![10, 20, 30];
+        let mut iter = p.iter_slice(&data);
+
+        assert_eq!(iter.len(), 3);
+        assert_eq!(iter.size_hint(), (3, Some(3)));
+        assert_eq!(iter.next(), Some(&20));
+        assert_eq!(iter.len(), 2);
+        assert_eq!(iter.size_hint(), (2, Some(2)));
+
+        let iter_clone = iter.clone();
+        assert_eq!(iter.collect::<Vec<_>>(), vec![&10, &30]); // Consumes iter
+        assert_eq!(iter_clone.collect::<Vec<_>>(), vec![&10, &30]); // iter_clone is independent
+    }
+
+    #[test]
+    fn test_iter_slice_inv_concrete_type_properties() {
+        let p = Permutation::from_map(vec![1, 0, 2]); // inv: [1, 0, 2]
+        let data = vec![10, 20, 30];
+        let mut iter = p.iter_slice_inv(&data);
+
+        assert_eq!(iter.len(), 3);
+        assert_eq!(iter.size_hint(), (3, Some(3)));
+        assert_eq!(iter.next(), Some(&20));
+        assert_eq!(iter.len(), 2);
+        assert_eq!(iter.size_hint(), (2, Some(2)));
+
+        let iter_clone = iter.clone();
+        // original iter: after next(), it points to data[p.inv[1]=0] (10), then data[p.inv[2]=2] (30)
+        assert_eq!(iter.collect::<Vec<_>>(), vec![&10, &30]);
+        assert_eq!(iter_clone.collect::<Vec<_>>(), vec![&10, &30]);
+    }
+
+    #[test]
+    #[should_panic(expected = "Slice length (2) is too short for all indices in permutation map.")]
+    fn test_iter_slice_panic_too_short() {
+        let p = Permutation::from_map(vec![0, 1, 2]); // Needs slice of length at least 3
+        let data = vec![0, 0]; // Too short
+        let _iter = p.iter_slice(&data);
+    }
+
+    #[test]
+    #[should_panic(expected = "Slice length (0) is too short for all indices in permutation map.")]
+    fn test_iter_slice_panic_map_idx_out_of_bounds() {
+        // This case should ideally be caught by Permutation::from_map validation
+        // but if map somehow contains an index larger than its own length, this test covers iter_slice.
+        // However, current Permutation::from_map generates inv based on map.len(),
+        // so map itself won't have indices > map.len().
+        // This test ensures that if map_indices somehow had an index pointing beyond slice.len(), it would panic.
+        let p = Permutation {
+            map: vec![0, 5, 1],
+            inv: vec![0, 2, 1],
+        }; // map[1] = 5
+        let data = vec![10, 20, 30]; // slice.len() = 3, but map[1] is 5.
+        let _iter = p.iter_slice(&data);
+    }
+
+    #[test]
     fn test_apply_slice_inv() {
         let p = Permutation::from_map(vec![2, 1, 3, 0]);
         let data = vec![10, 20, 30, 40];
@@ -1126,7 +1524,39 @@ mod tests {
         assert_eq!(original_data, data);
     }
 
-    // -- ADDED TESTS
+    #[test]
+    fn test_iter_slice() {
+        let p = Permutation::from_map(vec![2, 0, 1, 3]);
+        let data = vec!["a", "b", "c", "d"];
+        let mut iter = p.iter_slice(&data);
+        assert_eq!(iter.next(), Some(&"c")); // map[0] = 2 -> data[2]
+        assert_eq!(iter.next(), Some(&"a")); // map[1] = 0 -> data[0]
+        assert_eq!(iter.next(), Some(&"b")); // map[2] = 1 -> data[1]
+        assert_eq!(iter.next(), Some(&"d")); // map[3] = 3 -> data[3]
+        assert_eq!(iter.next(), None);
+
+        let p_id = Permutation::id(3);
+        let data_id = vec![100, 200, 300];
+        let collected: Vec<&i32> = p_id.iter_slice(&data_id).collect();
+        assert_eq!(collected, vec![&100, &200, &300]);
+    }
+
+    #[test]
+    fn test_iter_slice_inv() {
+        let p = Permutation::from_map(vec![2, 0, 1, 3]); // inv: [1, 2, 0, 3]
+        let data = vec!["a", "b", "c", "d"];
+        let mut iter = p.iter_slice_inv(&data);
+        assert_eq!(iter.next(), Some(&"b")); // inv[0] = 1 -> data[1]
+        assert_eq!(iter.next(), Some(&"c")); // inv[1] = 2 -> data[2]
+        assert_eq!(iter.next(), Some(&"a")); // inv[2] = 0 -> data[0]
+        assert_eq!(iter.next(), Some(&"d")); // inv[3] = 3 -> data[3]
+        assert_eq!(iter.next(), None);
+
+        let p_id = Permutation::id(3);
+        let data_id = vec![100, 200, 300];
+        let collected: Vec<&i32> = p_id.iter_slice_inv(&data_id).collect();
+        assert_eq!(collected, vec![&100, &200, &300]);
+    }
 
     #[test]
     fn test_is_identity() {
