@@ -1403,7 +1403,8 @@ impl<E> Involution<E> {
                     underlying,
                 },
                 InvolutiveMapping::Sink { source_idx } => {
-                    if source_idx > left {
+                    if source_idx >= left {
+                        // left includes the hedge extracted (it is the length of the left hedges)
                         InvolutiveMapping::Sink {
                             source_idx: Hedge(source_idx.0 - left.0),
                         }

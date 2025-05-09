@@ -73,6 +73,31 @@ fn extract_forest() {
 }
 
 #[test]
+fn extact_single_dangling() {
+    let mut simple = HedgeGraphBuilder::new();
+    let n1 = simple.add_node(());
+    let n2 = simple.add_node(());
+    simple.add_edge(n1, n2, (), false);
+    simple.add_external_edge(n1, (), false, Flow::Sink);
+    simple.add_edge(n1, n1, (), false);
+    simple.add_external_edge(n2, (), false, Flow::Sink);
+    let mut simple: HedgeGraph<(), ()> = simple.build();
+
+    let mut single_hair: BitVec = simple.empty_subgraph();
+    if let Some(s) = simple.iter_all_edges().find(|a| a.0.is_unpaired()) {
+        single_hair.add(s.0);
+    }
+
+    simple.extract(
+        &single_hair,
+        |a| a.map(Clone::clone),
+        |a| a,
+        |a| a.clone(),
+        |a| a,
+    );
+}
+
+#[test]
 fn extract_buggy() {
     let mut aligned: HedgeGraph<
         crate::dot_parser::DotEdgeData,
