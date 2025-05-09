@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.2](https://github.com/alphal00p/linnet/compare/v0.5.1...v0.5.2) - 2025-05-09
+
+### Fixed
+
+- fix involution extraction
+
+### Other
+
+- Add Permutation iterators, new graph extract test
+
 ## [0.5.1](https://github.com/alphal00p/linnet/compare/v0.5.0...v0.5.1) - 2025-05-05
 
 ### Other
