@@ -1138,7 +1138,7 @@ impl<T> Index<&Hedge> for SmartHedgeVec<T> {
 }
 
 // Data stored once per edge (pair of half-edges or external edge)
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
 pub struct HedgeVec<T>(pub(super) Vec<T>);
