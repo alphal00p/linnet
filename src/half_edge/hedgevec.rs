@@ -1196,4 +1196,8 @@ impl<T> HedgeVec<T> {
     pub fn get_raw(self) -> Vec<T> {
         self.0
     }
+
+    pub fn from_raw(data: Vec<T>) -> Self {
+        HedgeVec(data)
+    }
 }
