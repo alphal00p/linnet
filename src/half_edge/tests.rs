@@ -20,6 +20,30 @@ fn cycle_basis() {
 }
 
 #[test]
+fn test_spanning_trees_of_tree() {
+    let tree: HedgeGraph<
+        crate::dot_parser::DotEdgeData,
+        crate::dot_parser::DotVertexData,
+        // Forest<DotVertexData, ChildVecStore<()>>,
+    > = dot!(
+    digraph {
+         1->2
+         1->0
+         2->5
+          2 -> 3
+          3 -> 4
+    })
+    .unwrap();
+    let trees = tree.all_spanning_trees(&tree.full_filter());
+
+    for t in &trees {
+        println!("{}", tree.dot(t))
+    }
+
+    assert_eq!(trees.len(), 1);
+}
+
+#[test]
 fn join_mut_simple() {
     let two: HedgeGraph<
         crate::dot_parser::DotEdgeData,

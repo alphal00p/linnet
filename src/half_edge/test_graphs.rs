@@ -17,6 +17,15 @@ fn test_mobius_ladder_6() -> TestResult {
 #[test]
 fn test_complete_5() -> TestResult {
     println!("{}", TestGraph::Complete(5).build().0.base_dot());
+    let complete = TestGraph::Complete(5).build().0;
+    let trees = complete.all_spanning_trees(&complete.full_filter());
+
+    // for t in &trees {
+    //     println!("{}", complete.dot(t))
+    // }
+
+    assert_eq!(trees.len(), 5usize.pow(5 - 2));
+
     TestGraph::Complete(5).test_all()
 }
 
@@ -24,6 +33,21 @@ fn test_complete_5() -> TestResult {
 fn test_flower_4() -> TestResult {
     println!("{}", TestGraph::Flower(4).build().0.base_dot());
     TestGraph::Flower(4).test_all()
+}
+
+#[test]
+fn test_cycle_5() -> TestResult {
+    println!("{}", TestGraph::Cycle(5).build().0.base_dot());
+
+    let cycle = TestGraph::Cycle(5).build();
+    let trees = cycle.0.all_spanning_trees(&cycle.0.full_filter());
+
+    // for t in &trees {
+    //     println!("{}", cycle.0.dot(t))
+    // }
+
+    assert_eq!(trees.len(), 5);
+    TestGraph::Cycle(5).test_all()
 }
 
 // #[test]
@@ -58,6 +82,7 @@ enum TestGraph {
     PrismGraph(usize),                 // n-prism
     GeneralizedPetersen(usize, usize), // GP(n,k)
     Flower(usize),                     // n petals
+    Cycle(usize),                      // cycle of length n
     Heawood,
     MobiusKantor,
     Folkman,
@@ -79,6 +104,7 @@ impl fmt::Display for TestGraph {
             TestGraph::MoebiusLadder(n) => write!(f, "MoebiusLadder({})", n),
             TestGraph::Complete(n) => write!(f, "Complete({})", n),
             TestGraph::Flower(n) => write!(f, "Flower({})", n),
+            TestGraph::Cycle(n) => write!(f, "Cycle({})", n),
             TestGraph::CompleteBipartite(n, m) => write!(f, "CompleteBipartite({}, {})", n, m),
             TestGraph::PrismGraph(n) => write!(f, "PrismGraph({})", n),
             TestGraph::GeneralizedPetersen(n, k) => write!(f, "GeneralizedPetersen({}, {})", n, k),
@@ -424,6 +450,32 @@ impl TestGraph {
                     diameter: 2,
                     is_bipartite: n % 2 == 0,
                     cyclotomatic_number: *n,
+                };
+
+                (builder.build(), properties)
+            }
+
+            TestGraph::Cycle(n) => {
+                // Create n nodes in a cycle
+                let nodes: Vec<_> = (0..*n).map(|_| builder.add_node(())).collect();
+
+                // Connect nodes in a cycle: 0->1->2->...->n-1->0
+                for i in 0..*n {
+                    let j = (i + 1) % *n;
+                    builder.add_edge(nodes[i], nodes[j], (), false);
+                }
+
+                let properties = GraphProperties {
+                    n_nodes: *n,
+                    n_edges: *n,
+                    n_cycles: if *n >= 3 { 1 } else { 0 },
+                    connected_components: 1,
+                    min_degree: 2,
+                    max_degree: 2,
+                    girth: if *n >= 3 { Some(*n) } else { None },
+                    diameter: *n / 2,
+                    is_bipartite: *n % 2 == 0,
+                    cyclotomatic_number: 1,
                 };
 
                 (builder.build(), properties)

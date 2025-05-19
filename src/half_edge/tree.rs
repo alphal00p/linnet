@@ -43,7 +43,7 @@ use super::{
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
 pub enum TTRoot {
-    Child,
+    Child(usize),
     Root,
     None,
 }
@@ -51,7 +51,7 @@ pub enum TTRoot {
 impl TTRoot {
     pub fn includes(&self) -> bool {
         match self {
-            TTRoot::Child => true,
+            TTRoot::Child(_) => true,
             TTRoot::Root => true,
             TTRoot::None => false,
         }
@@ -59,7 +59,7 @@ impl TTRoot {
 
     pub fn is_root(&self) -> bool {
         match self {
-            TTRoot::Child => false,
+            TTRoot::Child(_) => false,
             TTRoot::Root => true,
             TTRoot::None => false,
         }
@@ -67,7 +67,7 @@ impl TTRoot {
 
     pub fn is_child(&self) -> bool {
         match self {
-            TTRoot::Child => true,
+            TTRoot::Child(_) => true,
             TTRoot::Root => false,
             TTRoot::None => false,
         }
@@ -148,6 +148,19 @@ impl<P: ForestNodeStore<NodeData = ()>> SimpleTraversalTree<P> {
 }
 
 impl<P: ForestNodeStore<NodeData = ()>> SimpleTraversalTree<P> {
+    pub fn node_order(&self) -> Vec<NodeIndex> {
+        self.forest
+            .iter_roots()
+            .enumerate()
+            .filter_map(|(i, (a, _))| match a {
+                TTRoot::Root => Some((0, i)),
+                TTRoot::Child(a) => Some((*a, i)),
+                _ => None,
+            })
+            .sorted_by(|a, b| a.0.cmp(&b.0))
+            .map(|a| NodeIndex(a.1))
+            .collect()
+    }
     pub fn covers<S: SubGraph>(&self, subgraph: &S) -> BitVec {
         // println!("calculating covers..");
         let mut covers = BitVec::empty(self.tree_subgraph.len());
@@ -229,7 +242,7 @@ impl<P: ForestNodeStore<NodeData = ()>> SimpleTraversalTree<P> {
         let root = self.forest.root(from.into()); //Get "NodeId/RootId"
 
         match self.forest[root] {
-            TTRoot::Child => {
+            TTRoot::Child(_) => {
                 let roothedge = self.forest[&root].into(); //Get "chosen" root among node hairs
 
                 if from == roothedge {
@@ -532,6 +545,8 @@ impl SimpleTraversalTree {
         let mut init = Self::empty(graph);
         init.forest[RootId(root_node.0)] = TTRoot::Root;
 
+        let mut iter_order = 0;
+
         while let Some(hedge) = stack.pop() {
             // if the hedge is not external get the neighbors of the paired hedge
             if let Some(cn) = graph.involved_node_crown(hedge) {
@@ -543,7 +558,8 @@ impl SimpleTraversalTree {
                     init.tree_subgraph.set(connected.0, true);
                     init.tree_subgraph.set(hedge.0, true);
                     let node_id = init.forest.change_to_root(connected.into());
-                    init.forest[node_id] = TTRoot::Child;
+                    iter_order += 1;
+                    init.forest[node_id] = TTRoot::Child(iter_order);
                 } else {
                     continue;
                 }
@@ -594,6 +610,7 @@ impl SimpleTraversalTree {
 
         let mut init = Self::empty(graph);
 
+        let mut iter_order = 0;
         init.forest[RootId(root_node.0)] = TTRoot::Root;
         while let Some(hedge) = queue.pop_front() {
             // if the hedge is not external get the neighbors of the paired hedge
@@ -607,7 +624,8 @@ impl SimpleTraversalTree {
                     init.tree_subgraph.set(connected.0, true);
                     init.tree_subgraph.set(hedge.0, true);
                     let node_id = init.forest.change_to_root(connected.into());
-                    init.forest[node_id] = TTRoot::Child;
+                    iter_order += 1;
+                    init.forest[node_id] = TTRoot::Child(iter_order);
                 } else {
                     continue;
                 }

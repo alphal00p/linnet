@@ -11,7 +11,7 @@ use ahash::AHashSet;
 use bitvec::{bitvec, order::Lsb0, vec::BitVec};
 
 use super::{
-    involution::{Flow, HedgePair},
+    involution::{EdgeIndex, Flow, HedgePair},
     nodestore::NodeStorageOps,
     GVEdgeAttrs, Hedge, HedgeGraph, NodeStorage, PowersetIterator,
 };
@@ -210,7 +210,7 @@ pub trait SubGraph:
     + Inclusion<std::ops::RangeFrom<Hedge>>
     + Inclusion<Hedge>
 {
-    type Base: BaseSubgraph;
+    type Base: SubGraph;
     type BaseIter<'a>: Iterator<Item = Hedge>
     where
         Self: 'a;
@@ -685,3 +685,7 @@ pub mod internal;
 pub use internal::InternalSubGraph;
 pub mod node;
 pub use node::HedgeNode;
+pub mod empty;
+pub use empty::Empty;
+pub mod full;
+pub use full::FullOrEmpty;

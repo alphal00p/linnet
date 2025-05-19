@@ -463,6 +463,41 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
 
 // Subgraphs
 impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
+    /// Returns a new subgraph of subgraph, with only the half-edges that are split or unpaired (i.e external for this subgraph)
+    pub fn internal_crown<S: SubGraph>(&self, subgraph: &S) -> S::Base
+    where
+        S::Base: ModifySubgraph<HedgePair>,
+    {
+        let mut crown = S::Base::empty(self.n_hedges());
+
+        for (p, _, _) in self.iter_edges(subgraph) {
+            if !p.is_paired() {
+                crown.add(p)
+            }
+        }
+
+        crown
+    }
+
+    /// Returns a new subgraph, with only the half-edges that are split or unpaired (i.e external for this subgraph). This subgraph might include edges not present in the initial subgraph
+    pub fn full_crown<S: SubGraph>(&self, subgraph: &S) -> S::Base
+    where
+        S::Base: ModifySubgraph<Hedge>,
+    {
+        let mut crown = S::Base::empty(self.n_hedges());
+
+        for (_, n, _) in self.iter_node_data(subgraph) {
+            for h in n {
+                let invh = self.inv(h);
+                if h == invh || subgraph.includes(&invh) {
+                    crown.add(h);
+                }
+            }
+        }
+
+        crown
+    }
+
     pub fn paired_filter_from_pos(&self, pos: &[Hedge]) -> BitVec {
         let mut filter = bitvec![usize, Lsb0; 0; self.n_hedges()];
 
@@ -490,6 +525,14 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
     /// Bitvec subgraph of all hedges
     pub fn full_filter(&self) -> BitVec {
         bitvec![usize, Lsb0; 1; self.n_hedges()]
+    }
+
+    pub fn full(&self) -> FullOrEmpty {
+        FullOrEmpty::full(self.n_hedges())
+    }
+
+    pub fn empty(&self) -> FullOrEmpty {
+        FullOrEmpty::empty(self.n_hedges())
     }
 
     /// Get a hairless subgraph, deleting all hairs from the subgraph
@@ -786,11 +829,14 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
     }
 
     ///Retains the NodeIndex ordering and just appends a new node.
-    pub fn identify_nodes_without_self_edges<S: BaseSubgraph>(
+    pub fn identify_nodes_without_self_edges<S: SubGraph>(
         &mut self,
         nodes: &[NodeIndex],
         node_data_merge: V,
-    ) -> (NodeIndex, S) {
+    ) -> (NodeIndex, S)
+    where
+        S: ModifySubgraph<Hedge>,
+    {
         let mut self_edges: S = self.empty_subgraph();
         for n in nodes {
             for h in self.iter_crown(*n) {
@@ -1282,6 +1328,104 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
 
 // Cycles
 impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
+    ///Gives all subgraphs corresponding to all the spanning trees of the graph
+    ///Winter, Pawel. “An Algorithm for the Enumeration of Spanning Trees.” BIT Numerical Mathematics 26, no. 1 (March 1, 1986): 44–62. https://doi.org/10.1007/BF01939361.
+    pub fn all_spanning_trees<S: SubGraph>(&self, subgraph: &S) -> Vec<S::Base>
+    where
+        for<'a> N::OpStorage<&'a V>: Clone,
+        S::Base: SubGraph<Base = S::Base>
+            + SubGraphOps
+            + Clone
+            + ModifySubgraph<HedgePair>
+            + ModifySubgraph<Hedge>,
+    {
+        let ref_self = self.map_data_ref(|_, _, a| a, |_, _, _, a| a);
+
+        let exts = self.internal_crown(subgraph);
+
+        if let Some((root_node, _, _)) = self.iter_node_data(subgraph).next() {
+            let tree = SimpleTraversalTree::depth_first_traverse(self, subgraph, &root_node, None)
+                .unwrap();
+            let mut nodes = tree.node_order();
+            nodes.remove(0);
+
+            let mut included = subgraph.included().clone();
+            for h in exts.included_iter() {
+                included.sub(h);
+            }
+
+            ref_self.contract_edge_for_spanning(nodes, included)
+        } else {
+            vec![]
+        }
+    }
+
+    fn contract_edge_for_spanning<S>(self, mut nodes: Vec<NodeIndex>, mut subgraph: S) -> Vec<S>
+    where
+        V: Clone,
+        E: Clone,
+        N: Clone,
+        S: SubGraphOps
+            + Clone
+            + SubGraph<Base = S>
+            + ModifySubgraph<HedgePair>
+            + ModifySubgraph<Hedge>,
+    {
+        let mut trees = vec![];
+        if let Some(node) = nodes.pop() {
+            for h in self.iter_crown(node) {
+                //This is an internal edge
+                if subgraph.includes(&h) && subgraph.includes(&self.inv(h)) {
+                    //we found an neighboring vertex in the graph
+                    if let Some(new_node) = self.involved_node_id(h) {
+                        // This is not a dangling edge
+                        // if new_node != node {
+
+                        let node_data_merge = self[node].clone();
+                        let mut new_self = self.clone();
+
+                        // We now identify node and new_node. All spanning trees of this contracted graph will be spanning trees of the full graph, when adding one of the parallel edges
+                        let (mapped_node, parallel): (_, S::Base) = new_self
+                            .identify_nodes_without_self_edges(&[node, new_node], node_data_merge);
+
+                        let mapped_nodes = nodes
+                            .iter()
+                            .map(|a| {
+                                if *a == new_node || *a == node {
+                                    mapped_node
+                                } else {
+                                    *a
+                                }
+                            })
+                            .collect();
+
+                        for v in new_self
+                            .contract_edge_for_spanning(mapped_nodes, subgraph.subtract(&parallel))
+                        // recurse with a the node identified graph and the contracted edge subgraph
+                        {
+                            // v is the set of spanning trees of the contracted graph
+                            for (p, _, _) in self.iter_edges(&parallel.intersection(&subgraph)) {
+                                let mut with_p = v.clone();
+                                with_p.add(p);
+                                trees.push(with_p);
+                            }
+                        }
+
+                        // Remove all these edges from consideration.
+                        subgraph.subtract_with(&parallel);
+                    }
+                }
+            }
+        } else {
+            trees.push(self.empty_subgraph())
+        }
+
+        trees
+    }
+}
+
+// Cycles
+impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
     pub fn cyclotomatic_number<S: SubGraph>(&self, subgraph: &S) -> usize {
         let n_hedges = self.count_internal_edges(subgraph);
         // println!("n_hedges: {}", n_hedges);
@@ -1537,7 +1681,7 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
                         self.edge_store.set_flow(h, Flow::Source);
                     }
                 }
-                tree::TTRoot::Child => {
+                tree::TTRoot::Child(_) => {
                     if let Some(root_pointer) = i {
                         if root_pointer == h {
                             self.edge_store.set_flow(h, Flow::Source);
@@ -1594,7 +1738,7 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
                         self.edge_store.set_orientation(h, Orientation::Undirected);
                     }
                 }
-                tree::TTRoot::Child => {
+                tree::TTRoot::Child(_) => {
                     if let Some(root_pointer) = i {
                         let flow = self.edge_store.flow(h);
                         if root_pointer == h {
@@ -1920,13 +2064,14 @@ where
 pub mod symbolica_interop;
 
 use subgraph::{
-    BaseSubgraph, Cycle, HedgeNode, Inclusion, InternalSubGraph, ModifySubgraph, OrientedCut,
-    SubGraph, SubGraphOps,
+    BaseSubgraph, Cycle, FullOrEmpty, HedgeNode, Inclusion, InternalSubGraph, ModifySubgraph,
+    OrientedCut, SubGraph, SubGraphOps,
 };
 
 use thiserror::Error;
 use tree::SimpleTraversalTree;
 
+use crate::tree::child_vec::ChildVecStore;
 use crate::tree::ForestNodeStore;
 
 #[derive(Error, Debug)]

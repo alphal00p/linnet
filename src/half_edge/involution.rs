@@ -53,6 +53,13 @@ impl HedgePair {
         matches!(self, HedgePair::Unpaired { .. })
     }
 
+    pub fn is_paired(&self) -> bool {
+        matches!(self, HedgePair::Paired { .. })
+    }
+
+    pub fn is_split(&self) -> bool {
+        matches!(self, HedgePair::Split { .. })
+    }
     pub fn swap(&mut self) {
         match self {
             HedgePair::Unpaired { flow, .. } => {

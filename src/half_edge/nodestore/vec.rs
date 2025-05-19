@@ -81,14 +81,16 @@ impl<N> NodeStorage for NodeStorageVec<N> {
 
 impl<N> NodeStorageVec<N> {
     fn swap_nodes(&mut self, a: NodeIndex, b: NodeIndex) {
-        for i in self.nodes[a.0].included_iter() {
-            self.hedge_data[i.0] = b;
+        if a != b {
+            for i in self.nodes[a.0].included_iter() {
+                self.hedge_data[i.0] = b;
+            }
+            for i in self.nodes[b.0].included_iter() {
+                self.hedge_data[i.0] = a;
+            }
+            self.node_data.swap(a.0, b.0);
+            self.nodes.swap(a.0, b.0);
         }
-        for i in self.nodes[b.0].included_iter() {
-            self.hedge_data[i.0] = a;
-        }
-        self.node_data.swap(a.0, b.0);
-        self.nodes.swap(a.0, b.0);
     }
 
     fn from_hairs_and_data(node_data: Vec<N>, nodes: Vec<BitVec>) -> Option<Self> {
@@ -326,7 +328,7 @@ impl<N> NodeStorageOps for NodeStorageVec<N> {
         let replacement = NodeIndex(removed.iter_ones().next().unwrap());
 
         for r in removed.iter_ones().skip(1).rev() {
-            let last_index = self.nodes.len() - 1;
+            // let last_index = self.nodes.len() - 1;
 
             // Before doing anything, update any hedge pointers that point to the node being removed.
             for hedge in self.hedge_data.iter_mut() {
@@ -335,23 +337,23 @@ impl<N> NodeStorageOps for NodeStorageVec<N> {
                 }
             }
 
-            if r != last_index {
-                // Swap the target with the last element in both vectors.
-                self.nodes.swap(r, last_index);
-                self.node_data.swap(r, last_index);
+            // if r != last_index {
+            //     // Swap the target with the last element in both vectors.
+            //     self.nodes.swap(r, last_index);
+            //     self.node_data.swap(r, last_index);
 
-                // After swapping, update any hedge pointer that pointed to the moved element.
-                // It used to be at last_index, now it is at r.
-                for hedge in self.hedge_data.iter_mut() {
-                    if *hedge == NodeIndex(last_index) {
-                        *hedge = NodeIndex(r);
-                    }
-                }
-            }
-            // Remove the (now last) element.
+            //     // After swapping, update any hedge pointer that pointed to the moved element.
+            //     // It used to be at last_index, now it is at r.
+            //     for hedge in self.hedge_data.iter_mut() {
+            //         if *hedge == NodeIndex(last_index) {
+            //             *hedge = NodeIndex(r);
+            //         }
+            //     }
+            // }
+            // // Remove the (now last) element.
 
-            self.nodes.pop();
-            self.node_data.pop();
+            // self.nodes.pop();
+            // self.node_data.pop();
         }
 
         self.nodes[replacement.0] = full_node;
