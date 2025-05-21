@@ -18,16 +18,48 @@ use super::{NodeStorage, NodeStorageOps};
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
+/// An implementation of [`NodeStorage`] and [`NodeStorageOps`] that uses `Vec`s
+/// and `BitVec`s to store node information and their incident half-edges.
+///
+/// This strategy is often straightforward but can have performance implications
+/// for certain operations like node deletion or identification if it involves
+/// frequent re-indexing or large data movements.
+///
+/// # Type Parameters
+///
+/// - `N`: The type of custom data associated with each node.
+///
+/// # Fields
+///
+/// - `node_data`: A `Vec<N>` storing the custom data for each node. The index
+///   in this vector corresponds to a `NodeIndex`.
+/// - `hedge_data`: A `Vec<NodeIndex>` where the index of the vector is a `Hedge`'s
+///   underlying `usize` value, and the element at that index is the `NodeIndex`
+///   to which the hedge is incident.
+/// - `nodes`: A `Vec<BitVec>`. Each index in the outer `Vec` corresponds to a
+///   `NodeIndex`. The `BitVec` at that index is a bitmask representing the set
+///   of half-edges incident to that node.
 pub struct NodeStorageVec<N> {
+    /// Stores the custom data for each node. Indexed by `NodeIndex.0`.
     pub(crate) node_data: Vec<N>,
+    /// Maps each half-edge index (`Hedge.0`) to the `NodeIndex` it belongs to.
     pub(crate) hedge_data: Vec<NodeIndex>,
+    /// For each node (indexed by `NodeIndex.0`), stores a `BitVec` representing
+    /// the set of half-edges incident to it.
     #[cfg_attr(feature = "bincode", bincode(with_serde))]
     pub(crate) nodes: Vec<BitVec>, // Nodes
 }
 
 #[derive(Clone, Debug)]
+/// An iterator that yields the [`Hedge`] identifiers incident to a node,
+/// based on iterating over the set bits in a `BitVec`.
+///
+/// This is typically used by [`NodeStorageVec`] to provide an iterator
+/// for its `NeighborsIter` associated type.
 pub struct BitVecNeighborIter<'a> {
+    /// The underlying iterator over set bits in the `BitVec`.
     iter_ones: IterOnes<'a, usize, Lsb0>,
+    /// The total number of possible hedges (size of the `BitVec`), used for `ExactSizeIterator`.
     len: usize,
 }
 

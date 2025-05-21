@@ -22,8 +22,14 @@ use super::{
     Flow, HedgeGraph, NodeIndex, Orientation,
 };
 
+/// Represents a graph vertex (node) with associated layout information, specifically its 2D position.
+///
+/// # Type Parameters
+/// - `V`: The type of the custom data associated with the vertex.
 pub struct LayoutVertex<V> {
+    /// The custom data associated with the vertex.
     pub data: V,
+    /// The 2D position (x, y coordinates) of the vertex in the layout.
     pos: Vector2<f64>,
 }
 
@@ -36,8 +42,16 @@ impl<V> LayoutVertex<V> {
     }
 }
 
+/// Represents a graph edge with associated layout information, including its geometry
+/// for drawing (e.g., straight line, curve, control points for splines).
+///
+/// # Type Parameters
+/// - `E`: The type of the custom data associated with the edge.
 pub struct LayoutEdge<E> {
+    /// The custom data associated with the edge.
     pub data: E,
+    /// The geometric representation of the edge, defining how it should be drawn.
+    /// This could include control points for curves, arrow information, etc.
     geometry: EdgeGeometry,
 }
 
@@ -175,6 +189,9 @@ impl<E> LayoutEdge<E> {}
 pub type PositionalHedgeGraph<E, V> =
     HedgeGraph<LayoutEdge<E>, LayoutVertex<V>, NodeStorageVec<LayoutVertex<V>>>;
 
+/// A constant string containing Cetz (a TikZ library for Typst) code preamble.
+/// This preamble defines reusable drawing commands and styles (like node shapes,
+/// colors, and edge decorations) for generating graph visualizations in Typst.
 const CETZ_PREAMBLE: &str = r#"
 let node(pos)=cetz.draw.circle(pos,radius:0.02,fill: black)
 let stroke = 0.7pt
@@ -207,9 +224,15 @@ let edge(..points,decoration:"",angle:0deg)={
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
+/// Settings for controlling the "fancy" rendering of edges, such as curved paths,
+/// arrowheads, and label positioning.
 pub struct FancySettings {
+    /// The distance to shift edge labels away from the edge path.
     pub label_shift: f64,
+    /// An optional percentage (0.0 to 1.0) determining the length of an arrowhead
+    /// relative to the edge segment it's on. `None` might mean no arrow or a default style.
     pub arrow_angle_percentage: Option<f64>,
+    /// The distance to shift arrowheads along or perpendicular to the edge path.
     pub arrow_shift: f64,
 }
 
@@ -332,24 +355,54 @@ impl<E, V> PositionalHedgeGraph<E, V> {
     }
 }
 
+/// Represents the state and parameters for a graph layout optimization task,
+/// typically used with a solver like `argmin`.
+///
+/// This struct holds references to the graph being laid out, the current (optimizable)
+/// positions of its elements, fixed layout parameters (like spring constants), and
+/// a random number generator for stochastic optimization algorithms.
+///
+/// # Type Parameters
+/// - `'a`: Lifetime of the borrowed graph.
+/// - `E`: The type of custom data associated with edges.
+/// - `V`: The type of custom data associated with vertices.
 pub struct GraphLayout<'a, E, V> {
+    /// A reference to the graph whose layout is being computed.
     pub graph: &'a HedgeGraph<E, V, NodeStorageVec<V>>,
+    /// The current set of optimizable and fixed positions for graph elements.
     pub positions: Positions,
+    /// Parameters controlling the forces in a force-directed layout algorithm.
     pub params: LayoutParams,
+    /// A random number generator, often used by stochastic optimization algorithms
+    /// like simulated annealing.
     pub rng: Arc<Mutex<SmallRng>>,
 }
 
 #[derive(Debug, Clone, Copy)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
+/// Parameters controlling a force-directed graph layout algorithm.
+///
+/// These parameters define the strengths of various forces that act on nodes
+/// and edge control points, such as spring forces between connected elements,
+/// repulsive forces between all elements, and forces attracting elements
+/// towards the center or influencing external edge placement.
 pub struct LayoutParams {
+    /// The spring constant (stiffness) for attractive forces along edges.
     pub spring_constant: f64,
+    /// The ideal resting length for springs representing edges.
     pub spring_length: f64,
+    /// The strength of a global repulsive force between all pairs of edges.
     pub global_edge_repulsion: f64,
+    /// The strength of repulsive forces between edges and vertices.
     pub edge_vertex_repulsion: f64,
+    /// The strength of electrostatic-like repulsive forces between edge control points.
     pub charge_constant_e: f64,
+    /// The strength of electrostatic-like repulsive forces between vertices.
     pub charge_constant_v: f64,
+    /// A constant influencing the placement of external (dangling) edges.
     pub external_constant: f64,
+    /// The strength of a force attracting all elements towards the center of the layout.
     pub central_force_constant: f64,
 }
 
@@ -381,8 +434,30 @@ impl Default for LayoutParams {
 
 #[derive(Debug, Clone)]
 #[allow(clippy::type_complexity)]
+/// Manages the positional parameters for graph elements during layout optimization.
+///
+/// It distinguishes between positions that might be fixed (e.g., external edges pinned
+/// to a circle) and those that are optimizable by the layout algorithm.
+/// The actual coordinate values are stored in a flat `Vec<f64>` (the `param` argument
+/// in `argmin`'s `CostFunction`), and this struct holds indices into that vector
+/// for each vertex and edge control point.
+///
+/// Fields:
+/// - `vertex_positions`: For each vertex, stores an optional fixed position `(x, y)`
+///   or, if `None`, indices `(usize, usize)` into the optimizable parameter vector
+///   for its x and y coordinates.
+/// - `edge_positions`: For each edge (via `HedgeVec`), stores similar information
+///   for its control point(s).
 pub struct Positions {
+    /// Stores position information for each vertex.
+    /// Each element is a tuple: `(Option<(f64, f64)>, usize, usize)`.
+    /// - `Option<(f64, f64)>`: If `Some`, this is a fixed (x, y) position for the vertex.
+    /// - `usize`, `usize`: If the Option is `None`, these are indices into the flat
+    ///   parameter vector (`Vec<f64>`) for the vertex's x and y coordinates, respectively.
     vertex_positions: Vec<(Option<(f64, f64)>, usize, usize)>,
+    /// Stores position information for each edge's control point(s).
+    /// Similar structure to `vertex_positions`, but wrapped in `HedgeVec` to be
+    /// indexed by `EdgeIndex`.
     edge_positions: HedgeVec<(Option<(f64, f64)>, usize, usize)>,
 }
 
@@ -742,19 +817,37 @@ impl<E, V> Anneal for GraphLayout<'_, E, V> {
 }
 
 #[derive(Debug, Clone)]
+/// Configuration settings for running a graph layout algorithm, typically
+/// simulated annealing or another iterative optimization method.
+///
+/// This struct bundles the physical force parameters ([`LayoutParams`]),
+/// the initial and optimizable positions ([`Positions`]), iteration controls
+/// ([`LayoutIters`]), and the initial vector of parameters for the optimizer.
 pub struct LayoutSettings {
+    /// Parameters defining the forces in the layout model (e.g., spring stiffness, repulsion).
     params: LayoutParams,
+    /// Initial and fixed positions for graph elements, and mapping to optimizable parameters.
     positions: Positions,
+    /// Iteration control parameters for the layout algorithm (e.g., number of iterations, temperature).
     iters: LayoutIters,
+    /// The initial flat vector of optimizable parameters (coordinates) passed to the solver.
     init_params: Vec<f64>,
 }
 
 #[derive(Debug, Clone, Copy)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
+/// Specifies iteration parameters for a layout algorithm, particularly for
+/// simulated annealing.
 pub struct LayoutIters {
+    /// The total number of iterations the layout algorithm should run.
     pub n_iters: u64,
+    /// The initial "temperature" for simulated annealing, or a similar controlling
+    /// parameter for other iterative solvers. It often influences the likelihood
+    /// of accepting worse solutions, allowing escape from local minima.
     pub temp: f64,
+    /// A seed for the random number generator used in stochastic layout algorithms,
+    /// ensuring reproducibility.
     pub seed: u64,
 }
 

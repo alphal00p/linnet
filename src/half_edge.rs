@@ -1,3 +1,87 @@
+//! # Half-Edge Graph Representation
+//!
+//! This module provides the core data structures and algorithms for representing
+//! and manipulating graphs using the **half-edge** (or doubly connected edge list - DCEL)
+//! data structure. This representation is particularly useful for algorithms that
+//! require efficient traversal of graph topology, such as iterating around faces,
+//! finding incident edges to a node, or quickly accessing an edge's opposite pair.
+//!
+//! ## Key Concepts and Components:
+//!
+//! ### 1. `HedgeGraph<E, V, S>`
+//! This is the central struct representing a graph.
+//!   - `E`: Generic type for data associated with edges.
+//!   - `V`: Generic type for data associated with nodes (vertices).
+//!   - `S`: A type implementing `NodeStorage`, which defines how node data and
+//!          their connectivity to half-edges are stored.
+//!
+//! `HedgeGraph` stores half-edges in an `edge_store` (typically `SmartHedgeVec`)
+//! and nodes in a `node_store`.
+//!
+//! ### 2. `Hedge` and `NodeIndex`
+//!   - `Hedge`: An identifier (often an index) for a single directed half-edge.
+//!     Each undirected edge in the graph is typically represented by two oppositely
+//!     directed half-edges.
+//!   - `NodeIndex`: A simple wrapper around `usize` used to identify nodes in the graph.
+//!
+//! ### 3. Involutions (`involution` module)
+//! A crucial concept in this implementation is the **involution** on half-edges.
+//! An involution is a function that, when applied twice, returns the original input.
+//! In the context of a half-edge graph, the primary involution is finding the
+//! **opposite half-edge**.
+//!   - `Involution`: The struct managing this mapping.
+//!   - `HedgePair`: Represents how hedges are paired (e.g., forming a full edge,
+//!     being unpaired/dangling, or split).
+//!   - `Flow`: Indicates the underlying directionality of a half-edge (Source or Sink)
+//!     relative to its edge.
+//!   - `Orientation`: Indicates the superficial orientation of an edge (Default, Reversed,
+//!     Undirected).
+//!
+//! The `inv(hedge: Hedge) -> Hedge` method on `HedgeGraph` is the primary way to
+//! access the opposite half-edge.
+//!
+//! ### 4. Node Storage (`nodestore` module)
+//! This module defines how nodes are stored and how they relate to the half-edges
+//! that originate from them.
+//!   - `NodeStorage` trait: An abstraction for different node storage strategies.
+//!   - `NodeStorageOps` trait: Provides operations on node storage.
+//!   - Each node typically stores a collection of its outgoing (or incident) half-edges.
+//!
+//! ### 5. Subgraphs (`subgraph` module)
+//! This module provides extensive support for defining, manipulating, and querying
+//! subgraphs. A subgraph is essentially a subset of the half-edges of a parent graph.
+//!   - `SubGraph` trait: Defines the basic interface for a subgraph.
+//!   - `SubGraphOps` trait: Provides operations applicable to subgraphs.
+//!   - Various concrete subgraph types exist, such as:
+//!     - `InternalSubGraph`: Represents a subgraph composed of edges internal to a region.
+//!     - `HedgeNode`: Represents a "node" in a higher-level graph structure, possibly
+//!       formed by contracting a subgraph. It contains an `internal_graph` and `hairs`
+//!       (external connections).
+//!     - `Cycle`: Represents a cycle in the graph.
+//!     - `OrientedCut`: Represents a cut separating the graph.
+//!
+//! Operations include creating subgraphs from filters, extracting subgraphs,
+//! performing boolean operations (union, intersection, difference), and analyzing
+//! subgraph properties.
+//!
+//! ### 6. Graph Operations
+//! The `HedgeGraph` provides a rich API for:
+//!   - **Construction**: Building graphs using `HedgeGraphBuilder`, adding nodes and edges
+//!     (`add_dangling_edge`, `add_pair`).
+//!   - **Modification**: Deleting hedges (`delete_hedges`), splitting edges (`split_edge`),
+//!     joining graphs (`join`), sewing dangling edges (`sew`), and identifying/contracting
+//!     nodes (`identify_nodes`).
+//!   - **Traversal & Access**: Getting an edge's opposite (`inv`), finding the node a
+//!     hedge points to (`node_id`), iterating over neighbors (`iter_crown`), and
+//!     accessing edge/node data.
+//!   - **Analysis**: Checking connectivity (`is_connected`), counting components
+//!     (`count_connected_components`), finding cycle bases (`cycle_basis`), spanning trees
+//!     (`all_spanning_trees`), and calculating cyclotomatic numbers.
+//!   - **Serialization/Visualization**: Generating DOT format strings for graph visualization.
+//!
+//! This module forms the backbone of the `linnet` library, enabling complex graph
+//! manipulations with a focus on subgraphs and topological features.
+
 use core::panic;
 use std::cmp::Ordering;
 use std::fmt::Display;
@@ -24,7 +108,15 @@ use rand::{rngs::SmallRng, Rng, SeedableRng};
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, From, Into, PartialOrd, Ord)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
-pub struct NodeIndex(pub usize);
+/// A type-safe wrapper around a `usize` to represent the index of a node
+/// in a graph.
+///
+/// This helps prevent accidental misuse of raw `usize` values where a node
+/// identifier is expected.
+pub struct NodeIndex(
+    /// The underlying `usize` value representing the node's index.
+    pub usize
+);
 
 impl std::fmt::Display for NodeIndex {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -33,8 +125,19 @@ impl std::fmt::Display for NodeIndex {
 }
 
 /// Iterator over the powerset of a bitvec, of size n < 64.
+///
+/// Generates all possible subsets of a set of up to 63 elements.
+/// The subsets are represented as `BitVec`s.
+///
+/// **Note:** The maximum number of elements is limited due to the `usize`
+/// representation of the current subset index. On a 64-bit system, this
+/// could theoretically support up to 64 elements, but practically, iterating
+/// 2^64 items is not feasible. The comment "n < 64" suggests a practical limit.
 pub struct PowersetIterator {
+    /// The total number of subsets, equal to 2^(number of elements).
     size: usize,
+    /// The current subset index, ranging from 0 to `size - 1`.
+    /// Each bit in `current` corresponds to an element's presence in the subset.
     current: usize,
 }
 
@@ -65,9 +168,18 @@ pub mod involution;
 #[derive(Clone, Debug, Default)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
+/// Represents attributes for an edge when generating Graphviz DOT output.
+///
+/// This struct allows specifying common DOT attributes like label, color,
+/// and other custom attributes for an edge.
 pub struct GVEdgeAttrs {
+    /// The label to be displayed on the edge.
     pub label: Option<String>,
+    /// The color of the edge. Can be a color name (e.g., "red") or other
+    /// Graphviz color specifications.
     pub color: Option<String>,
+    /// A field for any other custom DOT attributes for the edge,
+    /// represented as a single string (e.g., "style=dashed, arrowhead=vee").
     pub other: Option<String>,
 }
 
@@ -97,8 +209,32 @@ pub mod subgraph;
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+/// The main graph data structure, representing a graph using the half-edge
+/// (or doubly connected edge list - DCEL) principle.
+///
+/// A `HedgeGraph` stores nodes and edges (represented as pairs of half-edges).
+/// It is generic over the data associated with edges (`E`), nodes/vertices (`V`),
+/// and the specific storage strategy used for nodes (`S`).
+///
+/// The half-edge representation allows for efficient traversal of graph topology,
+/// such as iterating around faces (in planar embeddings), finding incident edges
+/// to a node, or quickly accessing an edge's opposite half-edge.
+///
+/// # Type Parameters
+///
+/// - `E`: The type of data associated with each edge (or pair of half-edges).
+/// - `V`: The type of data associated with each node (vertex).
+/// - `S`: The node storage strategy, implementing the [`NodeStorage`] trait.
+///        This determines how node data and their connectivity to half-edges
+///        are stored. Defaults to [`NodeStorageVec<V>`].
 pub struct HedgeGraph<E, V, S: NodeStorage<NodeData = V> = NodeStorageVec<V>> {
+    /// Internal storage for all half-edges, their data, and their topological
+    /// relationships (e.g., opposite half-edge, next half-edge around a node).
+    /// This is typically a [`SmartHedgeVec<E>`].
     edge_store: SmartHedgeVec<E>,
+    /// Storage for all nodes in the graph, including their data (`V`) and
+    /// information about the half-edges incident to them.
+    /// The specific implementation is determined by the `S` type parameter.
     pub node_store: S,
 }
 
@@ -162,7 +298,29 @@ impl<E, V, S: NodeStorage<NodeData = V>> AsRef<Involution> for HedgeGraph<E, V, 
 }
 
 impl<E, V: Default, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
-    /// Creates a random graph with the given number of nodes and edges.
+    /// Creates a random graph with a specified number of nodes and edges.
+    ///
+    /// The graph generated will have `()` as edge data and default values for node data `V`.
+    /// The structure of the graph (connectivity) is determined randomly based on the provided seed.
+    ///
+    /// # Parameters
+    /// - `nodes`: The desired number of nodes in the graph.
+    /// - `edges`: The desired number of edges (pairs of half-edges) in the graph.
+    /// - `seed`: A seed for the random number generator to ensure reproducibility.
+    ///
+    /// # Returns
+    /// A new `HedgeGraph<(), V, N>` with a random structure.
+    ///
+    /// # Constraints
+    /// - `N::Neighbors` must implement `BaseSubgraph` and `SubGraphOps`.
+    /// - `V` must implement `Default`.
+    ///
+    /// # Panics
+    /// Panics if `sources.len()` (derived from `edges`) is 0 when `externals` (unpaired half-edges)
+    /// is not empty, or if `sinks.len()` is 0 when `externals` is not empty. This can occur if
+    /// `edges` is too small relative to the internal logic of pairing, leading to attempts to access
+    /// empty vectors `sources` or `sinks`. Also panics if node merging logic (to reduce node count
+    /// to `nodes`) attempts to operate on empty or insufficiently small `sources` or `sinks` lists.
     pub fn random(nodes: usize, edges: usize, seed: u64) -> HedgeGraph<(), V, N>
     where
         N::Neighbors: BaseSubgraph + SubGraphOps,
@@ -239,11 +397,34 @@ impl<E, V: Default, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
 }
 
 impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
+    /// Deletes all half-edges specified in the `subgraph` from the graph.
+    ///
+    /// This operation modifies both the `edge_store` and `node_store` to remove
+    /// the specified half-edges and update connectivity information.
+    ///
+    /// # Parameters
+    /// - `subgraph`: A subgraph specifying the set of half-edges to delete.
+    ///   `S` must implement `SubGraph` with `Base = N::Base`.
     pub fn delete_hedges<S: SubGraph<Base = N::Base>>(&mut self, subgraph: &S) {
         self.edge_store.delete(subgraph);
         self.node_store.delete(subgraph);
     }
 
+    /// Creates a new `HedgeGraph` instance representing a "concretized" view of a given `subgraph`.
+    ///
+    /// This method effectively extracts the specified `subgraph` into a new, independent graph.
+    /// The new graph contains copies of the nodes and edges (and their data via references)
+    /// that are part of the `subgraph`.
+    ///
+    /// Node and edge data in the new graph are references (`&'a V`, `&'a E`) to the data
+    /// in the original graph.
+    ///
+    /// # Parameters
+    /// - `subgraph`: A reference to a subgraph `S` within the current graph.
+    ///
+    /// # Returns
+    /// A new `HedgeGraph` containing only the elements of the `subgraph`.
+    /// The node storage type of the new graph is `N::OpStorage<&'a V>`.
     pub fn concretize<'a, S: SubGraph>(
         &'a self,
         subgraph: &'a S,
@@ -289,6 +470,30 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
         builder.build()
     }
 
+    /// Extracts a subgraph and transforms its data, potentially splitting edges and nodes
+    /// that are on the boundary of the subgraph.
+    ///
+    /// This is a more advanced operation than `concretize`. It allows for:
+    /// - Transforming edge data for edges fully within the subgraph (`internal_data` closure).
+    /// - Transforming edge data for edges that are split by the subgraph boundary (`split_edge_fn` closure).
+    /// - Transforming node data for nodes that are part of split edges (`split_node` closure).
+    /// - Transforming node data for nodes fully within the subgraph and taking ownership (`owned_node` closure).
+    ///
+    /// The result is a new `HedgeGraph` with transformed edge data `O` and node data `V2`.
+    ///
+    /// # Parameters
+    /// - `subgraph`: The subgraph `S` to extract.
+    /// - `split_edge_fn`: A closure that transforms `EdgeData<&E>` (for edges on the boundary)
+    ///   to `EdgeData<O>`.
+    /// - `internal_data`: A closure that transforms `EdgeData<E>` (for edges fully inside)
+    ///   to `EdgeData<O>`.
+    /// - `split_node`: A closure that transforms node data `&V` (for nodes on the boundary)
+    ///   to `V2`.
+    /// - `owned_node`: A closure that transforms node data `V` (for nodes fully inside, taking ownership)
+    ///   to `V2`.
+    ///
+    /// # Returns
+    /// A new `HedgeGraph<O, V2, N::OpStorage<V2>>` representing the extracted and transformed subgraph.
     pub fn extract<O, V2, S: SubGraph<Base = N::Base>>(
         &mut self,
         subgraph: &S,
@@ -309,22 +514,62 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
     }
 
     /// Gives the involved hedge.
-    /// If the hedge is a source, it will return the sink, and vice versa.
-    /// If the hedge is an identity, it will return Itself.
+    /// Returns the opposite (or "twin") half-edge of the given `hedge`.
+    ///
+    /// - If `hedge` is part of a paired edge, this returns its sibling half-edge.
+    /// - If `hedge` is an identity (unpaired) half-edge, it returns itself.
+    ///
+    /// # Parameters
+    /// - `hedge`: The half-edge for which to find the opposite.
+    ///
+    /// # Returns
+    /// The opposite `Hedge`.
     pub fn inv(&self, hedge: Hedge) -> Hedge {
         self.edge_store.inv(hedge)
     }
 
-    /// Splits the edge that hedge is a part of into two dangling hedges, adding the data to the side given by hedge.
-    /// The underlying orientation of the new edges is the same as the original edge, i.e. the source will now have `Flow::Source` and the sink will have `Flow::Sink`.
-    /// The superficial orientation has to be given knowing this.
+    /// Splits a paired edge (identified by one of its half-edges, `hedge`) into two
+    /// new dangling (identity) half-edges.
+    ///
+    /// The original edge data is typically associated with one of the new dangling edges,
+    /// and the provided `data` is associated with the other. The underlying `Flow` of the
+    /// new half-edges corresponds to their roles in the original paired edge.
+    ///
+    /// # Parameters
+    /// - `hedge`: One of the half-edges of the paired edge to be split.
+    /// - `data`: The `EdgeData<E>` to be associated with the new dangling half-edge
+    ///   created from the `hedge` side of the split. The original edge's data will be
+    ///   associated with the other new dangling half-edge (created from `inv(hedge)`).
+    ///
+    /// # Returns
+    /// - `Ok(())` if the edge was successfully split.
+    /// - `Err(HedgeGraphError::InvolutionError(InvolutionError::NotPaired))` if `hedge` is an identity edge.
     pub fn split_edge(&mut self, hedge: Hedge, data: EdgeData<E>) -> Result<(), HedgeGraphError> {
         Ok(self.edge_store.split_edge(hedge, data)?)
     }
 
-    /// Joins two graphs together, matching edges with the given function and merging them with the given function.
-    /// The function `matching_fn` should return true if the two dangling half edges should be matched.
-    /// The function `merge_fn` should return the new data for the merged edge, given the data of the two edges being merged.
+    /// Consumes two graphs (`self` and `other`) and joins them into a new graph.
+    ///
+    /// Dangling half-edges from both graphs are matched using `matching_fn`. If a match
+    /// is found, these two dangling edges are "sewn" together to form a new paired edge
+    /// in the resulting graph. The data for this new edge is determined by `merge_fn`.
+    ///
+    /// Node stores are extended, and the edge store is created by joining the two
+    /// original edge stores.
+    ///
+    /// # Parameters
+    /// - `other`: The other graph to join with `self`.
+    /// - `matching_fn`: A closure `(Flow, EdgeData<&E>, Flow, EdgeData<&E>) -> bool`
+    ///   that determines if two dangling half-edges (one from `self`, one from `other`)
+    ///   should be matched and sewn together. It takes the flow and edge data of both.
+    /// - `merge_fn`: A closure `(Flow, EdgeData<E>, Flow, EdgeData<E>) -> (Flow, EdgeData<E>)`
+    ///   that takes the flow and owned edge data of two matched dangling half-edges and
+    ///   returns the flow and edge data for the new combined edge.
+    ///
+    /// # Returns
+    /// - `Ok(Self)`: The new graph resulting from the join.
+    /// - `Err(HedgeGraphError)`: If an error occurs during the join process (e.g.,
+    ///   from `self.edge_store.join` or if node validation fails).
     pub fn join(
         self,
         other: Self,
@@ -342,6 +587,20 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
         Ok(g)
     }
 
+    /// Joins another graph (`other`) into `self` by consuming `other`.
+    ///
+    /// This is similar to `join`, but modifies `self` in place instead of returning a new graph.
+    /// Dangling edges are matched and merged according to `matching_fn` and `merge_fn`.
+    ///
+    /// # Parameters
+    /// - `other`: The graph to be consumed and joined into `self`.
+    /// - `matching_fn`: A closure to determine if two dangling half-edges should match.
+    /// - `merge_fn`: A closure to determine the data for the newly formed paired edge.
+    ///
+    /// # Returns
+    /// - `Ok(())` if the join was successful.
+    /// - `Err(HedgeGraphError)` if an error occurs (e.g. from `self.edge_store.join_mut` or
+    ///   if node validation fails).
     pub fn join_mut(
         &mut self,
         other: Self,
@@ -357,8 +616,23 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
     }
 
     /// Sews dangling edges internal to the graph, matching edges with the given function and merging them with the given function.
-    /// The function `matching_fn` should return true if the two dangling half edges should be matched.
-    /// The function `merge_fn` should return the new data for the merged edge, given the data of the two edges being merged.
+    /// "Sews" together pairs of dangling (identity) half-edges within the graph `self`.
+    ///
+    /// This operation attempts to find pairs of dangling half-edges that satisfy `matching_fn`
+    /// and converts them into internal, paired edges. The data for the new paired edge
+    /// is determined by `merge_fn`.
+    ///
+    /// # Parameters
+    /// - `matching_fn`: A closure `(Flow, EdgeData<&E>, Flow, EdgeData<&E>) -> bool`
+    ///   that determines if two dangling half-edges within `self` should be matched.
+    /// - `merge_fn`: A closure `(Flow, EdgeData<E>, Flow, EdgeData<E>) -> (Flow, EdgeData<E>)`
+    ///   that provides the data for the new paired edge formed from two matched dangling edges.
+    ///
+    /// # Returns
+    /// - `Ok(())` if the sewing operation completes.
+    /// - `Err(HedgeGraphError::InvolutionError)` if an error occurs within the underlying
+    ///   `edge_store.sew` operation (e.g. `InvolutionError::NotIdentity` if an attempt is made
+    ///   to sew an edge that is not an identity edge).
     pub fn sew(
         &mut self,
         matching_fn: impl Fn(Flow, EdgeData<&E>, Flow, EdgeData<&E>) -> bool,
@@ -367,7 +641,21 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
         self.edge_store.sew(matching_fn, merge_fn)
     }
 
-    /// Adds a dangling edge to the specified node with the given data and superficial orientation.
+    /// Adds a new dangling (identity) half-edge to the graph, incident to the specified `source` node.
+    ///
+    /// This consumes the graph and returns a new graph with the added edge.
+    ///
+    /// # Parameters
+    /// - `source`: The `NodeIndex` to which the new dangling edge will be attached.
+    /// - `data`: The data `E` for the new edge.
+    /// - `flow`: The [`Flow`] (Source or Sink) of the new dangling half-edge.
+    /// - `orientation`: The [`Orientation`] of the new edge.
+    ///
+    /// # Returns
+    /// - `Ok((Hedge, Self))`: A tuple containing the `Hedge` identifier of the new
+    ///   dangling half-edge and the modified graph.
+    /// - `Err(HedgeGraphError::NoNode)`: If the `source` node index is invalid for the node store.
+    /// - Other `HedgeGraphError` variants may arise from internal node store operations.
     pub fn add_dangling_edge(
         self,
         source: NodeIndex,
@@ -386,7 +674,23 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
         Ok((hedge, g))
     }
 
-    /// Adds a paired edge to the specified nodes with the given data and superficial orientation.
+    /// Adds a new paired edge between the `source` and `sink` nodes.
+    ///
+    /// This consumes the graph and returns a new graph with the added edge.
+    /// The new edge consists of two half-edges, one originating from `source` and
+    /// the other from `sink`, pointing towards each other.
+    ///
+    /// # Parameters
+    /// - `source`: The `NodeIndex` of the source node for the new edge.
+    /// - `sink`: The `NodeIndex` of the sink node for the new edge.
+    /// - `data`: The data `E` for the new edge.
+    /// - `orientation`: The [`Orientation`] of the new edge.
+    ///
+    /// # Returns
+    /// - `Ok((Hedge, Hedge, Self))`: A tuple containing the `Hedge` identifiers for the
+    ///   source-incident half-edge, the sink-incident half-edge, and the modified graph.
+    /// - `Err(HedgeGraphError::NoNode)`: If `source` or `sink` node indices are invalid.
+    /// - Other `HedgeGraphError` variants may arise from internal node store operations.
     pub fn add_pair(
         self,
         source: NodeIndex,
@@ -408,7 +712,21 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
         Ok((sourceh, sinkh, g))
     }
 
-    /// Is the graph connected?
+    /// Checks if the specified `subgraph` is connected.
+    ///
+    /// A subgraph is connected if there is a path between any two half-edges (or nodes
+    /// they are incident to) within that subgraph, using only edges also within the subgraph.
+    ///
+    /// # Parameters
+    /// - `subgraph`: The subgraph `S` to check for connectivity.
+    ///
+    /// # Returns
+    /// `true` if the subgraph is connected, `false` otherwise.
+    /// Returns `true` for an empty subgraph.
+    ///
+    /// # Panics
+    /// Panics if the traversal (used internally) fails, which can happen if the
+    /// starting node for traversal is not part of the `subgraph`.
     pub fn is_connected<S: SubGraph>(&self, subgraph: &S) -> bool {
         let n_edges = subgraph.nedges(self);
         if let Some(start) = subgraph.included_iter().next() {
@@ -422,6 +740,19 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
         }
     }
 
+    /// Modifies a [`HedgeNode`] subgraph by removing "branches" or "tendrils".
+    ///
+    /// A branch is typically a path of edges within the `subgraph` that ultimately
+    /// connects to the rest of the `subgraph` at only one point (one node with degree > 1
+    /// within the branch, relative to other branch edges). This operation iteratively
+    /// removes edges that are part of such terminal paths until no more such branches exist.
+    ///
+    /// It first removes purely external edges from the `subgraph`'s internal part,
+    /// then iteratively prunes edges that form degree-1 connections within the subgraph's context.
+    /// Finally, it fixes the `hairs` of the `HedgeNode` to be consistent.
+    ///
+    /// # Parameters
+    /// - `subgraph`: A mutable reference to the `HedgeNode` to be pruned.
     pub fn cut_branches(&self, subgraph: &mut HedgeNode) {
         let nodes = AHashSet::<NodeIndex>::from_iter(
             subgraph
@@ -463,7 +794,19 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
 
 // Subgraphs
 impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
-    /// Returns a new subgraph of subgraph, with only the half-edges that are split or unpaired (i.e external for this subgraph)
+    /// Calculates the "internal crown" of a given `subgraph`.
+    ///
+    /// The internal crown consists of all half-edges within the `subgraph` that are
+    /// either unpaired (dangling/external) or part of a "split" edge (i.e., their
+    /// opposite half-edge is *not* in the `subgraph`). These are effectively the
+    /// boundary half-edges of the `subgraph` from its own perspective.
+    ///
+    /// # Parameters
+    /// - `subgraph`: The subgraph `S` for which to find the internal crown.
+    ///
+    /// # Returns
+    /// A new subgraph of type `S::Base` containing the internal crown half-edges.
+    /// `S::Base` must implement `ModifySubgraph<HedgePair>`.
     pub fn internal_crown<S: SubGraph>(&self, subgraph: &S) -> S::Base
     where
         S::Base: ModifySubgraph<HedgePair>,
@@ -479,7 +822,22 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
         crown
     }
 
-    /// Returns a new subgraph, with only the half-edges that are split or unpaired (i.e external for this subgraph). This subgraph might include edges not present in the initial subgraph
+    /// Calculates the "full crown" of a given `subgraph`.
+    ///
+    /// The full crown consists of all half-edges that are incident to any node
+    /// touched by the `subgraph`, provided that these half-edges are either
+    /// unpaired (identity) or their opposite half-edge is also included in the `subgraph`.
+    ///
+    /// This is different from `internal_crown` as it considers all incident edges to
+    /// nodes in the subgraph's footprint, not just edges within the subgraph itself.
+    /// It might include edges not present in the initial `subgraph`.
+    ///
+    /// # Parameters
+    /// - `subgraph`: The subgraph `S` for which to find the full crown.
+    ///
+    /// # Returns
+    /// A new subgraph of type `S::Base` containing the full crown half-edges.
+    /// `S::Base` must implement `ModifySubgraph<Hedge>`.
     pub fn full_crown<S: SubGraph>(&self, subgraph: &S) -> S::Base
     where
         S::Base: ModifySubgraph<Hedge>,
@@ -509,7 +867,11 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
         filter
     }
 
-    /// Bitvec subgraph of all external (identity) hedges
+    /// Creates a `BitVec` representing a subgraph containing all external (identity/dangling)
+    /// half-edges in the entire graph.
+    ///
+    /// # Returns
+    /// A `BitVec` where bits corresponding to external half-edges are set to true.
     pub fn external_filter(&self) -> BitVec {
         let mut filter = bitvec![usize, Lsb0; 0; self.n_hedges()];
 
@@ -522,43 +884,89 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
         filter
     }
 
-    /// Bitvec subgraph of all hedges
+    /// Creates a `BitVec` representing a subgraph containing all half-edges in the graph.
+    ///
+    /// # Returns
+    /// A `BitVec` of length `self.n_hedges()` with all bits set to true.
     pub fn full_filter(&self) -> BitVec {
         bitvec![usize, Lsb0; 1; self.n_hedges()]
     }
 
+    /// Returns a [`FullOrEmpty`] subgraph representing the entire graph (all hedges included).
     pub fn full(&self) -> FullOrEmpty {
         FullOrEmpty::full(self.n_hedges())
     }
 
+    /// Returns a [`FullOrEmpty`] subgraph representing an empty graph (no hedges included).
     pub fn empty(&self) -> FullOrEmpty {
         FullOrEmpty::empty(self.n_hedges())
     }
 
-    /// Get a hairless subgraph, deleting all hairs from the subgraph
+    /// Creates an [`InternalSubGraph`] from a `BitVec` filter, ensuring it has no "hairs".
+    ///
+    /// This uses a "pessimistic" approach: an edge is included only if both its
+    /// half-edges are set in the input `filter`. Dangling edges are removed.
+    ///
+    /// # Parameters
+    /// - `filter`: A `BitVec` representing the desired set of half-edges.
+    ///
+    /// # Returns
+    /// A new `InternalSubGraph`.
     pub fn clean_subgraph(&self, filter: BitVec) -> InternalSubGraph {
         InternalSubGraph::cleaned_filter_pessimist(filter, self)
     }
 
-    /// Get a HedgeNode subgraph that covers the whole graph
+    /// Returns a [`HedgeNode`] that represents the entire graph.
+    /// The `internal_graph` of this `HedgeNode` will include all internal edges,
+    /// and its `hairs` will include all external (dangling) edges of the graph.
     pub fn full_node(&self) -> HedgeNode {
         self.nesting_node_from_subgraph(self.full_graph())
     }
 
-    /// Get a internal subgraph that covers the whole internal edges of the graph
+    /// Returns an [`InternalSubGraph`] that includes all fully internal edges of the graph.
+    /// External (dangling) edges are excluded.
     pub fn full_graph(&self) -> InternalSubGraph {
         InternalSubGraph::cleaned_filter_optimist(self.full_filter(), self)
     }
 
-    /// Get a generic empty subgraph
+    /// Creates an empty subgraph of a specific type `S`.
+    ///
+    /// # Type Parameters
+    /// - `S`: The type of subgraph to create, must implement `SubGraph`.
+    ///
+    /// # Returns
+    /// A new, empty subgraph of type `S`, sized for this graph.
     pub fn empty_subgraph<S: SubGraph>(&self) -> S {
         S::empty(self.n_hedges())
     }
 
+    /// Creates a subgraph of type `S` by filtering edges based on their data.
+    ///
+    /// # Type Parameters
+    /// - `S`: The type of subgraph to create, must implement `BaseSubgraph`.
+    ///
+    /// # Parameters
+    /// - `filter`: A closure that takes edge data `&E` and returns `true` if the
+    ///   edge should be included in the subgraph.
+    ///
+    /// # Returns
+    /// A new subgraph of type `S`.
     pub fn from_filter<S: BaseSubgraph>(&self, filter: impl FnMut(&E) -> bool) -> S {
         S::from_filter(self, filter)
     }
 
+    /// Creates a [`HedgeNode`] from a given [`InternalSubGraph`].
+    ///
+    /// The `internal_graph` of the new `HedgeNode` is the one provided.
+    /// The `hairs` of the `HedgeNode` are calculated as all half-edges incident to the
+    /// `internal_graph` that are not part of the `internal_graph` itself.
+    ///
+    /// # Parameters
+    /// - `internal_graph`: The `InternalSubGraph` to form the core of the `HedgeNode`.
+    ///
+    /// # Panics
+    /// Panics if the provided `internal_graph` is not valid for this graph (e.g.,
+    /// if it refers to hedges outside the graph's bounds or is not truly internal).
     pub fn nesting_node_from_subgraph(&self, internal_graph: InternalSubGraph) -> HedgeNode {
         let mut hairs = bitvec![usize, Lsb0; 0; self.n_hedges()];
 
@@ -605,6 +1013,14 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
         (subgraph, internal)
     }
 
+    /// Adjusts the `hairs` of a `HedgeNode` to be consistent with its `internal_graph`.
+    ///
+    /// Ensures that `hairs` only contains true external connections relative to the
+    /// `internal_graph`. It recalculates hairs based on neighbors of the internal graph
+    /// and removes any that are already part of the internal graph.
+    ///
+    /// # Parameters
+    /// - `node`: A mutable reference to the `HedgeNode` to fix.
     fn nesting_node_fix(&self, node: &mut HedgeNode) {
         let mut externalhedges = bitvec![usize, Lsb0; 0; self.n_hedges()];
 
@@ -624,6 +1040,16 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
 
 // Counts
 impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
+    /// Counts the number of full internal edges within the given `subgraph`.
+    ///
+    /// An edge is considered internal if both its half-edges are included in the `subgraph`.
+    /// This method avoids double-counting by only counting an edge once.
+    ///
+    /// # Parameters
+    /// - `subgraph`: The subgraph `S` in which to count internal edges.
+    ///
+    /// # Returns
+    /// The number of full internal edges.
     pub fn count_internal_edges<S: SubGraph>(&self, subgraph: &S) -> usize {
         let mut internal_edge_count = 0;
         // Iterate over all half-edges in the subgraph
@@ -641,18 +1067,23 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
         internal_edge_count
     }
 
+    /// Returns the total number of half-edges in the graph.
     pub fn n_hedges(&self) -> usize {
         self.edge_store.hedge_len()
     }
 
+    /// Returns the total number of nodes in the graph.
     pub fn n_nodes(&self) -> usize {
         self.node_store.node_len()
     }
 
+    /// Returns the number of external (dangling/identity) half-edges in the graph.
     pub fn n_externals(&self) -> usize {
         self.edge_store.n_dangling()
     }
 
+    /// Returns the number of internal (paired) half-edges in the graph.
+    /// Note that this counts half-edges, so a single full internal edge contributes 2 to this count.
     pub fn n_internals(&self) -> usize {
         self.edge_store.n_paired()
     }
@@ -661,10 +1092,29 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
     //     self.nodes.iter().filter(|n| n.is_node()).count()
     // }
 
+    /// Counts the number of distinct nodes that are incident to at least one half-edge
+    /// in the given `subgraph`.
+    ///
+    /// # Parameters
+    /// - `subgraph`: The subgraph `S` to consider.
+    ///
+    /// # Returns
+    /// The number of unique nodes touched by the `subgraph`.
     pub fn number_of_nodes_in_subgraph<S: SubGraph>(&self, subgraph: &S) -> usize {
         self.iter_node_data(subgraph).count()
     }
 
+    /// Calculates the degree of each node within the context of a given `InternalSubGraph`.
+    ///
+    /// The degree of a node in this context is the number of half-edges from the `subgraph`
+    /// that are incident to that node.
+    ///
+    /// # Parameters
+    /// - `subgraph`: The `InternalSubGraph` to calculate node degrees from.
+    ///
+    /// # Returns
+    /// An `AHashMap` mapping each `NodeIndex` (for nodes involved in the `subgraph`)
+    /// to its degree within that `subgraph`.
     pub fn node_degrees_in_subgraph(
         &self,
         subgraph: &InternalSubGraph,

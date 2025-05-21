@@ -12,8 +12,26 @@ use super::{Inclusion, ModifySubgraph, SubGraphHedgeIter};
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
+/// Represents a "node" in a graph that might itself have internal structure,
+/// often used in graph contraction or hierarchical graph representations.
+///
+/// A `HedgeNode` consists of two main parts:
+/// 1.  An [`InternalSubGraph`]: A set of edges that are fully contained within this node.
+/// 2.  A set of "hairs": These are half-edges that connect the `internal_graph` (or
+///     other hairs) to the rest of the larger graph, acting as the connection points
+///     for this `HedgeNode`.
+///
+/// This structure allows a complex part of a graph to be treated as a single logical node
+/// while retaining information about its internal topology and external connections.
 pub struct HedgeNode {
+    /// The subgraph of edges fully contained within this node.
+    /// This internal graph itself has no dangling edges to the outside;
+    /// all such connections are represented by `hairs`.
     pub internal_graph: InternalSubGraph,
+    /// A bitmask representing the set of half-edges that are "hairs" of this node.
+    /// Hairs are external connections: one end is implicitly connected to the
+    /// `internal_graph` or other hairs of this node, and the other end connects
+    /// to other parts of the main graph.
     #[cfg_attr(feature = "bincode", bincode(with_serde))]
     pub hairs: BitVec,
 }

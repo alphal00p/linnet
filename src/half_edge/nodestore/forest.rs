@@ -13,8 +13,23 @@ use bitvec::vec::BitVec;
 // }
 
 #[derive(Debug, Clone)]
+/// An iterator over the half-edges incident to a graph node when the node
+/// storage is implemented using a [`Forest`].
+///
+/// In this context, a graph node corresponds to a tree in the `Forest`, and the
+/// half-edges incident to that graph node are represented as nodes within that tree.
+/// This iterator typically traverses the nodes of a specific tree in pre-order,
+/// yielding [`Hedge`] identifiers.
+///
+/// # Type Parameters
+///
+/// - `'a`: The lifetime of the borrow from the underlying forest node store.
+/// - `P`: The type of the [`ForestNodeStore`] used by the `Forest`, which must
+///        also implement [`ForestNodeStorePreorder`] to allow pre-order traversal
+///        of tree nodes (representing half-edges).
 pub struct ForestNeighborIter<'a, P: ForestNodeStorePreorder + 'a> {
-    // root: Option<TreeNodeId>,
+    // root: Option<TreeNodeId>, // Potentially for future use or alternative iteration strategies
+    /// The underlying pre-order iterator from the forest's node store.
     iter: P::Iterator<'a>,
 }
 

@@ -7,8 +7,16 @@ use super::{
     HedgeGraph, HedgeGraphError, NodeIndex,
 };
 
+/// Defines a comprehensive set of operations for a node storage backend within a [`HedgeGraph`].
+///
+/// This trait extends [`NodeStorage`] by adding methods for modifying the storage (e.g.,
+/// extending, extracting, deleting, identifying nodes), building it, iterating over nodes,
+/// and mapping node data. It abstracts over the specific data structures used to store
+/// node information and their incident half-edges.
 pub trait NodeStorageOps: NodeStorage {
+    /// The type of storage returned after mapping operations that might change the node data type.
     type OpStorage<N>: NodeStorageOps<NodeData = N>;
+    /// The base type of subgraph used by this node storage (e.g., a `BitVec` to represent a set of hedges).
     type Base: BaseSubgraph;
     // where
     // Self: 'a;
@@ -99,17 +107,33 @@ pub trait NodeStorageOps: NodeStorage {
     fn iter_nodes_mut(
         &mut self,
     ) -> impl Iterator<Item = (Self::NeighborsIter<'_>, NodeIndex, &mut Self::NodeData)>;
+    /// Retrieves the [`NodeIndex`] that the given [`Hedge`] is incident to (or originates from).
     fn node_id_ref(&self, hedge: Hedge) -> NodeIndex;
+    /// Returns an iterator over the half-edges incident to the specified `node_id`.
     fn get_neighbor_iterator(&self, node_id: NodeIndex) -> Self::NeighborsIter<'_>;
+    /// Gets a reference to the data associated with `node_id`.
     fn get_node_data(&self, node_id: NodeIndex) -> &Self::NodeData;
+    /// Gets a mutable reference to the data associated with `node_id`.
     fn get_node_data_mut(&mut self, node_id: NodeIndex) -> &mut Self::NodeData;
 }
 
+/// The fundamental trait defining the interface for a node storage backend in a [`HedgeGraph`].
+///
+/// This trait abstracts the way nodes and their incident half-edges are stored. Different
+/// implementations can offer various performance trade-offs for accessing and
+/// manipulating node data and topology.
 pub trait NodeStorage: Sized {
+    /// The type of data stored for each node in the graph.
     type NodeData;
-    type Storage<N>;
+    /// A generic way to refer to this storage type when it holds node data of type `N`.
+    /// This is often used in `NodeStorageOps` for methods that transform node data.
+    type Storage<N>; // TODO: This might need better definition or usage clarification.
 
+    /// The type used to represent the collection of half-edges incident to a single node.
+    /// This must implement the [`SubGraph`] trait.
     type Neighbors: SubGraph;
+    /// An iterator that yields the [`Hedge`] identifiers incident to a node.
+    /// It must be cloneable and provide an exact size hint.
     type NeighborsIter<'a>: ExactSizeIterator<Item = Hedge> + Clone
     where
         Self: 'a;

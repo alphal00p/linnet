@@ -13,7 +13,16 @@ use super::{nodestore::NodeStorageOps, subgraph::SubGraph, GVEdgeAttrs, HedgeGra
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
-pub struct Hedge(pub usize);
+/// A type-safe wrapper around a `usize` representing a directed half-edge.
+///
+/// Each undirected edge in a graph is typically composed of two oppositely
+/// directed half-edges. `Hedge` identifies one of these. The actual edge data
+/// and topological information (like its opposite or next half-edge) are
+/// stored within the graph structure (e.g., [`HedgeGraph`]).
+pub struct Hedge(
+    /// The underlying `usize` value serving as the index or identifier for this half-edge.
+    pub usize
+);
 
 impl Hedge {
     pub fn to_edge_id<E>(self, involution: &Involution<E>) -> HedgePair {
@@ -32,18 +41,37 @@ impl Hedge {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
+/// Describes the pairing status of a half-edge, indicating whether it forms a
+/// complete edge with another half-edge, is a dangling/external edge, or is
+/// part of a "split" edge in a subgraph context.
 pub enum HedgePair {
+    /// Represents a half-edge that is unpaired (dangling or external).
     Unpaired {
+        /// The half-edge itself.
         hedge: Hedge,
+        /// The [`Flow`] (directionality) of this unpaired half-edge.
         flow: Flow,
     },
+    /// Represents two half-edges that are paired together to form a complete,
+    /// internal, undirected edge.
     Paired {
+        /// The half-edge considered the "source" in this pair.
         source: Hedge,
+        /// The half-edge considered the "sink" in this pair, opposite to `source`.
         sink: Hedge,
     },
+    /// Represents an edge that is "split" in the context of a subgraph.
+    /// This typically means one half-edge is inside the subgraph and its
+    /// opposite is outside, or vice-versa.
     Split {
+        /// The half-edge on one side of the split (often the one inside a subgraph).
         source: Hedge,
+        /// The half-edge on the other side of the split (often the one outside a subgraph).
         sink: Hedge,
+        /// Indicates which side of the original conceptual edge (`source` or `sink`
+        /// of the pair) is considered "split off" or external.
+        /// For example, if `split == Flow::Source`, then the `source` half-edge
+        /// is effectively dangling from the perspective of the other side of the split.
         split: Flow,
     },
 }
@@ -528,10 +556,36 @@ impl Display for Hedge {
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
+/// Represents the state of a half-edge within an `Involution`.
+///
+/// An `Involution` maps each half-edge to another, defining the graph's topology.
+/// This enum describes whether a half-edge is part of a pair forming a full edge
+/// (either as a `Source` or a `Sink`), or if it's an unpaired `Identity` half-edge
+/// (representing a dangling or external connection).
 pub enum InvolutiveMapping<E> {
-    Identity { data: EdgeData<E>, underlying: Flow },
-    Source { data: EdgeData<E>, sink_idx: Hedge },
-    Sink { source_idx: Hedge },
+    /// The half-edge is an "identity" or "external" half-edge, meaning it is
+    /// not paired with another half-edge to form a complete internal edge.
+    /// It points back to itself under the involution.
+    Identity {
+        /// The data associated with this half-edge.
+        data: EdgeData<E>,
+        /// The underlying [`Flow`] (directionality) of this identity half-edge.
+        underlying: Flow
+    },
+    /// The half-edge is a "source" half-edge, meaning it is paired with a "sink"
+    /// half-edge to form a complete internal edge. It stores the edge data.
+    Source {
+        /// The data associated with the edge this half-edge belongs to.
+        data: EdgeData<E>,
+        /// The [`Hedge`] index of the corresponding "sink" half-edge.
+        sink_idx: Hedge
+    },
+    /// The half-edge is a "sink" half-edge. It does not store data itself,
+    /// as the data is stored by its corresponding "source" half-edge.
+    Sink {
+        /// The [`Hedge`] index of the corresponding "source" half-edge.
+        source_idx: Hedge
+    },
 }
 
 impl<E> InvolutiveMapping<E> {
@@ -553,8 +607,15 @@ impl<E> InvolutiveMapping<E> {
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
+/// Holds the data associated with an edge, including its [`Orientation`]
+/// and the custom data of type `E`.
+///
+/// This struct is typically stored by the "source" half-edge of an edge pair,
+/// or by an "identity" (unpaired) half-edge.
 pub struct EdgeData<E> {
+    /// The superficial [`Orientation`] of the edge (e.g., Default, Reversed, Undirected).
     pub orientation: Orientation,
+    /// The custom data of type `E` associated with the edge.
     pub data: E,
 }
 
@@ -668,9 +729,21 @@ impl<E> EdgeData<E> {
 #[derive(Clone, Debug, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
+/// Represents the superficial or conventional orientation of an edge.
+///
+/// This orientation can be distinct from the underlying `Flow` of the half-edges
+/// that constitute the edge. It's often used for display or for algorithms
+/// where a conventional direction is needed.
 pub enum Orientation {
+    /// The edge's orientation aligns with the underlying flow of its "source"
+    /// half-edge (e.g., if half-edge A is `Flow::Source` and points to B,
+    /// a `Default` orientation means the edge is A -> B).
     Default,
+    /// The edge's orientation is opposite to the underlying flow of its "source"
+    /// half-edge (e.g., if half-edge A is `Flow::Source` and points to B,
+    /// a `Reversed` orientation means the edge is B -> A).
     Reversed,
+    /// The edge is considered undirected, regardless of the underlying half-edge flows.
     Undirected,
 }
 
@@ -691,8 +764,20 @@ impl Mul for Orientation {
 #[derive(Clone, Debug, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
+/// Represents the underlying, intrinsic directionality of a half-edge
+/// relative to the full edge it is part of.
+///
+/// Each full edge is composed of two half-edges. One is designated as the
+/// `Source` and the other as the `Sink`. This is a fundamental property
+/// used by the `Involution` to pair half-edges correctly.
 pub enum Flow {
+    /// Indicates this half-edge is the "source" part of its full edge.
+    /// This is often visualized as the outgoing part of a directed edge
+    /// if the edge's `Orientation` is `Default`.
     Source, // outgoing
+    /// Indicates this half-edge is the "sink" part of its full edge.
+    /// This is often visualized as the incoming part of a directed edge
+    /// if the edge's `Orientation` is `Default`.
     Sink,   // incoming
 }
 
@@ -805,9 +890,16 @@ pub enum SignError {
     ZeroValue,
 }
 #[repr(i8)]
+/// Represents a sign (Plus or Minus) or zero.
+///
+/// Useful for calculations where direction or orientation matters,
+/// and a neutral (zero) state is also possible.
 pub enum SignOrZero {
+    /// Represents a zero or neutral value.
     Zero = 0,
+    /// Represents a positive sign or direction.
     Plus = 1,
+    /// Represents a negative sign or direction.
     Minus = -1,
 }
 
@@ -1098,16 +1190,36 @@ impl<E> InvolutiveMapping<E> {
 #[derive(Clone, Debug, Error)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
+/// Errors that can occur during `Involution` operations.
 pub enum InvolutionError {
     #[error("Should have been identity")]
+    /// Expected a half-edge to be an identity (unpaired) but it was not.
     NotIdentity,
     #[error("Should have been an paired hedge")]
+    /// Expected a half-edge to be part of a pair (source or sink) but it was an identity.
     NotPaired,
 }
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
+/// Manages the topological relationships between half-edges in a graph.
+///
+/// An involution is a function `f` such that `f(f(x)) = x`. In this context,
+/// it maps each half-edge to its unique opposite half-edge. If a half-edge
+/// is unpaired (an "identity" or "external" edge), it maps to itself.
+///
+/// This struct stores a vector of [`InvolutiveMapping<E>`], where each entry
+/// corresponds to a half-edge and describes its pairing and associated data.
+///
+/// # Type Parameters
+///
+/// - `E`: The type of data associated with each edge. Defaults to `EdgeIndex` if not specified,
+///        implying edges primarily store their own index as data, but typically this is
+///        instantiated with custom edge data for a `HedgeGraph`.
 pub struct Involution<E = EdgeIndex> {
+    /// The core data storage: a vector where each element describes the mapping
+    /// and data for a specific half-edge. The index in this vector corresponds
+    /// to a `Hedge`'s underlying `usize` value.
     pub(super) inv: Vec<InvolutiveMapping<E>>,
 }
 
@@ -1878,7 +1990,17 @@ impl<E> IndexMut<Hedge> for Involution<E> {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, From, Into, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
-pub struct EdgeIndex(pub(crate) usize);
+/// A type-safe wrapper around a `usize` representing an undirected edge in the graph.
+///
+/// An `EdgeIndex` typically refers to one of the two `Hedge`s that constitute
+/// the full edge. The specific `Hedge` it points to (e.g., the "source" or "canonical"
+/// half-edge) depends on the conventions used by the `Involution` or `HedgeGraph`.
+/// It's used to retrieve data common to both half-edges of an edge pair.
+pub struct EdgeIndex(
+    /// The underlying `usize` value. This often corresponds to the index of
+    /// the "source" `Hedge` of the edge pair.
+    pub(crate) usize
+);
 
 impl Display for EdgeIndex {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

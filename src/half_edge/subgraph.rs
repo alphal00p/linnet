@@ -19,9 +19,20 @@ use super::{
 const BASE62_ALPHABET: &[u8; 62] =
     b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 
+/// Defines operations that can be performed between subgraphs or collections of subgraphs.
+///
+/// This trait provides utilities for common set-like operations such as unions,
+/// intersections (implicitly via other methods like `subtract`), and symmetric differences,
+/// often applied pairwise to collections of subgraphs or iteratively.
+///
+/// # Type Parameters
+/// - `Other`: The type of the other subgraph to perform operations with. Defaults to `Self`.
 pub trait SubGraphOps<Other: SubGraph = Self>: SubGraph {
-    // type Other = Self;
+    // type Other = Self; // Potentially for future use if more varied inter-type operations are needed.
 
+    /// Applies a pairwise operation `op` between all elements of `left` (a mutable set)
+    /// and all elements of `right` (a slice), adding results to `left`.
+    /// Returns `true` if `left` was modified.
     fn all_pairwise_ops(
         left: &mut AHashSet<Self>,
         right: &[Self],
@@ -166,12 +177,27 @@ pub trait SubGraphOps<Other: SubGraph = Self>: SubGraph {
     ) -> Self;
 }
 
+/// A trait for checking inclusion or intersection relationships between a subgraph
+/// and another entity `T`.
+///
+/// This is used to determine if a subgraph contains certain elements (like specific hedges,
+/// ranges of hedges, or other subgraphs) or overlaps with them.
+///
+/// # Type Parameters
+/// - `T`: The type of the entity to check for inclusion or intersection with.
 pub trait Inclusion<T> {
+    /// Checks if this subgraph fully includes/contains the `other` entity.
     fn includes(&self, other: &T) -> bool;
+    /// Checks if this subgraph has any common elements with the `other` entity.
     fn intersects(&self, other: &T) -> bool;
 }
 
+/// An iterator over [`Hedge`]s included in a subgraph.
+///
+/// This struct typically wraps an iterator over set bits in a `BitVec`
+/// (like `bitvec::slice::IterOnes`) and maps the `usize` indices to `Hedge` types.
 pub struct SubGraphHedgeIter<'a> {
+    /// The underlying iterator that yields `usize` indices, which are then mapped to `Hedge`.
     iter: std::iter::Map<bitvec::slice::IterOnes<'a, usize, Lsb0>, fn(usize) -> Hedge>,
 }
 
@@ -188,15 +214,30 @@ pub trait BaseSubgraph: SubGraph + ModifySubgraph<Hedge> + ModifySubgraph<HedgeP
         filter: F,
     ) -> Self;
 
+    /// Creates a base subgraph containing all hedges yielded by the iterator.
+    /// `len` specifies the total number of possible hedges in the graph context.
     fn from_hedge_iter<I: Iterator<Item = Hedge>>(iter: I, len: usize) -> Self;
 }
 
+/// Defines methods for modifying a subgraph by adding or removing elements.
+///
+/// # Type Parameters
+/// - `Index`: The type of element to add or remove (e.g., [`Hedge`], [`HedgePair`]).
 pub trait ModifySubgraph<Index> {
+    /// Adds an element `index` to the subgraph.
     fn add(&mut self, index: Index);
 
+    /// Removes an element `index` from the subgraph.
     fn sub(&mut self, index: Index);
 }
 
+/// The core trait defining the properties and behaviors of a subgraph representation.
+///
+/// A subgraph is fundamentally a selection of half-edges from a larger [`HedgeGraph`].
+/// This trait provides methods for querying the subgraph's contents, its relationship
+/// to the parent graph, and performing common operations.
+///
+/// Implementors must also satisfy `Clone`, `Eq`, `Hash`, and various [`Inclusion`] bounds.
 pub trait SubGraph:
     Clone
     + Eq

@@ -10,9 +10,18 @@ use super::{Inclusion, InternalSubGraph};
 #[derive(Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
+/// Represents a cycle in a graph with a specific orientation or traversal direction.
+///
+/// While a [`Cycle`] represents the set of edges forming a cycle, a `SignedCycle`
+/// implies a particular directed path along these edges. This can be important
+/// in contexts where the direction of traversal matters.
 pub struct SignedCycle {
+    /// A bitmask indicating the set of half-edges that constitute this signed cycle,
+    /// potentially implying a specific order or direction of traversal.
     #[cfg_attr(feature = "bincode", bincode(with_serde))]
     pub filter: BitVec,
+    /// An optional count, possibly representing the number of times the cycle
+    /// traverses its edges or some other property related to its structure.
     pub loop_count: Option<usize>,
 }
 
@@ -57,9 +66,22 @@ impl SignedCycle {
 #[derive(Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
+/// Represents a cycle in a graph, defined as a set of half-edges.
+///
+/// A cycle is a path in a graph that starts and ends at the same vertex and
+/// does not revisit intermediate vertices. This struct typically stores the
+/// half-edges forming the cycle as a bitmask.
+///
+/// Operations on cycles, such as addition (symmetric difference), are common
+/// in cycle basis theory.
 pub struct Cycle {
+    /// A bitmask representing the set of half-edges that form this cycle.
+    /// The specific half-edges included define the path of the cycle.
     #[cfg_attr(feature = "bincode", bincode(with_serde))]
     pub filter: BitVec,
+    /// An optional count, which might represent properties like the number of
+    /// times the cycle traverses its edges (e.g., for fundamental cycles, this
+    /// would often be 1).
     pub loop_count: Option<usize>,
 }
 impl Cycle {

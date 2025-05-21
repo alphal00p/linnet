@@ -13,8 +13,20 @@ use crate::{
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
+/// Stores the data for a single graph node when using [`UnionFindNodeStore`].
+///
+/// This struct combines the custom node data (`V`) with a `BitVec` representing
+/// the set of half-edges incident to this node. It serves as the data type `U`
+/// within the `UnionFind<U>` structure used by `UnionFindNodeStore`.
+///
+/// # Type Parameters
+///
+/// - `V`: The type of custom data associated with the graph node.
 pub struct HedgeNodeStore<V> {
+    /// The custom data for the graph node.
     data: V,
+    /// A bitmask representing the set of half-edges incident to this node.
+    /// Each bit position corresponds to a [`Hedge`] index.
     #[cfg_attr(feature = "bincode", bincode(with_serde))]
     node: BitVec,
 }
@@ -22,7 +34,25 @@ pub struct HedgeNodeStore<V> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
+/// An implementation of [`NodeStorage`] and [`NodeStorageOps`] that uses a
+/// [`UnionFind`] data structure to manage nodes.
+///
+/// This storage strategy is particularly useful when frequent node identification
+/// (merging of nodes) is required, as `UnionFind` is highly optimized for such
+/// operations. Each set in the `UnionFind` structure corresponds to a graph node,
+/// and the data associated with each set is a [`HedgeNodeStore<V>`], which holds
+/// the node's custom data and its incident half-edges.
+///
+/// Note: Several operations in the `NodeStorageOps` trait are marked as `todo!()`
+/// in this implementation, suggesting it might be specialized or partially implemented.
+///
+/// # Type Parameters
+///
+/// - `V`: The type of custom data associated with each graph node.
 pub struct UnionFindNodeStore<V> {
+    /// The underlying [`UnionFind`] data structure. Each disjoint set in this
+    /// structure represents a node in the graph, and the data associated with
+    /// each set is a [`HedgeNodeStore<V>`].
     pub nodes: UnionFind<HedgeNodeStore<V>>,
 }
 

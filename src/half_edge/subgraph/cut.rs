@@ -26,13 +26,28 @@ use thiserror::Error;
 #[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
+/// Represents an oriented cut in a graph.
+///
+/// A cut is a partition of the graph's half-edges into two sets, typically
+/// defining a boundary. This `OrientedCut` explicitly stores half-edges
+/// considered to be on the "left" and "right" sides of this boundary.
+/// The orientation implies a direction across the cut.
+///
+/// For a given full edge (composed of two half-edges, say `h1` and `h2` where
+/// `h2 = inv(h1)`), if `h1` is in `left`, then `h2` should be in `right`,
+/// and vice-versa, for the cut to be consistent along that edge.
 pub struct OrientedCut {
-    ///gives the hedges to the left of the cut (the one you would drag to the right of a forward scattering diagram)
+    /// A bitmask representing the set of half-edges on the "left" side of the cut.
+    /// In a scattering diagram context, these might be the edges one would drag
+    /// to the right to pass through the cut.
     #[cfg_attr(feature = "bincode", bincode(with_serde))]
     pub left: BitVec,
-    ///gives the hedges to the right of the cut (the one you would drag to the left of a forward scattering diagram)
+    /// A bitmask representing the set of half-edges on the "right" side of the cut.
+    /// These are typically theinvolutional pairs of the half-edges in the `left` set.
+    /// In a scattering diagram context, these might be the edges one would drag
+    /// to the left.
     ///
-    /// right = inv(left)
+    /// It's generally expected that `right` contains `inv(h)` for every `h` in `left`.
     #[cfg_attr(feature = "bincode", bincode(with_serde))]
     pub right: BitVec,
 }
@@ -51,15 +66,20 @@ impl Display for OrientedCut {
     }
 }
 
+/// Errors that can occur during operations related to graph cuts.
 #[derive(Debug, Error)]
 pub enum CutError {
-    #[error("Invalid edge")]
+    #[error("Invalid edge: The specified edge is not suitable for the cut operation.")]
+    /// Indicates an edge is invalid for the context of a cut operation.
     InvalidEdge,
-    #[error("Invalid orientation")]
+    #[error("Invalid orientation: The orientation specified or found is not valid for the cut operation.")]
+    /// Indicates an orientation is invalid in the context of a cut.
     InvalidOrientation,
-    #[error("Cut edge has already been set")]
+    #[error("Cut edge has already been set: The edge is already part of the cut in an incompatible way.")]
+    /// Attempted to define a cut edge that was already defined, or its inverse was.
     CutEdgeAlreadySet,
-    #[error("Cut edge is identity")]
+    #[error("Cut edge is identity: An unpaired (identity) half-edge cannot form part of a separating cut in this context.")]
+    /// An attempt was made to use an identity (unpaired) half-edge in a cut where a paired edge was expected.
     CutEdgeIsIdentity,
 }
 
@@ -769,9 +789,30 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> CutGraph<E, V, N> {
 }
 
 #[derive(Debug, Eq, Clone, Copy)]
+/// Represents an edge that may or may not be part of a cut, and if it is,
+/// stores its orientation relative to that cut.
+///
+/// This struct is typically used as the edge data type `E` in a `HedgeGraph`
+/// (often aliased as `CutGraph`) when the graph has been "split" along an
+/// [`OrientedCut`]. It allows each edge to remember its original `EdgeIndex`
+/// and how it relates to the cut.
+///
+/// # Type Parameters
+///
+/// - `E`: The original custom data type of the edge before being potentially marked as cut.
 pub struct PossiblyCutEdge<E> {
+    /// The original custom data of the edge. This is `None` if the edge was
+    /// created as a conceptual part of a split without original data (e.g., the
+    /// "other side" of a split external edge).
     data: Option<E>,
+    /// The orientation of this edge relative to a cut.
+    /// - [`Orientation::Undirected`]: The edge is not part of the cut.
+    /// - [`Orientation::Default`]: The edge crosses the cut in one direction (e.g., "left to right", or "source side").
+    /// - [`Orientation::Reversed`]: The edge crosses the cut in the opposite direction (e.g., "right to left", or "sink side").
     flow: Orientation,
+    /// The original [`EdgeIndex`] of this edge in the graph before any cut operations.
+    /// This helps in identifying the edge across different graph representations or
+    /// after operations like splitting and gluing.
     pub index: EdgeIndex,
 }
 impl<E> From<PossiblyCutEdge<E>> for DotEdgeData
