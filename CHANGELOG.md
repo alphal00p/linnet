@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.1](https://github.com/alphal00p/linnet/compare/v0.6.0...v0.6.1) - 2025-05-22
+
+### Other
+
+- Merge pull request #11 from alphal00p/jules_wip_3253120278989361716
+
 ## [0.6.0](https://github.com/alphal00p/linnet/compare/v0.5.2...v0.6.0) - 2025-05-22
 
 ### Fixed
