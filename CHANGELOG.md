@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.2](https://github.com/alphal00p/linnet/compare/v0.6.1...v0.6.2) - 2025-05-22
+
+### Other
+
+- remove useless check and set
+- Correctly forget identification history and adds subgraph contraction
+
 ## [0.6.1](https://github.com/alphal00p/linnet/compare/v0.6.0...v0.6.1) - 2025-05-22
 
 ### Other
