@@ -1,3 +1,27 @@
+//! # Graph Drawing and Visualization
+//!
+//! This module is intended to provide utilities for visualizing graph structures,
+//! primarily by generating Scalable Vector Graphics (SVG) outputs. It aims to
+//! facilitate the visual inspection and analysis of graphs represented within
+//! the `linnet` library.
+//!
+//! Currently, the module's direct public API for drawing `HedgeGraph` instances
+//! is not yet fully exposed or implemented. The existing code includes examples
+//! and tests demonstrating the use of the [`kurbo`](https://crates.io/crates/kurbo)
+//! crate for creating and manipulating 2D Bézier paths, and serializing these
+//! paths into SVG format.
+//!
+//! Future development in this module will likely focus on:
+//! - Providing functions to take a `HedgeGraph` and produce an SVG representation.
+//! - Integrating layout algorithms to position nodes and edges aesthetically.
+//! - Offering customization options for styling the output (colors, stroke widths, etc.).
+//!
+//! Users interested in path drawing can look at the internal tests for examples of
+//! using `kurbo::BezPath` and its SVG export capabilities. For direct `HedgeGraph`
+//! visualization, the DOT output functionalities (see `dot_parser` module and
+//! `HedgeGraph::dot_...` methods) can be used in conjunction with external
+//! Graphviz tools.
+
 #[cfg(test)]
 pub mod test {
 

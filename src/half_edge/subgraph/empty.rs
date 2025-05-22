@@ -10,7 +10,15 @@ use crate::half_edge::{involution::Hedge, nodestore::NodeStorageOps, HedgeGraph}
 use super::{Inclusion, SubGraph};
 
 #[derive(Clone, Debug, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
+/// Represents an empty subgraph, containing no half-edges.
+///
+/// This struct is used as a placeholder or a null object in subgraph operations.
+/// It implements the [`SubGraph`] trait, with most methods reflecting its emptiness
+/// (e.g., `nhedges()` returns 0, `is_empty()` returns `true`).
 pub struct Empty {
+    /// The total number of half-edges in the context of the parent graph
+    /// to which this empty subgraph belongs. This is used to maintain
+    /// consistent sizing for operations, even though the subgraph itself is empty.
     size: usize,
 }
 
@@ -96,9 +104,16 @@ impl Inclusion<RangeInclusive<Hedge>> for Empty {
     }
 }
 
+/// A generic iterator that always yields `None`.
+///
+/// This is used as the `BaseIter` for the [`Empty`] subgraph type, as an empty
+/// subgraph contains no hedges to iterate over.
+///
+/// # Type Parameters
+/// - `T`: The type of item the iterator would theoretically yield (though it never does).
 pub struct EmptyIter<T> {
     data: PhantomData<T>,
-    // life: PhantomData<&'a ()>,
+    // life: PhantomData<&'a ()>, // No lifetime needed if it holds no references
 }
 
 impl<T> EmptyIter<T> {

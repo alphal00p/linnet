@@ -15,11 +15,26 @@ use super::{
 #[derive(Clone, Debug, Eq, Ord)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
+/// Represents a subgraph consisting entirely of "internal" edges.
+///
+/// An internal subgraph is defined such that if a half-edge is part of this subgraph,
+/// its opposite half-edge must also be part of the subgraph. This means it cannot
+/// contain any "dangling" or "external" half-edges that connect to parts of the
+/// graph outside of itself. It represents a self-contained portion of the graph's
+/// edge topology.
+///
+/// To represent a subgraph that does have external connections (or "hairs"),
+/// use types like [`HedgeNode`] or [`ContractedSubGraph`].
 pub struct InternalSubGraph {
     // cannot be hairy. I.e. it must always have paired hedges.
     // To represent a hairy subgraph, use a ContractedSubGraph
+    /// A bitmask representing the set of half-edges included in this internal subgraph.
+    /// For every half-edge `h` included in this filter, its opposite `inv(h)` must also
+    /// be included.
     #[cfg_attr(feature = "bincode", bincode(with_serde))]
     pub filter: BitVec,
+    /// An optional field, often used to cache the cyclomatic number (number of
+    /// independent cycles) within this subgraph once computed.
     pub loopcount: Option<usize>,
 }
 

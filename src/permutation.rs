@@ -1,3 +1,45 @@
+//! # Permutations
+//!
+//! This module provides a `Permutation` struct and associated functionalities
+//! for representing and working with permutations of a sequence of integers `0..n`.
+//!
+//! ## Key Features:
+//!
+//! - **Representation**: A `Permutation` is stored by its direct mapping (`map[i]` is
+//!   the image of `i`) and its inverse mapping.
+//! - **Construction**:
+//!   - Identity permutation: `Permutation::id(n)`.
+//!   - From a mapping vector: `Permutation::from_map(vec![...])`.
+//!   - From disjoint cycles: `Permutation::from_disjoint_cycles(&[vec![...]])`.
+//!   - From potentially overlapping cycles with specified composition order:
+//!     `Permutation::from_cycles_ordered(&[vec![...]], order)`.
+//! - **Basic Operations**:
+//!   - Inverse: `p.inverse()`.
+//!   - Composition: `p1.compose(&p2)` (applies `p2` then `p1`).
+//!   - Apply to slices: `p.apply_slice(data)` (returns a new `Vec`),
+//!     `p.apply_slice_in_place(data_mut)`.
+//!   - Power: `p.pow(k)`.
+//!   - Sign: `p.sign()` (+1 for even, -1 for odd).
+//!   - Check for identity: `p.is_identity()`.
+//! - **Cycle Utilities**:
+//!   - Find cycle decomposition: `p.find_cycles()`.
+//!   - Convert to transpositions: `p.transpositions()`.
+//! - **Iterators**:
+//!   - `p.iter_slice(data)`: Iterates over `data` in the order defined by `p.map`.
+//!   - `p.iter_slice_inv(data)`: Iterates over `data` in the order defined by `p.inv`.
+//!   - Mutable versions: `p.iter_slice_mut(data_mut)`, `p.iter_slice_inv_mut(data_mut)`.
+//! - **Ranking and Unranking**:
+//!   - Myrvold & Ruskey's ranking/unranking algorithms (`myrvold_ruskey_rank1`, `myrvold_ruskey_unrank1`, etc.).
+//! - **Sorting**:
+//!   - `Permutation::sort(slice)`: Returns the permutation that sorts the slice.
+//! - **Graph Integration**:
+//!   - The `HedgeGraphExt` and `PermutationExt` traits suggest integration with
+//!     graph structures, likely for tasks like finding graph automorphisms or
+//!     canonical labellings by permuting vertices/hedges.
+//!
+//! The module is designed to be comprehensive for permutation-related tasks,
+//! including those relevant to combinatorial algorithms and graph theory.
+
 use std::{
     collections::BTreeMap, fmt, iter::FusedIterator, marker::PhantomData, ops::Index, ptr::NonNull,
 };

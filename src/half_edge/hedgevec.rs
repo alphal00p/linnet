@@ -16,8 +16,28 @@ use super::{
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
+/// A specialized vector-like structure for storing edge data along with its
+/// topological [`Involution`].
+///
+/// `SmartHedgeVec` is a core component for managing edges in a [`HedgeGraph`].
+/// It stores the custom edge data (`T`) and the [`HedgePair`] for each edge.
+/// The associated `Involution` within `SmartHedgeVec` then stores `EdgeIndex` values,
+/// which point back into this `SmartHedgeVec`'s `data` vector. This design
+/// separates the topological mapping of half-edges (handled by `Involution`)
+/// from the storage of the actual edge data and pairing information.
+///
+/// # Type Parameters
+///
+/// - `T`: The type of custom data associated with each edge.
 pub struct SmartHedgeVec<T> {
+    /// A vector where each element is a tuple containing the custom edge data (`T`)
+    /// and the [`HedgePair`] that describes the topological state of the edge
+    /// (e.g., paired, unpaired, split). The index into this vector serves as
+    /// an `EdgeIndex`.
     pub(super) data: Vec<(T, HedgePair)>,
+    /// The [`Involution`] structure that manages the topological relationships of half-edges.
+    /// In this context, the `Involution` stores `EdgeIndex` as its data, pointing back
+    /// to the `data` vector of this `SmartHedgeVec`.
     involution: Involution,
 }
 
@@ -27,15 +47,26 @@ impl<T> AsRef<Involution> for SmartHedgeVec<T> {
     }
 }
 
+/// A trait providing a generic interface for accessing properties of edges
+/// (like orientation, data, and pairing information) using various index types.
+///
+/// This allows functions to be generic over how they access edge details,
+/// whether by [`Hedge`], [`EdgeIndex`], or [`HedgePair`].
 pub trait Accessors<Index> {
+    /// The type of the primary data associated with the edge.
     type Data;
 
+    /// Returns the [`Orientation`] of the edge identified by `index`.
     fn orientation(&self, index: Index) -> Orientation;
+    /// Sets the [`Orientation`] of the edge identified by `index`.
     fn set_orientation(&mut self, index: Index, orientation: Orientation);
+    /// Returns the [`HedgePair`] describing the pairing status of the edge/half-edge identified by `index`.
     fn pair(&self, index: Index) -> HedgePair;
-    // fn flow(&self, index: Index) -> Flow;
+    // fn flow(&self, index: Index) -> Flow; // Example of other potential accessors
     // fn set_flow(&mut self, index: Index, flow: Flow);
+    /// Returns a reference to the custom data of the edge identified by `index`.
     fn data(&self, index: Index) -> &Self::Data;
+    /// Returns a mutable reference to the custom data of the edge identified by `index`.
     fn data_mut(&mut self, index: Index) -> &mut Self::Data;
 }
 
@@ -1141,7 +1172,22 @@ impl<T> Index<&Hedge> for SmartHedgeVec<T> {
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
-pub struct HedgeVec<T>(pub(super) Vec<T>);
+/// A simple wrapper around a `Vec<T>` for storing data associated with each edge,
+/// where edges are identified by an [`EdgeIndex`].
+///
+/// This provides a more direct way to store per-edge data compared to
+/// [`SmartHedgeVec`], if the detailed pairing information (`HedgePair`) and
+/// tight integration with `Involution`'s internal structure are not needed
+/// directly alongside the data.
+///
+/// # Type Parameters
+///
+/// - `T`: The type of data to be stored for each edge.
+pub struct HedgeVec<T>(
+    /// The underlying vector storing the edge data. The index in this vector
+    /// corresponds to an `EdgeIndex`.
+    pub(super) Vec<T>
+);
 
 impl<T> IntoIterator for HedgeVec<T> {
     type Item = (EdgeIndex, T);

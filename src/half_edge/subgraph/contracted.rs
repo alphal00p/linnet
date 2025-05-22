@@ -13,8 +13,23 @@ use super::{Inclusion, ModifySubgraph, SubGraphHedgeIter};
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
+/// Represents a subgraph that may have an "internal" component (a set of fully contained edges)
+/// and an "external" component (a set of incident half-edges or "hairs" connecting to the rest of the graph).
+///
+/// This structure is useful for representing nodes in a quotient graph or for graph contraction,
+/// where a complex subgraph is treated as a single entity with defined connection points.
+///
+/// The `SubGraphOps` (like union, intersection) for `ContractedSubGraph` have specific semantics
+/// that differentiate between the `internal_graph` and `allhedges` components. For example,
+/// intersection might merge internal parts while intersecting the external connections.
 pub struct ContractedSubGraph {
+    /// Represents the set of edges that are considered fully internal to this contracted region.
+    /// This `InternalSubGraph` itself should not contain any dangling or unpaired half-edges
+    /// with respect to its own definition.
     pub internal_graph: InternalSubGraph, // cannot have any external hedges (i.e. unpaired hedges)
+    /// A bitmask representing all half-edges associated with this `ContractedSubGraph`.
+    /// This includes all hedges in `internal_graph` plus any "hairs" or external
+    /// half-edges that connect this contracted region to the rest of the main graph.
     #[cfg_attr(feature = "bincode", bincode(with_serde))]
     pub allhedges: BitVec, // all hedges , including that are in the internal graph.
 }

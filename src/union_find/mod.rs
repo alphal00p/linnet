@@ -1,3 +1,66 @@
+//! # Union-Find (Disjoint Set Union - DSU) Data Structure
+//!
+//! This module implements a Union-Find data structure, also known as Disjoint
+//! Set Union (DSU). It is used to keep track of a collection of disjoint sets
+//! and supports two primary operations:
+//!
+//! 1.  **Find**: Determine which set a particular element belongs to (i.e., find the
+//!     representative or root of the set).
+//! 2.  **Union**: Merge two sets into a single set.
+//!
+//! This implementation includes common optimizations:
+//! - **Path Compression**: During a `find` operation, nodes along the path to the
+//!   root are made to point directly to the root. This flattens the tree structure,
+//!   speeding up future operations.
+//! - **Union by Rank**: When merging two sets, the root of the tree with a smaller
+//!   "rank" (typically related to tree depth or size) is made a child of the root
+//!   with a larger rank. This helps keep the trees relatively shallow.
+//!
+//! ## Core Components:
+//!
+//! - **`UnionFind<U>`**: The main struct.
+//!   - `nodes: Vec<Cell<UFNode>>`: Stores the parent-pointer forest. Each node is
+//!     wrapped in a `Cell` to allow for path compression (interior mutability)
+//!     during `find` operations.
+//!   - `set_data: Vec<SetData<U>>`: Stores data of type `U` associated with the
+//!     representative (root) of each disjoint set.
+//!
+//! - **`UFNode`**: An enum representing a node within the Union-Find forest:
+//!   - `Root { set_data_idx: SetIndex, rank: usize }`: Indicates that this node is
+//!     the representative of its set. It holds an index (`set_data_idx`) to its
+//!     associated data in `set_data` and its `rank`.
+//!   - `Child(ParentPointer)`: Indicates that this node is a child of another node,
+//!     specified by `ParentPointer`.
+//!
+//! - **`SetData<U>`**: A struct holding the actual data `Option<U>` for a set and
+//!   the `ParentPointer` to the root node that currently owns this data slot.
+//!
+//! - **`ParentPointer`**: A type alias (currently for `Hedge`) used as an identifier
+//!   for nodes within the Union-Find structure.
+//! - **`SetIndex`**: A type alias for `usize`, used to index into the `set_data` vector.
+//!
+//! ## Key Operations:
+//!
+//! - `UnionFind::new(associated_data: Vec<U>)`: Creates a new Union-Find structure
+//!   where each initial element is in its own set, with the provided associated data.
+//! - `find(node: ParentPointer) -> ParentPointer`: Finds the representative of the
+//!   set containing `node`. Implements path compression.
+//! - `union(x: ParentPointer, y: ParentPointer, merge_fn: F) -> ParentPointer`: Merges
+//!   the sets containing `x` and `y`. Uses union-by-rank. The `merge_fn` is used
+//!   to combine the data associated with the two sets.
+//! - `find_data(node: ParentPointer) -> &U`: Returns a reference to the data
+//!   associated with the set containing `node`.
+//! - `map_set_data_of(node: ParentPointer, f: F)`: Allows mutable access to the data
+//!   of `node`'s set.
+//! - `extract(...)`: A more advanced operation to partition the Union-Find structure
+//!   itself based on a predicate, potentially creating a new `UnionFind` instance.
+//! - `from_bitvec_partition(partitions: Vec<(U, BitVec)>)`: Constructs a `UnionFind`
+//!   from a set of partitions defined by bitvectors.
+//!
+//! This data structure is commonly used in algorithms for graph connectivity,
+//! Kruskal's algorithm for minimum spanning trees, and other problems involving
+//! partitioning or equivalence classes.
+
 use std::{
     cell::Cell,
     ops::{Index, IndexMut},

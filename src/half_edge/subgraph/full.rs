@@ -7,7 +7,17 @@ use crate::half_edge::{involution::Hedge, nodestore::NodeStorageOps, HedgeGraph}
 use super::{Inclusion, SubGraph};
 
 #[derive(Clone, Debug, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
+/// Represents a subgraph that is either completely full (contains all possible half-edges
+/// in the graph context) or entirely empty.
+///
+/// This struct provides a lightweight way to specify these two common boundary conditions
+/// for subgraph operations. The state (full or empty) is determined by the sign
+/// of the `size` field.
 pub struct FullOrEmpty {
+    /// Stores the size of the graph context.
+    /// If `size` is positive, it represents a full subgraph of that many half-edges.
+    /// If `size` is negative or zero, it represents an empty subgraph; the absolute
+    /// value can still indicate the size of the parent graph context.
     size: isize,
 }
 
@@ -146,7 +156,12 @@ impl Inclusion<RangeInclusive<Hedge>> for FullOrEmpty {
     }
 }
 
+/// An iterator that yields [`Hedge`] identifiers over a given numerical range.
+///
+/// This is used as the `BaseIter` for the [`FullOrEmpty`] subgraph type when it
+/// represents a full graph, allowing iteration over all hedges from `0` up to `size-1`.
 pub struct RangeHedgeIter {
+    /// The underlying `Range<usize>` that this iterator traverses.
     iter: Range<usize>,
 }
 

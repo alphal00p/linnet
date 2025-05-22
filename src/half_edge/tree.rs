@@ -42,9 +42,19 @@ use super::{
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
+/// Represents the role of a graph node within a [`SimpleTraversalTree`].
+///
+/// When a traversal (like DFS or BFS) is performed on a graph, each node
+/// of the graph can be classified based on its position and discovery time
+/// within that traversal. This enum is typically used as the root data in the
+/// `Forest` underlying a `SimpleTraversalTree`.
 pub enum TTRoot {
+    /// The node is a child of another node in the traversal tree.
+    /// The `usize` value might represent discovery order or depth, depending on context.
     Child(usize),
+    /// The node is the root of this specific traversal tree.
     Root,
+    /// The node is not part of this traversal tree (e.g., it was not visited).
     None,
 }
 
@@ -76,10 +86,29 @@ impl TTRoot {
 
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-// #[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
+// #[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))] // Manual Bincode implemented
+/// Represents a traversal tree (e.g., DFS or BFS tree) derived from a [`HedgeGraph`].
+///
+/// This structure uses a generic [`Forest`] to store the tree topology. Each "root" in the
+/// `Forest` corresponds to a node in the original `HedgeGraph`, and its data is a [`TTRoot`]
+/// enum indicating its role (Root, Child, or None) in this specific traversal. The nodes
+/// within each tree of the `Forest` typically represent the half-edges that form the
+/// traversal path.
+///
+/// # Type Parameters
+///
+/// - `P`: The type of [`ForestNodeStore`] used by the underlying `Forest`.
+///        It stores `()` as `NodeData` because the tree nodes (representing half-edges)
+///        don't need additional data beyond their structural role in the traversal tree.
+///        Defaults to [`ParentPointerStore<()>`].
 pub struct SimpleTraversalTree<P: ForestNodeStore<NodeData = ()> = ParentPointerStore<()>> {
+    /// The underlying forest structure representing the traversal tree(s).
+    /// Each root in this forest is a graph node, and its data is its [`TTRoot`] status.
+    /// Nodes within each tree of this forest represent half-edges.
     forest: Forest<TTRoot, P>,
-    // #[cfg_attr(feature = "bincode", bincode(with_serde))]
+    /// A bitmask representing the set of half-edges that constitute the actual
+    /// edges of this traversal tree.
+    // #[cfg_attr(feature = "bincode", bincode(with_serde))] // Handled by manual impl
     pub tree_subgraph: BitVec,
 }
 #[cfg(feature = "bincode")]
@@ -259,9 +288,19 @@ impl<P: ForestNodeStore<NodeData = ()>> SimpleTraversalTree<P> {
     }
 }
 
+/// An iterator that traverses upwards from a given starting half-edge to the root
+/// of its traversal tree, yielding each [`Hedge`] along the path.
+///
+/// # Type Parameters
+///
+/// - `'a`: The lifetime of the borrowed [`SimpleTraversalTree`] and [`Involution`].
+/// - `P`: The type of [`ForestNodeStore`] used by the `SimpleTraversalTree`.
 pub struct TraversalTreeAncestorHedgeIterator<'a, P: ForestNodeStore<NodeData = ()>> {
+    /// A reference to the traversal tree being traversed.
     tt: &'a SimpleTraversalTree<P>,
+    /// A reference to the graph's involution, needed to find opposite half-edges.
     inv: &'a Involution,
+    /// The current [`Hedge`] in the traversal, or `None` if iteration is finished.
     current: Option<Hedge>,
 }
 
@@ -279,12 +318,25 @@ impl<P: ForestNodeStore<NodeData = ()>> Iterator for TraversalTreeAncestorHedgeI
 }
 
 #[derive(Clone)]
+/// An iterator that performs a pre-order traversal of the nodes in a [`SimpleTraversalTree`].
+///
+/// Starting from a given graph node, it visits the node itself and then recursively
+/// visits its children in the traversal tree.
+///
+/// # Type Parameters
+///
+/// - `'a`: The lifetime of the borrowed [`SimpleTraversalTree`] and [`Involution`].
+/// - `S`: The type of [`ForestNodeStore`] used by the `SimpleTraversalTree`, which
+///        must also implement [`ForestNodeStoreDown`] to allow child iteration.
 pub struct PreorderTraversalIter<'a, S: ForestNodeStore<NodeData = ()>>
 where
     S: ForestNodeStoreDown,
 {
+    /// A reference to the traversal tree being traversed.
     store: &'a SimpleTraversalTree<S>,
+    /// A reference to the graph's involution, used for navigating child relationships.
     inv: &'a Involution,
+    /// A stack to keep track of nodes to visit during the pre-order traversal.
     stack: Vec<NodeIndex>,
 }
 
@@ -648,9 +700,27 @@ impl SimpleTraversalTree {
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
+/// Represents a traversal tree that owns its graph representation, typically simplified.
+///
+/// This structure might be used for scenarios where a traversal tree needs to be
+/// stored or manipulated independently of the original, more complex graph from
+/// which it was derived. The graph it owns might store simplified data (e.g., `()` for
+/// edge data, `bool` for node data indicating inclusion).
+///
+/// # Type Parameters
+///
+/// - `P`: The type of [`ForestNodeStore`] used by the underlying `Forest` within the
+///        owned `HedgeGraph`. `P` must also implement `Clone` and [`ForestNodeStorePreorder`].
 pub struct OwnedTraversalTree<P: ForestNodeStore<NodeData = ()> + Clone + ForestNodeStorePreorder> {
+    /// The graph representation owned by this traversal tree.
+    /// Edge data is `()`, and node data is `bool` (likely indicating tree membership or similar).
+    /// The node storage of this graph is a `Forest<bool, P>`.
     graph: HedgeGraph<(), bool, Forest<bool, P>>,
+    /// An [`InternalSubGraph`] representing the edges that form this traversal tree
+    /// within the context of its owned `graph`.
     tree_subgraph: InternalSubGraph,
+    /// A bitmask indicating the set of half-edges covered by this traversal tree,
+    /// potentially in the context of a larger original graph.
     #[cfg_attr(feature = "bincode", bincode(with_serde))]
     covers: BitVec,
 }
