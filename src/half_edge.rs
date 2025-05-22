@@ -607,9 +607,9 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
         matching_fn: impl Fn(Flow, EdgeData<&E>, Flow, EdgeData<&E>) -> bool,
         merge_fn: impl Fn(Flow, EdgeData<E>, Flow, EdgeData<E>) -> (Flow, EdgeData<E>),
     ) -> Result<(), HedgeGraphError> {
-        self.node_store.check_and_set_nodes()?;
+        // self.node_store.check_and_set_nodes()?;
 
-        other.node_store.check_and_set_nodes()?;
+        // other.node_store.check_and_set_nodes()?;
         self.node_store.extend_mut(other.node_store);
         self.edge_store
             .join_mut(other.edge_store, matching_fn, merge_fn)?;
