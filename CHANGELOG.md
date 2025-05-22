@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0](https://github.com/alphal00p/linnet/compare/v0.5.2...v0.6.0) - 2025-05-22
+
+### Fixed
+
+- fix all tests and update symbolica
+- fixes forget_identification_history, If you delete a subgraph you need
+
+### Other
+
+- Add crown functions and implement spanning tree enumeration algo based on graph contraction
+- PartialEq and Eq for hedgevec
+- from_raw for hedgevec
+
 ## [0.5.2](https://github.com/alphal00p/linnet/compare/v0.5.1...v0.5.2) - 2025-05-09
 
 ### Fixed
