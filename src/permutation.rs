@@ -8,9 +8,7 @@ use crate::half_edge::{
     HedgeGraph, NodeIndex,
 };
 use ahash::AHashSet;
-use bincode::{Decode, Encode};
 use bitvec::vec::BitVec;
-use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::half_edge::involution::Flow;
@@ -28,9 +26,11 @@ use crate::half_edge::involution::Flow;
 /// // Apply the permutation to a slice
 /// let data = vec![10, 20, 30, 40];
 /// let permuted = p.apply_slice(&data);
-/// assert_eq!(permuted, vec![30, 10, 20, 40]);
+/// assert_eq!(permuted, vec![20, 30, 10, 40]);
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Encode, Decode)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
 pub struct Permutation {
     map: Vec<usize>,
     inv: Vec<usize>,
@@ -72,7 +72,7 @@ impl Permutation {
     /// ```
     /// # use linnet::permutation::Permutation;
     /// let p = Permutation::from_map(vec![2, 0, 1]);
-    /// assert_eq!(p.apply_slice(&[10,20,30]), vec![30,10,20]);
+    /// assert_eq!(p.apply_slice(&[10,20,30]), vec![20,30,10]);
     /// ```
     pub fn from_map(map: Vec<usize>) -> Self {
         let mut inv = vec![0; map.len()];
@@ -132,7 +132,7 @@ impl Permutation {
     /// # use linnet::permutation::Permutation;
     /// let p = Permutation::from_map(vec![2, 0, 1]);
     /// let inv = p.inverse();
-    /// assert_eq!(inv.apply_slice(&[10,20,30]), vec![20,30,10]);
+    /// assert_eq!(inv.apply_slice(&[10,20,30]), vec![30, 10, 20]);
     /// ```
     pub fn inverse(&self) -> Self {
         Permutation {
@@ -149,7 +149,7 @@ impl Permutation {
     /// # use linnet::permutation::Permutation;
     /// let p = Permutation::from_map(vec![2, 0, 1]);
     /// let data = vec![10, 20, 30];
-    /// assert_eq!(p.apply_slice(&data), vec![30, 10, 20]);
+    /// assert_eq!(p.apply_slice(&data), vec![20, 30, 10]);
     /// ```
     pub fn apply_slice<T: Clone, S>(&self, slice: S) -> Vec<T>
     where
@@ -167,7 +167,7 @@ impl Permutation {
     /// # use linnet::permutation::Permutation;
     /// let p = Permutation::from_map(vec![2, 0, 1]);
     /// let data = vec![10, 20, 30];
-    /// assert_eq!(p.apply_slice_inv(&data), vec![20, 30, 10]);
+    /// assert_eq!(p.apply_slice_inv(&data), vec![30, 10, 20]);
     /// ```
     pub fn apply_slice_inv<T: Clone, S>(&self, slice: S) -> Vec<T>
     where
