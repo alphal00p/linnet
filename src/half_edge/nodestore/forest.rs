@@ -100,7 +100,7 @@ impl<V, P: ForestNodeStore + ForestNodeStorePreorder + Clone> NodeStorageOps for
             .map(|(id, a)| (NodeIndex(id), a.data))
     }
 
-    fn forget_identification_history(&mut self) -> Vec<(Self::NodeData, Hedge)> {
+    fn forget_identification_history(&mut self) -> Vec<Self::NodeData> {
         let mut active_nodes_upper_bound = NodeIndex(0);
         let mut historical_nodes_lower_bound = NodeIndex(self.node_len());
 
@@ -134,7 +134,7 @@ impl<V, P: ForestNodeStore + ForestNodeStorePreorder + Clone> NodeStorageOps for
         self.roots
             .split_off(active_nodes_upper_bound.0)
             .into_iter()
-            .map(|r| (r.data, Hedge::from(r.root_id)))
+            .map(|r| r.data)
             .collect()
     }
 

@@ -88,13 +88,7 @@ fn extact_single_dangling() {
         single_hair.add(s.0);
     }
 
-    simple.extract(
-        &single_hair,
-        |a| a.map(Clone::clone),
-        |a| a,
-        |a| a.clone(),
-        |a| a,
-    );
+    simple.extract(&single_hair, |a| a.map(Clone::clone), |a| a, |a| *a, |a| a);
 }
 
 #[test]
@@ -215,9 +209,12 @@ fn extract_normal() {
 
     println!("{}", aligned.dot(&subgraph));
 
-    aligned.identify_nodes(&[NodeIndex(1), NodeIndex(2)], DotVertexData::empty());
+    let (_, s): (_, BitVec) = aligned
+        .identify_nodes_without_self_edges(&[NodeIndex(1), NodeIndex(2)], DotVertexData::empty());
 
     aligned.forget_identification_history();
+    aligned.delete_hedges(&s);
+
     println!("{}", aligned.dot(&subgraph));
 
     let extracted = aligned.extract(

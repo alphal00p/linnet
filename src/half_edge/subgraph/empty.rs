@@ -107,6 +107,12 @@ impl<T> EmptyIter<T> {
     }
 }
 
+impl<T> Default for EmptyIter<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<T> Iterator for EmptyIter<T> {
     type Item = T;
 

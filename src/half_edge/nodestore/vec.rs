@@ -4,7 +4,10 @@ use crate::{
     half_edge::{
         builder::HedgeNodeBuilder,
         involution::{EdgeIndex, Hedge, Involution},
-        subgraph::{BaseSubgraph, HedgeNode, Inclusion, InternalSubGraph, SubGraph, SubGraphOps},
+        subgraph::{
+            BaseSubgraph, HedgeNode, Inclusion, InternalSubGraph, ModifySubgraph, SubGraph,
+            SubGraphOps,
+        },
         HedgeGraph, HedgeGraphError, NodeIndex,
     },
     tree::{
@@ -360,6 +363,38 @@ impl<N> NodeStorageOps for NodeStorageVec<N> {
         self.node_data[replacement.0] = node_data_merge;
 
         replacement
+    }
+
+    fn forget_identification_history(&mut self) -> Vec<Self::NodeData> {
+        let mut to_keep = BitVec::empty(self.nodes.len());
+
+        for h in &self.hedge_data {
+            to_keep.add(Hedge(h.0));
+        }
+
+        for n in to_keep.iter_zeros() {
+            self.nodes[n] = BitVec::empty(self.hedge_len());
+        }
+
+        let mut left_nodes = NodeIndex(0);
+        let mut extracted_nodes = NodeIndex(self.node_data.len());
+        while left_nodes < extracted_nodes {
+            if to_keep[left_nodes.0] {
+                //left is in the right place
+                left_nodes.0 += 1;
+            } else {
+                //left needs to be swapped
+                extracted_nodes.0 -= 1;
+                if to_keep[extracted_nodes.0] {
+                    //only with an extracted that is in the wrong spot
+                    self.swap_nodes(left_nodes, extracted_nodes);
+                    // self.nodes.swap(left_nodes.0, extracted_nodes.0);
+                    left_nodes.0 += 1;
+                }
+            }
+        }
+
+        self.node_data.split_off(left_nodes.0)
     }
 
     fn to_forest<U, H>(

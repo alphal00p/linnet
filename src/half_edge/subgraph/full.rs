@@ -184,7 +184,7 @@ impl SubGraph for FullOrEmpty {
     }
 
     fn size(&self) -> usize {
-        self.size.abs() as usize
+        self.size.unsigned_abs()
     }
 
     fn join_mut(&mut self, other: Self) {
@@ -204,7 +204,7 @@ impl SubGraph for FullOrEmpty {
     }
 
     fn nhedges(&self) -> usize {
-        self.size.try_into().unwrap_or_else(|_| 0)
+        self.size.try_into().unwrap_or(0)
     }
 
     fn empty(size: usize) -> Self {

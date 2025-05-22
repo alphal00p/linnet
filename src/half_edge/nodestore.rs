@@ -32,9 +32,7 @@ pub trait NodeStorageOps: NodeStorage {
     fn identify_nodes(&mut self, nodes: &[NodeIndex], node_data_merge: Self::NodeData)
         -> NodeIndex;
 
-    fn forget_identification_history(&mut self) -> Vec<(Self::NodeData, Hedge)> {
-        vec![]
-    }
+    fn forget_identification_history(&mut self) -> Vec<Self::NodeData>;
 
     fn to_forest<U, H>(
         &self,

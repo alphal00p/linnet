@@ -74,6 +74,10 @@ impl<V> NodeStorageOps for UnionFindNodeStore<V> {
         todo!()
     }
 
+    fn forget_identification_history(&mut self) -> Vec<Self::NodeData> {
+        todo!()
+    }
+
     fn delete<S: crate::half_edge::subgraph::SubGraph<Base = Self::Base>>(
         &mut self,
         _subgraph: &S,

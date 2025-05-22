@@ -8,7 +8,9 @@ use crate::half_edge::{
     HedgeGraph, NodeIndex,
 };
 use ahash::AHashSet;
+use bincode::{Decode, Encode};
 use bitvec::vec::BitVec;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::half_edge::involution::Flow;
@@ -28,7 +30,7 @@ use crate::half_edge::involution::Flow;
 /// let permuted = p.apply_slice(&data);
 /// assert_eq!(permuted, vec![30, 10, 20, 40]);
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Encode, Decode)]
 pub struct Permutation {
     map: Vec<usize>,
     inv: Vec<usize>,
@@ -76,6 +78,16 @@ impl Permutation {
         let mut inv = vec![0; map.len()];
         for (i, &j) in map.iter().enumerate() {
             inv[j] = i;
+        }
+        Permutation { map, inv }
+    }
+
+    /// Creates a permutation from a inverse mapping vector.
+    /// The `inv` vector states that index `i` is actually inv[i]
+    pub fn from_inv(inv: Vec<usize>) -> Self {
+        let mut map = vec![0; inv.len()];
+        for (i, &j) in inv.iter().enumerate() {
+            map[j] = i;
         }
         Permutation { map, inv }
     }
@@ -144,7 +156,7 @@ impl Permutation {
         S: AsRef<[T]>,
     {
         let s = slice.as_ref();
-        self.map.iter().map(|&idx| s[idx].clone()).collect()
+        self.inv.iter().map(|&idx| s[idx].clone()).collect()
     }
 
     /// Applies the inverse of `self` to a slice, returning a new `Vec<T>` in permuted order.
@@ -162,7 +174,7 @@ impl Permutation {
         S: AsRef<[T]>,
     {
         let s = slice.as_ref();
-        self.inv.iter().map(|&idx| s[idx].clone()).collect()
+        self.map.iter().map(|&idx| s[idx].clone()).collect()
     }
 
     /// Applies `self` in-place to the provided slice by using transpositions
@@ -236,7 +248,7 @@ impl Permutation {
     /// assert_eq!(iter.next(), None);
     /// ```
     pub fn iter_slice<'a, T>(&'a self, slice: &'a [T]) -> PermutationMapIter<'a, T> {
-        PermutationMapIter::new(slice, &self.inv)
+        PermutationMapIter::new(slice, &self.map)
     }
 
     /// Returns an iterator that yields references to the elements of the slice
@@ -255,8 +267,8 @@ impl Permutation {
     /// assert_eq!(iter.next(), Some(&10)); // data[inv[2]] = data[0]
     /// assert_eq!(iter.next(), None);
     /// ```
-    pub fn iter_slice_inv<'a, T>(&'a self, slice: &'a [T]) -> PermutationInvIter<'a, T> {
-        PermutationInvIter::new(slice, &self.inv)
+    pub fn iter_slice_inv<'a, T>(&'a self, slice: &'a [T]) -> PermutationMapIter<'a, T> {
+        PermutationMapIter::new(slice, &self.inv)
     }
 
     /// Returns a mutable iterator that yields mutable references to the elements of the slice
@@ -309,8 +321,8 @@ impl Permutation {
     /// //                   data[inv[2]=0] (10) gets +200 -> 210
     /// assert_eq!(data, vec![210, 20, 130]);
     /// ```
-    pub fn iter_slice_inv_mut<'a, T>(&'a self, slice: &'a mut [T]) -> PermutationInvIterMut<'a, T> {
-        PermutationInvIterMut::new(slice, &self.inv)
+    pub fn iter_slice_inv_mut<'a, T>(&'a self, slice: &'a mut [T]) -> PermutationMapIterMut<'a, T> {
+        PermutationMapIterMut::new(slice, &self.inv)
     }
 
     // --------------------------------------------------------------------------------------------
@@ -337,7 +349,7 @@ impl Permutation {
         let s = slice.as_ref();
         let mut permutation: Vec<usize> = (0..s.len()).collect();
         permutation.sort_by_key(|&i| &s[i]);
-        Self::from_map(permutation)
+        Self::from_inv(permutation)
     }
 
     // --------------------------------------------------------------------------------------------
@@ -1067,9 +1079,6 @@ pub struct PermutationMapIter<'a, T: 'a> {
     slice: &'a [T],
     map_indices: &'a [usize],
     current_map_idx: usize,
-    // No PhantomData needed if we don't have a mutable reference like &'a mut T.
-    // However, it's good practice for iterators holding lifetimes.
-    _marker: PhantomData<&'a T>,
 }
 
 impl<'a, T: 'a> PermutationMapIter<'a, T> {
@@ -1089,7 +1098,6 @@ impl<'a, T: 'a> PermutationMapIter<'a, T> {
             slice,
             map_indices,
             current_map_idx: 0,
-            _marker: PhantomData,
         }
     }
 }
@@ -1102,6 +1110,7 @@ impl<'a, T> Iterator for PermutationMapIter<'a, T> {
             None
         } else {
             let perm_idx = self.map_indices[self.current_map_idx];
+            // println!("{perm_idx}{}", self.current_map_idx);
             self.current_map_idx += 1;
             // Safety: new() asserts that all map_indices are valid for the slice.
             Some(&self.slice[perm_idx])
@@ -1122,120 +1131,6 @@ impl<T> ExactSizeIterator for PermutationMapIter<'_, T> {
 
 impl<T> FusedIterator for PermutationMapIter<'_, T> {}
 
-/// An iterator over a slice, ordered by a permutation's inverse `inv` map.
-#[derive(Debug, Clone)] // Added Clone
-pub struct PermutationInvIter<'a, T: 'a> {
-    slice: &'a [T],
-    inv_map_indices: &'a [usize],
-    current_map_idx: usize,
-    _marker: PhantomData<&'a T>,
-}
-
-impl<'a, T: 'a> PermutationInvIter<'a, T> {
-    fn new(slice: &'a [T], inv_map_indices: &'a [usize]) -> Self {
-        if !inv_map_indices.is_empty() {
-            assert!(
-                inv_map_indices.iter().all(|&idx| idx < slice.len()),
-                "Slice length ({}) is too short for all indices in permutation inverse map. Max index in inv_map: {:?}",
-                slice.len(),
-                inv_map_indices.iter().max()
-            );
-        }
-        PermutationInvIter {
-            slice,
-            inv_map_indices,
-            current_map_idx: 0,
-            _marker: PhantomData,
-        }
-    }
-}
-
-impl<'a, T> Iterator for PermutationInvIter<'a, T> {
-    type Item = &'a T;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.current_map_idx >= self.inv_map_indices.len() {
-            None
-        } else {
-            let perm_idx = self.inv_map_indices[self.current_map_idx];
-            self.current_map_idx += 1;
-            // Safety: new() asserts that all inv_map_indices are valid for the slice.
-            Some(&self.slice[perm_idx])
-        }
-    }
-
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        let len = self.inv_map_indices.len() - self.current_map_idx;
-        (len, Some(len))
-    }
-}
-
-impl<T> ExactSizeIterator for PermutationInvIter<'_, T> {
-    fn len(&self) -> usize {
-        self.inv_map_indices.len() - self.current_map_idx
-    }
-}
-
-impl<T> FusedIterator for PermutationInvIter<'_, T> {}
-
-/// A mutable iterator over a slice, ordered by a permutation's inverse `inv` map.
-#[derive(Debug)]
-pub struct PermutationInvIterMut<'a, T: 'a> {
-    ptr: NonNull<T>,
-    inv_map_indices: &'a [usize],
-    current_map_idx: usize,
-    len: usize,
-    _marker: PhantomData<&'a mut T>,
-}
-
-impl<'a, T: 'a> PermutationInvIterMut<'a, T> {
-    fn new(slice: &'a mut [T], inv_map_indices: &'a [usize]) -> Self {
-        let slice_len = slice.len();
-        let perm_len = inv_map_indices.len();
-        assert!(
-            slice_len >= perm_len,
-            "Slice length ({}) must be at least the permutation length ({}) for mutable iteration via inverse map.",
-            slice_len,
-            perm_len
-        );
-        PermutationInvIterMut {
-            ptr: NonNull::new(slice.as_mut_ptr()).expect("Slice pointer cannot be null"),
-            inv_map_indices,
-            current_map_idx: 0,
-            len: perm_len,
-            _marker: PhantomData,
-        }
-    }
-}
-
-impl<'a, T> Iterator for PermutationInvIterMut<'a, T> {
-    type Item = &'a mut T;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.current_map_idx >= self.inv_map_indices.len() {
-            None
-        } else {
-            let perm_idx = self.inv_map_indices[self.current_map_idx];
-            self.current_map_idx += 1;
-            self.len -= 1;
-            // SAFETY: See PermutationMapIterMut::next
-            unsafe { Some(&mut *self.ptr.as_ptr().add(perm_idx)) }
-        }
-    }
-
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        (self.len, Some(self.len))
-    }
-}
-
-impl<T> ExactSizeIterator for PermutationInvIterMut<'_, T> {
-    fn len(&self) -> usize {
-        self.len
-    }
-}
-
-impl<T> FusedIterator for PermutationInvIterMut<'_, T> {}
-
 impl Index<usize> for Permutation {
     type Output = usize;
 
@@ -1246,6 +1141,7 @@ impl Index<usize> for Permutation {
 
 #[cfg(test)]
 mod tests {
+
     use crate::half_edge::{builder::HedgeGraphBuilder, involution::Flow};
 
     use super::*;
@@ -1390,7 +1286,7 @@ mod tests {
         let p = Permutation::from_map(vec![2, 1, 3, 0]);
         let data = vec![10, 20, 30, 40];
         let permuted = p.apply_slice(&data);
-        assert_eq!(permuted, vec![30, 20, 40, 10]);
+        assert_eq!(permuted, vec![40, 20, 10, 30]);
     }
 
     #[test]
@@ -1437,7 +1333,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "Slice length (0) is too short for all indices in permutation map.")]
+    #[should_panic(expected = "Slice length (3) is too short for all indices in permutation map.")]
     fn test_iter_slice_panic_map_idx_out_of_bounds() {
         // This case should ideally be caught by Permutation::from_map validation
         // but if map somehow contains an index larger than its own length, this test covers iter_slice.
@@ -1457,7 +1353,7 @@ mod tests {
         let p = Permutation::from_map(vec![2, 1, 3, 0]);
         let data = vec![10, 20, 30, 40];
         let permuted = p.apply_slice_inv(&data);
-        assert_eq!(permuted, vec![40, 20, 10, 30]);
+        assert_eq!(permuted, vec![30, 20, 40, 10]);
     }
 
     #[test]
@@ -1490,24 +1386,27 @@ mod tests {
     fn test_apply_slice_in_place() {
         let p = Permutation::from_map(vec![2, 0, 1, 3]);
         let mut data = vec![10, 20, 30, 40];
+
+        let a = p.apply_slice(&data);
         p.apply_slice_in_place(&mut data);
         assert_eq!(data, vec![20, 30, 10, 40]);
+        assert_eq!(a, data);
     }
 
     #[test]
     fn test_apply_slice_in_place_inv() {
         let p = Permutation::from_map(vec![2, 0, 1, 3]);
         let mut data = vec![10, 20, 30, 40];
+        let a = p.apply_slice_inv(&data);
         p.apply_slice_in_place_inv(&mut data);
         assert_eq!(data, vec![30, 10, 20, 40]);
+        assert_eq!(data, a);
     }
 
     #[test]
     fn test_sort() {
         let data = vec![30, 10, 20, 40];
         let perm = Permutation::sort(&data);
-        assert_eq!(perm.map, vec![1, 2, 0, 3]);
-
         let sorted_data = perm.apply_slice(&data);
         assert_eq!(sorted_data, vec![10, 20, 30, 40]);
     }
@@ -1941,5 +1840,124 @@ mod tests {
         assert_eq!(all_2.len(), 2);
         assert_eq!(all_3.len(), 6);
         assert_eq!(all_4.len(), 24);
+    }
+
+    #[test]
+    fn test_apply_in_place_same_as_ref() {
+        // Create a few different permutations for testing
+        let permutations = [
+            Permutation::from_map(vec![2, 0, 1, 3]),
+            Permutation::from_map(vec![3, 2, 1, 0]),
+            Permutation::from_map(vec![1, 0, 3, 2]),
+        ];
+
+        for perm in &permutations {
+            // Test data
+            let data = vec![10, 20, 30, 40];
+
+            // Apply using by-reference method
+            let result_by_ref = perm.apply_slice(&data);
+
+            // Apply using in-place method
+            let mut data_copy = data.clone();
+            perm.apply_slice_in_place(&mut data_copy);
+
+            // Results should be the same
+            assert_eq!(result_by_ref, data_copy);
+
+            // Also test inverse operations
+            let result_inv_by_ref = perm.apply_slice_inv(&data);
+
+            let mut data_copy = data.clone();
+            perm.apply_slice_in_place_inv(&mut data_copy);
+
+            // Inverse results should be the same
+            assert_eq!(result_inv_by_ref, data_copy);
+        }
+    }
+
+    #[test]
+    fn test_apply_in_place_inverse_relation() {
+        // Create a permutation
+        let perm = Permutation::from_map(vec![2, 0, 3, 1]);
+
+        // Apply the permutation and then its inverse should give back the original data
+        let data = vec![10, 20, 30, 40];
+
+        // Using by-reference methods
+        let permuted = perm.apply_slice(&data);
+        let unpermuted = perm.apply_slice_inv(&permuted);
+        assert_eq!(data, unpermuted);
+
+        // Using in-place methods
+        let mut data_copy = data.clone();
+        perm.apply_slice_in_place(&mut data_copy);
+        perm.apply_slice_in_place_inv(&mut data_copy);
+        assert_eq!(data, data_copy);
+    }
+
+    #[test]
+    fn test_validate_with_sort() {
+        // Create data that's out of order
+        let data = vec![30, 10, 40, 20];
+
+        // Get sorting permutation
+        let perm = Permutation::sort(&data);
+
+        // Sort using by-reference method
+        let sorted_by_ref = perm.apply_slice(&data);
+        assert_eq!(sorted_by_ref, vec![10, 20, 30, 40]);
+
+        // Sort using in-place method
+        let mut data_copy = data.clone();
+        perm.apply_slice_in_place(&mut data_copy);
+        assert_eq!(data_copy, vec![10, 20, 30, 40]);
+
+        // Verify that unsort works too
+        let mut sorted = vec![10, 20, 30, 40];
+        perm.apply_slice_in_place_inv(&mut sorted);
+        assert_eq!(sorted, data);
+
+        let unsorted_by_ref = perm.apply_slice_inv([10, 20, 30, 40]);
+        assert_eq!(unsorted_by_ref, data);
+    }
+
+    #[test]
+    fn test_apply_equivalence_random_data() {
+        // Test with different sized permutations
+        for size in 1..10 {
+            // Create a random permutation
+            let map: Vec<usize> = (0..size).collect();
+            let mut perm_map = map.clone();
+
+            // Simple shuffle algorithm for testing
+            for i in 0..size {
+                let j = (i * 7 + 3) % size;
+                perm_map.swap(i, j);
+            }
+
+            let perm = Permutation::from_map(perm_map);
+
+            // Create test data
+            let test_data: Vec<i32> = (0..size as i32).collect();
+
+            // Apply using by-reference methods
+            let result_by_ref = perm.apply_slice(&test_data);
+
+            // Apply using in-place methods
+            let mut data_copy = test_data.clone();
+            perm.apply_slice_in_place(&mut data_copy);
+
+            // Results should match
+            assert_eq!(result_by_ref, data_copy);
+
+            // Test inverse operations
+            let result_inv_by_ref = perm.apply_slice_inv(&test_data);
+
+            let mut data_copy = test_data.clone();
+            perm.apply_slice_in_place_inv(&mut data_copy);
+
+            assert_eq!(result_inv_by_ref, data_copy);
+        }
     }
 }

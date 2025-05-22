@@ -819,7 +819,7 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
     }
 
     ///Permutes nodes not pointing to any root anymore to end of nodestore and then extract it
-    pub fn forget_identification_history(&mut self) -> Vec<(V, Hedge)> {
+    pub fn forget_identification_history(&mut self) -> Vec<V> {
         self.node_store.forget_identification_history()
     }
 
@@ -829,13 +829,13 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
     }
 
     ///Retains the NodeIndex ordering and just appends a new node.
-    pub fn identify_nodes_without_self_edges<S: SubGraph>(
+    pub fn identify_nodes_without_self_edges<S>(
         &mut self,
         nodes: &[NodeIndex],
         node_data_merge: V,
     ) -> (NodeIndex, S)
     where
-        S: ModifySubgraph<Hedge>,
+        S: ModifySubgraph<Hedge> + SubGraph,
     {
         let mut self_edges: S = self.empty_subgraph();
         for n in nodes {
@@ -2071,7 +2071,6 @@ use subgraph::{
 use thiserror::Error;
 use tree::SimpleTraversalTree;
 
-use crate::tree::child_vec::ChildVecStore;
 use crate::tree::ForestNodeStore;
 
 #[derive(Error, Debug)]

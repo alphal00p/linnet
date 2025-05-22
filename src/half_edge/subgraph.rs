@@ -11,7 +11,7 @@ use ahash::AHashSet;
 use bitvec::{bitvec, order::Lsb0, vec::BitVec};
 
 use super::{
-    involution::{EdgeIndex, Flow, HedgePair},
+    involution::{Flow, HedgePair},
     nodestore::NodeStorageOps,
     GVEdgeAttrs, Hedge, HedgeGraph, NodeStorage, PowersetIterator,
 };
