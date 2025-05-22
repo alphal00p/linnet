@@ -6,6 +6,7 @@ use crate::{
     half_edge::{
         builder::HedgeGraphBuilder,
         involution::{Flow, Hedge},
+        nodestore::NodeStorageOps,
         subgraph::ModifySubgraph,
         HedgeGraph, NodeIndex,
     },
@@ -52,7 +53,7 @@ fn extract_forest() {
 
     println!("{}", aligned.dot(&subgraph));
 
-    aligned.identify_nodes(&[NodeIndex(1), NodeIndex(2)], DotVertexData::empty());
+    // aligned.identify_nodes(&[NodeIndex(1), NodeIndex(2)], DotVertexData::empty());
 
     aligned.forget_identification_history();
     println!("{}", aligned.dot(&subgraph));
@@ -161,6 +162,8 @@ fn extract_buggy() {
         |a| a.clone(),
         |a| a,
     );
+
+    aligned.node_store.check_and_set_nodes().unwrap();
     // println!("{:?}", aligned.node_store.node_len());
 
     // println!("{:?}", extracted.node_store.node_len());
@@ -214,6 +217,7 @@ fn extract_normal() {
 
     aligned.forget_identification_history();
     aligned.delete_hedges(&s);
+    aligned.node_store.check_and_set_nodes().unwrap();
 
     println!("{}", aligned.dot(&subgraph));
 
@@ -224,6 +228,8 @@ fn extract_normal() {
         |a| a.clone(),
         |a| a,
     );
+
+    aligned.node_store.check_and_set_nodes().unwrap();
     // println!("{:?}", aligned.node_store.node_len());
 
     // println!("{:?}", extracted.node_store.node_len());

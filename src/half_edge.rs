@@ -115,7 +115,7 @@ use rand::{rngs::SmallRng, Rng, SeedableRng};
 /// identifier is expected.
 pub struct NodeIndex(
     /// The underlying `usize` value representing the node's index.
-    pub usize
+    pub usize,
 );
 
 impl std::fmt::Display for NodeIndex {
@@ -603,10 +603,13 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
     ///   if node validation fails).
     pub fn join_mut(
         &mut self,
-        other: Self,
+        mut other: Self,
         matching_fn: impl Fn(Flow, EdgeData<&E>, Flow, EdgeData<&E>) -> bool,
         merge_fn: impl Fn(Flow, EdgeData<E>, Flow, EdgeData<E>) -> (Flow, EdgeData<E>),
     ) -> Result<(), HedgeGraphError> {
+        self.node_store.check_and_set_nodes()?;
+
+        other.node_store.check_and_set_nodes()?;
         self.node_store.extend_mut(other.node_store);
         self.edge_store
             .join_mut(other.edge_store, matching_fn, merge_fn)?;
@@ -1276,6 +1279,21 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
     ///Retains the NodeIndex ordering and just appends a new node.
     pub fn identify_nodes(&mut self, nodes: &[NodeIndex], node_data_merge: V) -> NodeIndex {
         self.node_store.identify_nodes(nodes, node_data_merge)
+    }
+
+    ///Identifies all nodes in this subgraph and gives value node_data_merge to identified node.
+    ///Deletes all edges in the subgraph.
+    ///This invalidates both hedge indices and node indices
+    pub fn contract_subgraph<S: SubGraph<Base = N::Base>>(
+        &mut self,
+        subgraph: &S,
+        node_data_merge: V,
+    ) {
+        let nodes: Vec<_> = self.iter_node_data(subgraph).map(|(a, _, _)| a).collect();
+
+        self.identify_nodes(&nodes, node_data_merge);
+        self.forget_identification_history();
+        self.delete_hedges(subgraph);
     }
 
     ///Retains the NodeIndex ordering and just appends a new node.
