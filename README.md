@@ -6,6 +6,7 @@
 </div>
 
 [![crates.io](https://img.shields.io/crates/v/linnet.svg)](https://crates.io/crates/linnet)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.15494394.svg)](https://doi.org/10.5281/zenodo.15494394)
 # Linnet
 
 Linnet is a graph library, specifically designed and developed to represent **tensor networks** and **Feynman diagrams** as used in projects like **[`gammaloop`](https://github.com/alphal00p/gammaloop)** and **[`spenso`](https://github.com/alphal00p/spenso)**.
