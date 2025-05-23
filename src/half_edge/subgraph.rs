@@ -329,13 +329,13 @@ pub trait SubGraph:
         )?;
         writeln!(writer, "{}", graph_info.as_ref())?;
 
-        for (n, _, v) in graph.iter_node_data(self) {
+        for (n, _, v) in graph.iter_nodes_of(self) {
             if let Some(a) = node_attr(v) {
                 writeln!(writer, "  {} [{}];", n.0, a)?;
             }
         }
 
-        for (hedge_pair, _, data) in graph.iter_all_edges() {
+        for (hedge_pair, _, data) in graph.iter_edges() {
             let subgraph_pair = hedge_pair.with_subgraph(self);
 
             let attr = GVEdgeAttrs {
@@ -371,13 +371,13 @@ pub trait SubGraph:
         )?;
         writeln!(writer, "{}", graph_info.as_ref())?;
 
-        for (n, _, v) in graph.iter_node_data(self) {
+        for (n, _, v) in graph.iter_nodes_of(self) {
             if let Some(a) = node_attr(v) {
                 writeln!(writer, "  {} [{}];", n.0, a)?;
             }
         }
 
-        for (hedge_pair, _, data) in graph.iter_all_edges() {
+        for (hedge_pair, _, data) in graph.iter_edges() {
             let subgraph_pair = hedge_pair.with_subgraph(self);
 
             let attr = GVEdgeAttrs {
@@ -552,7 +552,7 @@ impl BaseSubgraph for BitVec {
     ) -> Self {
         let mut empty: BitVec = graph.empty_subgraph();
 
-        for (p, _, d) in graph.iter_all_edges() {
+        for (p, _, d) in graph.iter_edges() {
             if filter(d.data) {
                 empty.add(p);
             }

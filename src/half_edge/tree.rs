@@ -852,7 +852,7 @@ pub mod tests {
         graph.align_underlying_to_tree(&tree);
         graph.align_superficial_to_tree(&tree);
         assert!(graph
-            .iter_all_edges()
+            .iter_edges()
             .all(|(_, _, d)| !matches!(d.orientation, Orientation::Reversed)));
         // println!("{}", tree.dot(&graph))
         // Test implementation

@@ -333,7 +333,7 @@ impl<E, V> PositionalHedgeGraph<E, V> {
             out.push_str(&format!("node(node{}.pos)\n", a));
         }
 
-        for (eid, _, nid) in self.iter_all_edges() {
+        for (eid, _, nid) in self.iter_edges() {
             out.push_str(&eid.cetz_impl(self, edge_label, edge_decoration, nid.orientation));
         }
 
@@ -583,7 +583,7 @@ impl Positions {
             (None, j, j + 1)
         });
 
-        for _ in graph.base_nodes_iter() {
+        for _ in graph.iter_node_ids() {
             let j = params.len();
             params.push(rng.gen_range(range.clone()));
             params.push(rng.gen_range(range.clone()));
@@ -627,7 +627,7 @@ impl Positions {
             }
         });
 
-        for _ in graph.base_nodes_iter() {
+        for _ in graph.iter_node_ids() {
             let j = params.len();
             params.push(rng.gen_range(range.clone()));
             params.push(rng.gen_range(range.clone()));
@@ -927,7 +927,7 @@ impl LayoutSettings {
             right_bot_corner.1 += right_step;
         }
 
-        for _ in graph.base_nodes_iter() {
+        for _ in graph.iter_node_ids() {
             let j = init_params.len();
             init_params.push(rng.gen_range(range.clone()));
             init_params.push(rng.gen_range(range.clone()));
@@ -981,7 +981,7 @@ impl LayoutSettings {
             }
         });
 
-        for _ in graph.base_nodes_iter() {
+        for _ in graph.iter_node_ids() {
             let j = init_params.len();
             init_params.push(rng.gen_range(range.clone()));
             init_params.push(rng.gen_range(range.clone()));

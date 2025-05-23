@@ -742,7 +742,10 @@ fn join() {
         )
         .unwrap();
 
-    assert_eq!("e", *c.iter_edges(&c.full_filter()).next().unwrap().2.data);
+    assert_eq!(
+        "e",
+        *c.iter_edges_of(&c.full_filter()).next().unwrap().2.data
+    );
 }
 use std::time::Instant;
 
@@ -953,7 +956,7 @@ fn self_energy_box() {
 
     for (left, cut, right) in cuts.iter() {
         let mut edges_in_cut: Vec<_> = self_energy
-            .iter_edges(cut)
+            .iter_edges_of(cut)
             .map(|(_, edge, _)| edge)
             .collect();
 

@@ -321,7 +321,7 @@ impl InternalSubGraph {
         mut filter: BitVec,
         graph: &HedgeGraph<E, V, N>,
     ) -> Self {
-        for (j, _, _) in graph.iter_all_edges() {
+        for (j, _, _) in graph.iter_edges() {
             match j {
                 HedgePair::Paired { source, sink } => {
                     if filter.includes(&source) || filter.includes(&sink) {
@@ -343,7 +343,7 @@ impl InternalSubGraph {
         mut filter: BitVec,
         graph: &HedgeGraph<E, V, N>,
     ) -> Self {
-        for (j, _, _) in graph.iter_all_edges() {
+        for (j, _, _) in graph.iter_edges() {
             match j {
                 HedgePair::Paired { source, sink } => {
                     if filter.includes(&source) && filter.includes(&sink) {
@@ -387,7 +387,7 @@ impl InternalSubGraph {
         &self,
         graph: &HedgeGraph<E, V, N>,
     ) -> (Vec<Cycle>, SimpleTraversalTree) {
-        let node = graph.base_nodes_iter().next().unwrap();
+        let node = graph.iter_node_ids().next().unwrap();
         graph.paton_cycle_basis(self, &node, None).unwrap()
     }
 }

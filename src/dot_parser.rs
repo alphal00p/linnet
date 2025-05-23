@@ -628,7 +628,7 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
             writeln!(writer, "  {} [{}];", n, node_map(v))?;
         }
 
-        for (hedge_pair, _, data) in self.iter_all_edges() {
+        for (hedge_pair, _, data) in self.iter_edges() {
             let attr = GVEdgeAttrs {
                 color: None,
                 label: None,
@@ -654,7 +654,7 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
             writeln!(writer, "  {} [{}];", n, node_map(v))?;
         }
 
-        for (hedge_pair, _, data) in self.iter_all_edges() {
+        for (hedge_pair, _, data) in self.iter_edges() {
             let attr = GVEdgeAttrs {
                 color: None,
                 label: None,

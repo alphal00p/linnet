@@ -128,7 +128,7 @@ impl OrientedCut {
         &'a self,
         graph: &'a HedgeGraph<E, V, N>,
     ) -> impl Iterator<Item = (Flow, EdgeIndex, EdgeData<&'a E>)> {
-        graph.iter_edges(&self.left).filter_map(|(pair, b, c)| {
+        graph.iter_edges_of(&self.left).filter_map(|(pair, b, c)| {
             if let HedgePair::Split { split, .. } = pair {
                 Some((split, b, c))
             } else {
@@ -514,7 +514,7 @@ impl OrientedCut {
 
         let graph = self.to_owned_graph_ref(graph);
 
-        for (p, d, i) in graph.iter_all_edges() {
+        for (p, d, i) in graph.iter_edges() {
             if let Some(flow) = i.data.flow() {
                 if let HedgePair::Unpaired { .. } = p {
                     match flow {
@@ -649,7 +649,7 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> CutGraph<E, V, N> {
 
     pub fn cut(&self) -> OrientedCut {
         let mut cut = OrientedCut::empty(self.n_hedges());
-        for (h, _, d) in self.iter_all_edges() {
+        for (h, _, d) in self.iter_edges() {
             match d.data.flow {
                 Orientation::Default => cut.set(h, Flow::Source),
                 Orientation::Reversed => cut.set(h, Flow::Sink),
@@ -1019,7 +1019,7 @@ pub mod test {
         let mut cut_sink_source = OrientedCut::empty(twocycle.n_hedges());
         let mut cut_source_sink = OrientedCut::empty(twocycle.n_hedges());
 
-        for (p, e, _) in twocycle.iter_all_edges() {
+        for (p, e, _) in twocycle.iter_edges() {
             cut_all_source.set(p, Flow::Source);
             cut_all_sink.set(p, Flow::Sink);
 

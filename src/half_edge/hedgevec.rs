@@ -1041,17 +1041,6 @@ impl<T> SmartHedgeVec<T> {
             .map(move |(i, d)| (self[&self[&i]].1, d.data, d.as_ref().map(|&a| &self[a])))
     }
 
-    pub fn iter_internal_edge_data<'a, S: SubGraph>(
-        &'a self,
-        subgraph: &'a S,
-    ) -> impl Iterator<Item = EdgeData<&'a T>> + 'a {
-        subgraph.included_iter().flat_map(|i| {
-            self.involution
-                .smart_data(i, subgraph)
-                .map(|d| d.as_ref().map(|&a| &self[a]))
-        })
-    }
-
     pub fn n_internals<S: SubGraph>(&self, subgraph: &S) -> usize {
         self.involution.n_internals(subgraph)
     }
@@ -1186,7 +1175,7 @@ impl<T> Index<&Hedge> for SmartHedgeVec<T> {
 pub struct HedgeVec<T>(
     /// The underlying vector storing the edge data. The index in this vector
     /// corresponds to an `EdgeIndex`.
-    pub(super) Vec<T>
+    pub(super) Vec<T>,
 );
 
 impl<T> IntoIterator for HedgeVec<T> {

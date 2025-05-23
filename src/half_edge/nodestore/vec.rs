@@ -504,24 +504,24 @@ impl<N> NodeStorageOps for NodeStorageVec<N> {
 
     fn iter_nodes(
         &self,
-    ) -> impl Iterator<Item = (Self::NeighborsIter<'_>, NodeIndex, &Self::NodeData)> {
+    ) -> impl Iterator<Item = (NodeIndex, Self::NeighborsIter<'_>, &Self::NodeData)> {
         self.nodes
             .iter()
             .map(Into::into)
             .zip(self.node_data.iter())
             .zip(self.iter_node_id())
-            .map(|((node, data), id)| (node, id, data))
+            .map(|((node, data), id)| (id, node, data))
     }
 
     fn iter_nodes_mut(
         &mut self,
-    ) -> impl Iterator<Item = (Self::NeighborsIter<'_>, NodeIndex, &mut Self::NodeData)> {
+    ) -> impl Iterator<Item = (NodeIndex, Self::NeighborsIter<'_>, &mut Self::NodeData)> {
         self.nodes
             .iter()
             .map(Into::into)
             .enumerate()
             .zip(self.node_data.iter_mut())
-            .map(|((id, node), data)| (node, NodeIndex(id), data))
+            .map(|((id, node), data)| (NodeIndex(id), node, data))
     }
 
     fn node_id_ref(&self, hedge: Hedge) -> NodeIndex {

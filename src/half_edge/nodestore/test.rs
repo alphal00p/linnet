@@ -85,7 +85,7 @@ fn extact_single_dangling() {
     let mut simple: HedgeGraph<(), ()> = simple.build();
 
     let mut single_hair: BitVec = simple.empty_subgraph();
-    if let Some(s) = simple.iter_all_edges().find(|a| a.0.is_unpaired()) {
+    if let Some(s) = simple.iter_edges().find(|a| a.0.is_unpaired()) {
         single_hair.add(s.0);
     }
 

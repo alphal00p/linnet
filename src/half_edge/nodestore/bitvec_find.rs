@@ -249,17 +249,17 @@ impl<V> NodeStorageOps for UnionFindNodeStore<V> {
 
     fn iter_nodes(
         &self,
-    ) -> impl Iterator<Item = (Self::NeighborsIter<'_>, NodeIndex, &Self::NodeData)> {
+    ) -> impl Iterator<Item = (NodeIndex, Self::NeighborsIter<'_>, &Self::NodeData)> {
         self.nodes
             .iter_set_data()
-            .map(|(i, d)| ((&d.node).into(), NodeIndex(i.0), &d.data))
+            .map(|(i, d)| (NodeIndex(i.0), (&d.node).into(), &d.data))
     }
     fn iter_nodes_mut(
         &mut self,
-    ) -> impl Iterator<Item = (Self::NeighborsIter<'_>, NodeIndex, &mut Self::NodeData)> {
+    ) -> impl Iterator<Item = (NodeIndex, Self::NeighborsIter<'_>, &mut Self::NodeData)> {
         self.nodes
             .iter_set_data_mut()
-            .map(|(i, d)| ((&d.node).into(), NodeIndex(i.0), &mut d.data))
+            .map(|(i, d)| (NodeIndex(i.0), (&d.node).into(), &mut d.data))
     }
 
     fn node_id_ref(&self, hedge: crate::half_edge::involution::Hedge) -> NodeIndex {

@@ -516,11 +516,11 @@ impl<V, P: ForestNodeStore + ForestNodeStorePreorder + Clone> NodeStorageOps for
 
     fn iter_nodes(
         &self,
-    ) -> impl Iterator<Item = (Self::NeighborsIter<'_>, NodeIndex, &Self::NodeData)> {
+    ) -> impl Iterator<Item = (NodeIndex, Self::NeighborsIter<'_>, &Self::NodeData)> {
         self.roots.iter().enumerate().map(|(i, d)| {
             (
-                self.get_neighbor_iterator(NodeIndex(i)),
                 NodeIndex(i),
+                self.get_neighbor_iterator(NodeIndex(i)),
                 &d.data,
             )
         })
@@ -554,15 +554,15 @@ impl<V, P: ForestNodeStore + ForestNodeStorePreorder + Clone> NodeStorageOps for
 
     fn iter_nodes_mut(
         &mut self,
-    ) -> impl Iterator<Item = (Self::NeighborsIter<'_>, NodeIndex, &mut Self::NodeData)> {
+    ) -> impl Iterator<Item = (NodeIndex, Self::NeighborsIter<'_>, &mut Self::NodeData)> {
         self.roots.iter_mut().enumerate().map(|(i, d)| {
             let root_id = d.root_id;
             (
+                NodeIndex(i),
                 ForestNeighborIter {
                     // root: Some(root_id),
                     iter: self.nodes.iter_preorder(root_id),
                 },
-                NodeIndex(i),
                 &mut d.data,
             )
         })

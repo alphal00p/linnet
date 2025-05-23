@@ -101,10 +101,10 @@ pub trait NodeStorageOps: NodeStorage {
     }
     fn iter_nodes(
         &self,
-    ) -> impl Iterator<Item = (Self::NeighborsIter<'_>, NodeIndex, &Self::NodeData)>;
+    ) -> impl Iterator<Item = (NodeIndex, Self::NeighborsIter<'_>, &Self::NodeData)>;
     fn iter_nodes_mut(
         &mut self,
-    ) -> impl Iterator<Item = (Self::NeighborsIter<'_>, NodeIndex, &mut Self::NodeData)>;
+    ) -> impl Iterator<Item = (NodeIndex, Self::NeighborsIter<'_>, &mut Self::NodeData)>;
     /// Retrieves the [`NodeIndex`] that the given [`Hedge`] is incident to (or originates from).
     fn node_id_ref(&self, hedge: Hedge) -> NodeIndex;
     /// Returns an iterator over the half-edges incident to the specified `node_id`.
