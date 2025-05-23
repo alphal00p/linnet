@@ -8,4 +8,32 @@
 [![crates.io](https://img.shields.io/crates/v/linnet.svg)](https://crates.io/crates/linnet)
 # Linnet
 
-A graph library that focuses on sub-graphs and node-identification.
+Linnet is a graph library, specifically designed and developed to represent **tensor networks** and **Feynman diagrams** as used in projects like **[`gammaloop`](https://github.com/alphal00p/gammaloop)** and **[`spenso`](https://github.com/alphal00p/spenso)**.
+
+The choice of a **half-edge data structure** is central to Linnet's design. This structure is exceptionally well-suited for these applications because it intrinsically supports the definition and manipulation of subgraphs that can be cleanly and efficiently "split" along edges (so that node degree is preserved).
+
+All of the graph algorithms, iterators and graph manipulations operate at the level of subgraphs (which can also be the whole graph).
+
+## Key Features
+
+*   **Efficient Half-Edge Data Structure:** Utilizes a half-edge representation, enabling efficient graph traversal, easy graph modifications like:
+    - node identification
+    - subgraph excision (splitting graphs in two)
+    - graph joining along sewn along half edges
+    - edge contraction
+*   **Subgraph Manipulation:** Provides capabilities for defining, extracting, and analyzing various types of subgraphs, such as those induced by node properties, connectivity patterns (e.g., cycles, biconnected components), or graph cuts.
+*   **Graph Drawing & Visualization:** Includes functionalities for generating visual representations of graphs. Provides graph layouting based on simulated annealing of pseudo spring forces.
+* **Dot Parsing** Integrates [`dot-parser`](https://codeberg.org/bromind/dot-parser/) curtesy of [Martin Vassor](mailto:martin@vassor.org?subject=[dot-parser]) integrated in a macro.
+
+## Getting Started
+
+To start using Linnet in your Rust project, add it as a dependency in your `Cargo.toml`:
+
+```toml
+[dependencies]
+linnet = "0.6.2"
+```
+
+## Acknowledgement
+
+This crate was written by [Lucien Huber](https://github.com/lcnbr/)
