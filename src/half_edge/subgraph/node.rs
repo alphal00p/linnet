@@ -3,6 +3,7 @@ use bitvec::{bitvec, order::Lsb0};
 use std::ops::{Range, RangeFrom, RangeInclusive, RangeTo, RangeToInclusive};
 
 use crate::half_edge::builder::HedgeNodeBuilder;
+use crate::half_edge::involution::HedgePair;
 use crate::half_edge::{Hedge, HedgeGraph, NodeStorageOps};
 
 use super::contracted::ContractedSubGraph;
@@ -42,6 +43,16 @@ impl Inclusion<Hedge> for HedgeNode {
     }
 
     fn intersects(&self, other: &Hedge) -> bool {
+        self.includes(other)
+    }
+}
+
+impl Inclusion<HedgePair> for HedgeNode {
+    fn includes(&self, hedge_id: &HedgePair) -> bool {
+        self.internal_graph.includes(hedge_id) || self.hairs.includes(hedge_id)
+    }
+
+    fn intersects(&self, other: &HedgePair) -> bool {
         self.includes(other)
     }
 }

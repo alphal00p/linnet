@@ -243,6 +243,7 @@ pub trait SubGraph:
     + Eq
     + Hash
     + Inclusion<Self>
+    + Inclusion<HedgePair>
     + Inclusion<Self::Base>
     + Inclusion<std::ops::Range<Hedge>>
     + Inclusion<std::ops::RangeToInclusive<Hedge>>
@@ -409,6 +410,38 @@ pub trait SubGraph:
     }
     fn empty(size: usize) -> Self;
     fn is_empty(&self) -> bool;
+}
+
+impl Inclusion<HedgePair> for BitVec {
+    fn includes(&self, other: &HedgePair) -> bool {
+        match other {
+            HedgePair::Unpaired { hedge, .. } => self.includes(hedge),
+            HedgePair::Split {
+                source,
+                sink,
+                split,
+            } => match split {
+                Flow::Sink => self.includes(sink),
+                Flow::Source => self.includes(source),
+            },
+            HedgePair::Paired { source, sink } => self.includes(source) && self.includes(sink),
+        }
+    }
+
+    fn intersects(&self, other: &HedgePair) -> bool {
+        match other {
+            HedgePair::Unpaired { hedge, .. } => self.includes(hedge),
+            HedgePair::Split {
+                source,
+                sink,
+                split,
+            } => match split {
+                Flow::Sink => self.includes(sink),
+                Flow::Source => self.includes(source),
+            },
+            HedgePair::Paired { source, sink } => self.includes(source) || self.includes(sink),
+        }
+    }
 }
 
 impl Inclusion<BitVec> for BitVec {

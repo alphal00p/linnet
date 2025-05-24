@@ -850,7 +850,7 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
         for (_, n, _) in self.iter_nodes_of(subgraph) {
             for h in n {
                 let invh = self.inv(h);
-                if h == invh || subgraph.includes(&invh) {
+                if h == invh || !subgraph.includes(&invh) {
                     crown.add(h);
                 }
             }

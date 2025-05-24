@@ -5,7 +5,11 @@ use std::{
 
 use bitvec::vec::BitVec;
 
-use crate::half_edge::{involution::Hedge, nodestore::NodeStorageOps, HedgeGraph};
+use crate::half_edge::{
+    involution::{Hedge, HedgePair},
+    nodestore::NodeStorageOps,
+    HedgeGraph,
+};
 
 use super::{Inclusion, SubGraph};
 
@@ -28,6 +32,15 @@ impl Inclusion<Hedge> for Empty {
     }
 
     fn intersects(&self, _other: &Hedge) -> bool {
+        false
+    }
+}
+impl Inclusion<HedgePair> for Empty {
+    fn includes(&self, other: &HedgePair) -> bool {
+        false
+    }
+
+    fn intersects(&self, other: &HedgePair) -> bool {
         false
     }
 }

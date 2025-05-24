@@ -2,7 +2,11 @@ use std::ops::{Range, RangeFrom, RangeInclusive, RangeTo, RangeToInclusive};
 
 use bitvec::vec::BitVec;
 
-use crate::half_edge::{involution::Hedge, nodestore::NodeStorageOps, HedgeGraph};
+use crate::half_edge::{
+    involution::{Hedge, HedgePair},
+    nodestore::NodeStorageOps,
+    HedgeGraph,
+};
 
 use super::{Inclusion, SubGraph};
 
@@ -41,6 +45,26 @@ impl Inclusion<Hedge> for FullOrEmpty {
 
     fn intersects(&self, other: &Hedge) -> bool {
         (other.0 as isize) < self.size
+    }
+}
+
+impl Inclusion<HedgePair> for FullOrEmpty {
+    fn includes(&self, hedge_id: &HedgePair) -> bool {
+        match hedge_id {
+            HedgePair::Split { source, sink, .. } | HedgePair::Paired { source, sink } => {
+                (source.0 as isize) < self.size && (sink.0 as isize) < self.size
+            }
+            HedgePair::Unpaired { hedge, .. } => (hedge.0 as isize) < self.size,
+        }
+    }
+
+    fn intersects(&self, other: &HedgePair) -> bool {
+        match other {
+            HedgePair::Split { source, sink, .. } | HedgePair::Paired { source, sink } => {
+                (source.0 as isize) < self.size && (sink.0 as isize) < self.size
+            }
+            HedgePair::Unpaired { hedge, .. } => (hedge.0 as isize) < self.size,
+        }
     }
 }
 

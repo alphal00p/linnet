@@ -3,6 +3,7 @@ use std::hash::Hash;
 use std::ops::Index;
 use std::ops::{Range, RangeFrom, RangeInclusive, RangeTo, RangeToInclusive};
 
+use crate::half_edge::involution::Flow;
 use crate::half_edge::{
     hedgevec::Accessors, involution::HedgePair, tree::SimpleTraversalTree, Hedge, HedgeGraph,
     NodeStorageOps,
@@ -93,6 +94,38 @@ impl Inclusion<Hedge> for InternalSubGraph {
 
     fn intersects(&self, other: &Hedge) -> bool {
         self.includes(other)
+    }
+}
+
+impl Inclusion<HedgePair> for InternalSubGraph {
+    fn includes(&self, other: &HedgePair) -> bool {
+        match other {
+            HedgePair::Unpaired { hedge, .. } => false,
+            HedgePair::Split {
+                source,
+                sink,
+                split,
+            } => match split {
+                Flow::Sink => self.includes(sink),
+                Flow::Source => self.includes(source),
+            },
+            HedgePair::Paired { source, sink } => self.includes(source) && self.includes(sink),
+        }
+    }
+
+    fn intersects(&self, other: &HedgePair) -> bool {
+        match other {
+            HedgePair::Unpaired { hedge, .. } => self.includes(hedge),
+            HedgePair::Split {
+                source,
+                sink,
+                split,
+            } => match split {
+                Flow::Sink => self.includes(sink),
+                Flow::Source => self.includes(source),
+            },
+            HedgePair::Paired { source, sink } => self.includes(source) || self.includes(sink),
+        }
     }
 }
 

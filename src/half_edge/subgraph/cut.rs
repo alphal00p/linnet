@@ -365,6 +365,15 @@ impl Inclusion<Hedge> for OrientedCut {
     }
 }
 
+impl Inclusion<HedgePair> for OrientedCut {
+    fn includes(&self, other: &HedgePair) -> bool {
+        self.left.includes(other)
+    }
+    fn intersects(&self, other: &HedgePair) -> bool {
+        self.left.intersects(other)
+    }
+}
+
 impl Inclusion<BitVec> for OrientedCut {
     fn includes(&self, other: &BitVec) -> bool {
         self.left.includes(other)
