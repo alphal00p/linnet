@@ -150,7 +150,7 @@ impl<R, N: ForestNodeStore> Index<&TreeNodeId> for Forest<R, N> {
 }
 
 impl<R, N: ForestNodeStore> Index<TreeNodeId> for Forest<R, N> {
-    type Output = N::NodeData;
+    type Output = Option<N::NodeData>;
     fn index(&self, index: TreeNodeId) -> &Self::Output {
         &self.nodes[index]
     }
@@ -404,7 +404,7 @@ impl<U, P: ForestNodeStore> Forest<U, P> {
     ) -> String
     where
         FR: FnMut(&U) -> String,
-        FN: FnMut(&P::NodeData) -> String,
+        FN: FnMut(&Option<P::NodeData>) -> String,
         P: ForestNodeStoreDown,
     {
         let mut output = String::new();
@@ -420,7 +420,7 @@ impl<U, P: ForestNodeStore> Forest<U, P> {
             format_node: &mut FmtNode, // Mutable reference to node formatter closure
         ) -> Result<(), std::fmt::Error>
         where
-            FmtNode: FnMut(&N::NodeData) -> String, // Closure signature
+            FmtNode: FnMut(&Option<N::NodeData>) -> String, // Closure signature
         {
             // Determine the connector shape based on whether it's the last child
             let connector = if is_last_child {
@@ -466,7 +466,8 @@ impl<U, P: ForestNodeStore> Forest<U, P> {
             // Format data using closures
             let root_data_str = format_root(&root_meta.data);
             // Use Index trait for Forest to access node data via store
-            let root_node_data_str = format_node(&self[start_node_id]);
+            let root_node_data = &self[start_node_id];
+            let root_node_data_str = format_node(root_node_data);
 
             // 1. Print the Root line
             let _ = writeln!(
@@ -609,8 +610,8 @@ impl<U, V> Forest<U, ParentPointerStore<V>> {
 /// Requires Index and IndexMut support for accessing node data and ParentId.
 pub trait ForestNodeStore:
     for<'a> Index<&'a TreeNodeId, Output = ParentId>      // `store[&node_id]` -> ParentId
-    + Index<TreeNodeId, Output = Self::NodeData>          // `store[node_id]` -> NodeData
-    + IndexMut<TreeNodeId, Output = Self::NodeData>   // `store[node_id] = ...`
+    + Index<TreeNodeId, Output = Option<Self::NodeData>>          // `store[node_id]` -> NodeData
+    + IndexMut<TreeNodeId, Output = Option<Self::NodeData>>   // `store[node_id] = ...`
     + Sized // Needed for some default implementations returning Self iterators
 {
     type NodeData;
@@ -619,6 +620,8 @@ pub trait ForestNodeStore:
     fn parent(&self,child:TreeNodeId)->ParentId{
         self[&child]
     }
+
+
 
 
 

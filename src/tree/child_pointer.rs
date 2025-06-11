@@ -115,15 +115,15 @@ impl<V> std::ops::Index<&TreeNodeId> for ParentChildStore<V> {
 }
 
 impl<V> std::ops::Index<TreeNodeId> for ParentChildStore<V> {
-    type Output = V;
+    type Output = Option<V>;
     fn index(&self, index: TreeNodeId) -> &Self::Output {
-        self.nodes[index.0].parent_pointer.data.as_ref().unwrap()
+        &self.nodes[index.0].parent_pointer.data
     }
 }
 
 impl<V> std::ops::IndexMut<TreeNodeId> for ParentChildStore<V> {
     fn index_mut(&mut self, index: TreeNodeId) -> &mut Self::Output {
-        self.nodes[index.0].parent_pointer.data.as_mut().unwrap()
+        &mut self.nodes[index.0].parent_pointer.data
     }
 }
 

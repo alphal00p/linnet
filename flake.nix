@@ -194,7 +194,7 @@
         packages = with pkgs; [
           # pkgs.ripgrep
           #
-          iaiCallgrindRunner
+          # iaiCallgrindRunner
           valgrind
           cargo-udeps
           cargo-insta

@@ -4,13 +4,13 @@ use bitvec::vec::BitVec;
 use itertools::Itertools;
 
 use crate::tree::{
-    parent_pointer::ParentPointerStore, Forest, ForestNodeStore, ForestNodeStoreDown,
-    ForestNodeStorePreorder, RootId,
+    parent_pointer::ParentPointerStore, Forest, ForestNodeStore, ForestNodeStoreBfs,
+    ForestNodeStoreDown, ForestNodeStorePreorder, RootId,
 };
 
 use super::{
     involution::{Hedge, Involution},
-    subgraph::{Cycle, Inclusion, InternalSubGraph, SubGraph, SubGraphOps},
+    subgraph::{Cycle, Inclusion, InternalSubGraph, ModifySubgraph, SubGraph, SubGraphOps},
     HedgeGraph, HedgeGraphError, NodeIndex, NodeStorageOps,
 };
 
@@ -219,11 +219,16 @@ impl<P: ForestNodeStore<NodeData = ()>> SimpleTraversalTree<P> {
 
     pub fn tree_subgraph<I: AsRef<Involution>>(&self, inv: I) -> InternalSubGraph {
         let mut tree = BitVec::empty(self.tree_subgraph.len());
-        for i in self.tree_subgraph.included_iter() {
-            if self.internal(i, inv.as_ref()) {
-                tree.set(i.0, true);
+        let inv = inv.as_ref();
+
+        for (r, h) in self.forest.iter_roots() {
+            let h: Hedge = (*h).into();
+            if r.is_child() {
+                tree.add(h);
+                tree.add(inv.inv(h))
             }
         }
+
         unsafe { InternalSubGraph::new_unchecked(tree) }
     }
 
@@ -330,7 +335,7 @@ impl<P: ForestNodeStore<NodeData = ()>> Iterator for TraversalTreeAncestorHedgeI
 ///        must also implement [`ForestNodeStoreDown`] to allow child iteration.
 pub struct PreorderTraversalIter<'a, S: ForestNodeStore<NodeData = ()>>
 where
-    S: ForestNodeStoreDown,
+    S: ForestNodeStoreBfs,
 {
     /// A reference to the traversal tree being traversed.
     store: &'a SimpleTraversalTree<S>,
@@ -340,7 +345,7 @@ where
     stack: Vec<NodeIndex>,
 }
 
-impl<'a, S: ForestNodeStoreDown + ForestNodeStore<NodeData = ()>> PreorderTraversalIter<'a, S> {
+impl<'a, S: ForestNodeStoreBfs + ForestNodeStore<NodeData = ()>> PreorderTraversalIter<'a, S> {
     /// Create a new pre-order iterator starting at `start`.
     pub fn new(
         store: &'a SimpleTraversalTree<S>,
@@ -355,7 +360,7 @@ impl<'a, S: ForestNodeStoreDown + ForestNodeStore<NodeData = ()>> PreorderTraver
     }
 }
 
-impl<S: ForestNodeStoreDown + ForestNodeStore<NodeData = ()>> Iterator
+impl<S: ForestNodeStoreBfs + ForestNodeStore<NodeData = ()>> Iterator
     for PreorderTraversalIter<'_, S>
 {
     type Item = NodeIndex;
@@ -380,35 +385,41 @@ impl<S: ForestNodeStoreDown + ForestNodeStore<NodeData = ()>> Iterator
 }
 
 impl<P: ForestNodeStore<NodeData = ()>> SimpleTraversalTree<P> {
+    pub fn debug_draw<FR>(
+        &self,
+        format_root: FR, // Closure to format root data (&R) -> String
+    ) -> String
+    where
+        FR: FnMut(&TTRoot) -> String,
+
+        P: ForestNodeStoreDown,
+    {
+        self.forest.debug_draw(format_root, |_| "".into())
+    }
     pub fn iter_children<'a, I: AsRef<Involution>>(
         &'a self,
         node_id: NodeIndex,
         inv: &'a I,
     ) -> impl Iterator<Item = NodeIndex> + 'a
     where
-        P: ForestNodeStoreDown,
+        P: ForestNodeStoreBfs,
     {
         let root_node = self.forest[&RootId::from(node_id)];
-        self.forest
-            .iter_root_leaves(node_id.into())
-            .filter_map(move |a| {
-                if root_node == a {
-                    return None;
-                }
-                let h = Hedge::from(a);
-                if self.tree_subgraph.includes(&h) {
-                    let invh = inv.as_ref().inv(a.into());
-                    if invh != h {
-                        if self.tree_subgraph.includes(&invh) {
-                            let child = self.node_id(invh);
+        self.forest.iter_bfs(root_node).filter_map(move |a| {
+            if root_node == a {
+                return None;
+            }
+            let h = Hedge::from(a);
+            if self.tree_subgraph.includes(&h) {
+                let invh = inv.as_ref().inv(a.into());
+                if invh != h {
+                    if self.tree_subgraph.includes(&invh) {
+                        let child = self.node_id(invh);
 
-                            let root = RootId::from(child);
+                        let root = RootId::from(child);
 
-                            if self.forest[root].is_child() {
-                                Some(child)
-                            } else {
-                                None
-                            }
+                        if self.forest[root].is_child() {
+                            Some(child)
                         } else {
                             None
                         }
@@ -418,7 +429,10 @@ impl<P: ForestNodeStore<NodeData = ()>> SimpleTraversalTree<P> {
                 } else {
                     None
                 }
-            })
+            } else {
+                None
+            }
+        })
     }
 
     // pub fn iter_descendents<'a, I: AsRef<Involution>>(
@@ -441,7 +455,7 @@ impl<P: ForestNodeStore<NodeData = ()>> SimpleTraversalTree<P> {
         start: NodeIndex,
     ) -> PreorderTraversalIter<'a, P>
     where
-        P: ForestNodeStorePreorder<NodeData = ()> + ForestNodeStoreDown, // Add trait bound
+        P: ForestNodeStorePreorder<NodeData = ()> + ForestNodeStoreBfs,
     {
         PreorderTraversalIter::new(self, inv, start)
     }

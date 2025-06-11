@@ -231,15 +231,15 @@ impl<V> Index<&TreeNodeId> for ParentPointerStore<V> {
 }
 
 impl<V> Index<TreeNodeId> for ParentPointerStore<V> {
-    type Output = V;
+    type Output = Option<V>;
     fn index(&self, index: TreeNodeId) -> &Self::Output {
-        self.nodes[index.0].data.as_ref().unwrap()
+        &self.nodes[index.0].data
     }
 }
 
 impl<V> IndexMut<TreeNodeId> for ParentPointerStore<V> {
     fn index_mut(&mut self, index: TreeNodeId) -> &mut Self::Output {
-        self.nodes[index.0].data.as_mut().unwrap()
+        &mut self.nodes[index.0].data
     }
 }
 

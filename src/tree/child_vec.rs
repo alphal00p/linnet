@@ -71,15 +71,15 @@ impl<V> std::ops::Index<&TreeNodeId> for ChildVecStore<V> {
 }
 
 impl<V> std::ops::Index<TreeNodeId> for ChildVecStore<V> {
-    type Output = V;
+    type Output = Option<V>;
     fn index(&self, index: TreeNodeId) -> &Self::Output {
-        self.nodes[index.0].parent_pointer.data.as_ref().unwrap()
+        &self.nodes[index.0].parent_pointer.data
     }
 }
 
 impl<V> std::ops::IndexMut<TreeNodeId> for ChildVecStore<V> {
     fn index_mut(&mut self, index: TreeNodeId) -> &mut Self::Output {
-        self.nodes[index.0].parent_pointer.data.as_mut().unwrap()
+        &mut self.nodes[index.0].parent_pointer.data
     }
 }
 
@@ -634,7 +634,7 @@ impl<V> From<ParentPointerStore<V>> for ChildVecStore<V> {
 impl<V> From<ParentChildStore<V>> for ChildVecStore<V> {
     fn from(pc_store: ParentChildStore<V>) -> Self {
         let n = pc_store.nodes.len();
-        let mut some_pc = pc_store.map(|a| Some(a));
+        let mut some_pc = pc_store.map(|a| a);
         let mut nodes = Vec::with_capacity(n);
         for nid in (0..n).map(TreeNodeId) {
             let data = some_pc[nid].take();
