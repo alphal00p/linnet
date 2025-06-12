@@ -15,7 +15,7 @@
     "rust-analyzer": {
       "initialization_options": {
         "cargo": {
-          "features": ["drawing", "bincode"]
+          "features": ["drawing", "bincode", "symbolica"]
         },
         "inlayHints": {
           "maxLength": null,
@@ -29,7 +29,7 @@
         },
         "check": {
           "onSave": true,
-          "features": ["drawing", "bincode"],
+          "features": ["drawing", "bincode", "symbolica"],
           "command": "clippy"
         }
       }

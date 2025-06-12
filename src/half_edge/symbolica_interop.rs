@@ -42,7 +42,7 @@ impl<N: Clone, E: Clone, S: NodeStorageOps<NodeData = N>> TryFrom<HedgeGraph<E, 
             map.insert(i, graph.add_node(node.clone()));
         }
 
-        for (i, _, d) in value.iter_all_edges() {
+        for (i, _, d) in value.iter_edges() {
             if let HedgePair::Paired { source, sink } = i {
                 let source = map[&value.node_id(source)];
                 let sink = map[&value.node_id(sink)];

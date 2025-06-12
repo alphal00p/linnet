@@ -37,7 +37,7 @@ pub trait RefOne {
 #[cfg(feature = "symbolica")]
 impl RefZero for symbolica::atom::Atom {
     fn ref_zero(&self) -> Self {
-        symbolica::atom::Atom::new_num(0)
+        symbolica::atom::Atom::num(0)
     }
 }
 
