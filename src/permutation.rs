@@ -394,6 +394,18 @@ impl Permutation {
         Self::from_inv(permutation)
     }
 
+    pub fn sort_by_key<T, S, F, O>(slice: S, mut key: F) -> Permutation
+    where
+        O: Ord,
+        S: AsRef<[T]>,
+        F: FnMut(&T) -> O,
+    {
+        let s = slice.as_ref();
+        let mut permutation: Vec<usize> = (0..s.len()).collect();
+        permutation.sort_by_key(|&i| key(&s[i]));
+        Self::from_inv(permutation)
+    }
+
     // --------------------------------------------------------------------------------------------
     // Cycles and Transpositions
     // --------------------------------------------------------------------------------------------
