@@ -885,7 +885,7 @@ pub trait PermutationExt<Orderer: Ord = ()> {
     ) -> impl Ord;
 }
 
-impl<E, V> HedgeGraphExt for HedgeGraph<E, V> {
+impl<E, V, H> HedgeGraphExt for HedgeGraph<E, V, H> {
     fn hedges_between(&self, a: NodeIndex, b: NodeIndex) -> BitVec {
         let a_ext = InternalSubGraph::cleaned_filter_optimist(
             BitVec::from_hedge_iter(self.iter_crown(a), self.n_hedges()),
@@ -918,7 +918,7 @@ impl<E, V> HedgeGraphExt for HedgeGraph<E, V> {
     }
 }
 
-impl<E, V, O: Ord> PermutationExt<O> for HedgeGraph<E, V> {
+impl<E, V, H, O: Ord> PermutationExt<O> for HedgeGraph<E, V, H> {
     type Output = Permutation;
     type Edges = E;
 
@@ -1631,7 +1631,7 @@ mod tests {
         triangle.add_edge(b, c, (), false);
         triangle.add_edge(c, a, (), false);
 
-        let graph = triangle.build();
+        let graph: HedgeGraph<(), (), ()> = triangle.build();
         let perm = Permutation::from_cycles(&[vec![0, 2], vec![1]]); //permutes a and c
         let perm2 = Permutation::from_cycles(&[vec![0, 1, 2]]); //permutes a and c
 
@@ -1696,7 +1696,7 @@ mod tests {
         triangle.add_external_edge(c, (), false, Flow::Source);
         triangle.add_edge(c, a, (), false);
         triangle.add_edge(c, a, (), false);
-        let graph = triangle.build();
+        let graph: HedgeGraph<(), (), ()> = triangle.build();
         let perm = Permutation::from_cycles(&[vec![0, 2], vec![1]]); //permutes a and c
 
         let a_b_edge = graph.hedges_between(a, b);
@@ -1743,7 +1743,7 @@ mod tests {
         doubletriangle.add_edge(c, d, (), false);
         doubletriangle.add_edge(d, a, (), false);
         doubletriangle.add_edge(c, a, (), false);
-        let graph = doubletriangle.build();
+        let graph: HedgeGraph<(), (), ()> = doubletriangle.build();
         let perm = Permutation::from_cycles(&[vec![0, 2], vec![3]]); //permutes a and c
 
         let a_b_edge = graph.hedges_between(a, b);
@@ -1789,7 +1789,7 @@ mod tests {
         doubledtriangle.add_edge(b, c, (), false);
         doubledtriangle.add_edge(c, a, (), false);
         doubledtriangle.add_edge(c, a, (), false);
-        let graph = doubledtriangle.build();
+        let graph: HedgeGraph<(), (), ()> = doubledtriangle.build();
         let perm = Permutation::from_cycles(&[vec![0, 1, 2]]); //single cycle
 
         let a_b_edge = graph.hedges_between(a, b);
@@ -1831,7 +1831,7 @@ mod tests {
         cycle.add_edge(a, b, (), false);
         cycle.add_edge(b, a, (), false);
 
-        let graph = cycle.build();
+        let graph: HedgeGraph<(), (), ()> = cycle.build();
         let perm = Permutation::from_cycles(&[vec![0, 1]]); //permutes a and b
 
         let h = Hedge(0);
@@ -1858,7 +1858,7 @@ mod tests {
         cycle.add_edge(b, a, (), false);
         cycle.add_edge(b, a, (), false);
 
-        let graph = cycle.build();
+        let graph: HedgeGraph<(), (), ()> = cycle.build();
         let perm = Permutation::from_cycles(&[vec![0, 1]]); //permutes a and b
 
         let h = Hedge(0);

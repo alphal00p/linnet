@@ -171,9 +171,9 @@ pub trait SubGraphOps<Other: SubGraph = Self>: SubGraph {
         new
     }
 
-    fn complement<E, V, N: NodeStorageOps<NodeData = V>>(
+    fn complement<E, V, H, N: NodeStorageOps<NodeData = V>>(
         &self,
-        graph: &HedgeGraph<E, V, N>,
+        graph: &HedgeGraph<E, V, H, N>,
     ) -> Self;
 }
 
@@ -209,8 +209,8 @@ impl Iterator for SubGraphHedgeIter<'_> {
 }
 
 pub trait BaseSubgraph: SubGraph + ModifySubgraph<Hedge> + ModifySubgraph<HedgePair> {
-    fn from_filter<E, V, N: NodeStorageOps<NodeData = V>, F: FnMut(&E) -> bool>(
-        graph: &HedgeGraph<E, V, N>,
+    fn from_filter<E, V, H, N: NodeStorageOps<NodeData = V>, F: FnMut(&E) -> bool>(
+        graph: &HedgeGraph<E, V, H, N>,
         filter: F,
     ) -> Self;
 
@@ -257,7 +257,10 @@ pub trait SubGraph:
     where
         Self: 'a;
     /// maximal graph that contains all nodes of the subgraph
-    fn covers<E, V, N: NodeStorageOps<NodeData = V>>(&self, graph: &HedgeGraph<E, V, N>) -> BitVec {
+    fn covers<E, V, H, N: NodeStorageOps<NodeData = V>>(
+        &self,
+        graph: &HedgeGraph<E, V, H, N>,
+    ) -> BitVec {
         let mut covering = graph.empty_subgraph::<BitVec>();
         for i in self.included_iter() {
             covering.union_with_iter(graph.neighbors(i))
@@ -313,12 +316,15 @@ pub trait SubGraph:
     /// Number of half-edges included in the subgraph
     fn nhedges(&self) -> usize;
     /// Number of full edges included in the subgraph
-    fn nedges<E, V, N: NodeStorageOps<NodeData = V>>(&self, graph: &HedgeGraph<E, V, N>) -> usize; //not counting unpaired hedges
+    fn nedges<E, V, H, N: NodeStorageOps<NodeData = V>>(
+        &self,
+        graph: &HedgeGraph<E, V, H, N>,
+    ) -> usize; //not counting unpaired hedges
 
-    fn dot_fmt<W: std::fmt::Write, E, V, N: NodeStorageOps<NodeData = V>, Str: AsRef<str>>(
+    fn dot_fmt<W: std::fmt::Write, E, V, H, N: NodeStorageOps<NodeData = V>, Str: AsRef<str>>(
         &self,
         writer: &mut W,
-        graph: &HedgeGraph<E, V, N>,
+        graph: &HedgeGraph<E, V, H, N>,
         graph_info: Str,
         edge_attr: &impl Fn(&E) -> Option<String>,
         node_attr: &impl Fn(&V) -> Option<String>,
@@ -357,10 +363,10 @@ pub trait SubGraph:
         Ok(())
     }
 
-    fn dot_io<W: std::io::Write, E, V, N: NodeStorageOps<NodeData = V>, Str: AsRef<str>>(
+    fn dot_io<W: std::io::Write, E, V, H, N: NodeStorageOps<NodeData = V>, Str: AsRef<str>>(
         &self,
         writer: &mut W,
-        graph: &HedgeGraph<E, V, N>,
+        graph: &HedgeGraph<E, V, H, N>,
         graph_info: Str,
         edge_attr: &impl Fn(&E) -> Option<String>,
         node_attr: &impl Fn(&V) -> Option<String>,
@@ -579,8 +585,8 @@ impl ModifySubgraph<HedgePair> for BitVec {
 }
 
 impl BaseSubgraph for BitVec {
-    fn from_filter<E, V, N: NodeStorageOps<NodeData = V>, F: FnMut(&E) -> bool>(
-        graph: &HedgeGraph<E, V, N>,
+    fn from_filter<E, V, H, N: NodeStorageOps<NodeData = V>, F: FnMut(&E) -> bool>(
+        graph: &HedgeGraph<E, V, H, N>,
         mut filter: F,
     ) -> Self {
         let mut empty: BitVec = graph.empty_subgraph();
@@ -640,7 +646,10 @@ impl SubGraph for BitVec {
             iter: self.iter_ones().map(Hedge),
         }
     }
-    fn nedges<E, V, N: NodeStorageOps<NodeData = V>>(&self, graph: &HedgeGraph<E, V, N>) -> usize {
+    fn nedges<E, V, H, N: NodeStorageOps<NodeData = V>>(
+        &self,
+        graph: &HedgeGraph<E, V, H, N>,
+    ) -> usize {
         let mut count = 0;
         for i in self.included_iter() {
             if i != graph.inv(i) && self.includes(&graph.inv(i)) {
@@ -740,7 +749,10 @@ impl SubGraphOps for BitVec {
         self.intersection(other).count_ones() == 0
     }
 
-    fn complement<E, V, N: NodeStorage<NodeData = V>>(&self, _graph: &HedgeGraph<E, V, N>) -> Self {
+    fn complement<E, V, H, N: NodeStorage<NodeData = V>>(
+        &self,
+        _graph: &HedgeGraph<E, V, H, N>,
+    ) -> Self {
         !self.clone()
     }
 

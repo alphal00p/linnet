@@ -8,7 +8,7 @@ use super::{
 };
 
 impl<N: Clone, E: Clone> From<symbolica::graph::Graph<N, E>>
-    for HedgeGraph<E, N, NodeStorageVec<N>>
+    for HedgeGraph<E, N, (), NodeStorageVec<N>>
 {
     fn from(graph: symbolica::graph::Graph<N, E>) -> Self {
         let mut builder = HedgeGraphBuilder::new();
@@ -29,12 +29,12 @@ impl<N: Clone, E: Clone> From<symbolica::graph::Graph<N, E>>
     }
 }
 
-impl<N: Clone, E: Clone, S: NodeStorageOps<NodeData = N>> TryFrom<HedgeGraph<E, N, S>>
+impl<N: Clone, E: Clone, H, S: NodeStorageOps<NodeData = N>> TryFrom<HedgeGraph<E, N, H, S>>
     for symbolica::graph::Graph<N, E>
 {
     type Error = HedgeGraphError;
 
-    fn try_from(value: HedgeGraph<E, N, S>) -> Result<Self, Self::Error> {
+    fn try_from(value: HedgeGraph<E, N, H, S>) -> Result<Self, Self::Error> {
         let mut graph = symbolica::graph::Graph::new();
         let mut map = AHashMap::new();
 

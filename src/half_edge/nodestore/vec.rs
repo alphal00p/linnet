@@ -697,11 +697,11 @@ impl<N> NodeStorageOps for NodeStorageVec<N> {
         Ok(())
     }
 
-    fn map_data_ref_graph<'a, E, V2>(
+    fn map_data_ref_graph<'a, E, V2, H>(
         &'a self,
-        graph: &'a HedgeGraph<E, Self::NodeData, Self>,
+        graph: &'a HedgeGraph<E, Self::NodeData, H, Self>,
         mut node_map: impl FnMut(
-            &'a HedgeGraph<E, Self::NodeData, Self>,
+            &'a HedgeGraph<E, Self::NodeData, H, Self>,
             Self::NeighborsIter<'a>,
             &'a Self::NodeData,
         ) -> V2,
@@ -778,11 +778,11 @@ impl<N> NodeStorageOps for NodeStorageVec<N> {
         }
     }
 
-    fn map_data_ref_graph_result<'a, E, V2, Er>(
+    fn map_data_ref_graph_result<'a, E, V2, H, Er>(
         &'a self,
-        graph: &'a HedgeGraph<E, Self::NodeData, Self>,
+        graph: &'a HedgeGraph<E, Self::NodeData, H, Self>,
         mut node_map: impl FnMut(
-            &'a HedgeGraph<E, Self::NodeData, Self>,
+            &'a HedgeGraph<E, Self::NodeData, H, Self>,
             Self::NeighborsIter<'a>,
             &'a Self::NodeData,
         ) -> Result<V2, Er>,

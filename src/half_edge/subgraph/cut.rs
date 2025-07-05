@@ -85,9 +85,9 @@ pub enum CutError {
 
 impl OrientedCut {
     /// disregards identity edges
-    pub fn from_underlying_coerce<E, V, N: NodeStorageOps<NodeData = V>>(
+    pub fn from_underlying_coerce<E, V, H, N: NodeStorageOps<NodeData = V>>(
         cut: BitVec,
-        graph: &HedgeGraph<E, V, N>,
+        graph: &HedgeGraph<E, V, H, N>,
     ) -> Result<Self, CutError> {
         let mut right = graph.empty_subgraph::<BitVec>();
 
@@ -106,9 +106,9 @@ impl OrientedCut {
     }
 
     /// Errors for identity edges
-    pub fn from_underlying_strict<E, V, N: NodeStorageOps<NodeData = V>>(
+    pub fn from_underlying_strict<E, V, H, N: NodeStorageOps<NodeData = V>>(
         cut: BitVec,
-        graph: &HedgeGraph<E, V, N>,
+        graph: &HedgeGraph<E, V, H, N>,
     ) -> Result<Self, CutError> {
         let mut right = graph.empty_subgraph::<BitVec>();
 
@@ -124,9 +124,9 @@ impl OrientedCut {
         Ok(OrientedCut { left: cut, right })
     }
 
-    pub fn iter_edges_flow<'a, E, V, N: NodeStorageOps<NodeData = V>>(
+    pub fn iter_edges_flow<'a, E, V, H, N: NodeStorageOps<NodeData = V>>(
         &'a self,
-        graph: &'a HedgeGraph<E, V, N>,
+        graph: &'a HedgeGraph<E, V, H, N>,
     ) -> impl Iterator<Item = (Flow, EdgeIndex, EdgeData<&'a E>)> {
         graph.iter_edges_of(&self.left).filter_map(|(pair, b, c)| {
             if let HedgePair::Split { split, .. } = pair {
@@ -140,8 +140,8 @@ impl OrientedCut {
     /// takes all non-cut edges and gives all possible signs to them.
     ///
     /// If C is a set of edges (pairs of half-edges), then take all S in Pset(C), and put them to the left of the cut. All other edges are put to the right.
-    pub fn all_initial_state_cuts<E, V, N: NodeStorageOps<NodeData = V>>(
-        graph: &HedgeGraph<E, V, N>,
+    pub fn all_initial_state_cuts<E, V, H, N: NodeStorageOps<NodeData = V>>(
+        graph: &HedgeGraph<E, V, H, N>,
     ) -> Vec<Self> {
         let mut all_cuts = Vec::new();
 
@@ -447,7 +447,10 @@ impl SubGraph for OrientedCut {
     type Base = BitVec;
 
     type BaseIter<'a> = SubGraphHedgeIter<'a>;
-    fn nedges<E, V, N: NodeStorage<NodeData = V>>(&self, _graph: &HedgeGraph<E, V, N>) -> usize {
+    fn nedges<E, V, H, N: NodeStorage<NodeData = V>>(
+        &self,
+        _graph: &HedgeGraph<E, V, H, N>,
+    ) -> usize {
         self.nhedges()
     }
 
@@ -502,15 +505,16 @@ impl OrientedCut {
     /// draws hedges in the right set on the left side of the diagram (so they are on the correct side of the cut)
     ///
     ///
-    pub fn layout<E, V>(
+    pub fn layout<E, V, H>(
         self,
-        graph: &HedgeGraph<E, V, NodeStorageVec<V>>,
+        graph: &HedgeGraph<E, V, H, NodeStorageVec<V>>,
         params: LayoutParams,
         iters: LayoutIters,
         edge: f64,
     ) -> HedgeGraph<
         LayoutEdge<PossiblyCutEdge<&'_ E>>,
         LayoutVertex<&'_ V>,
+        &'_ H,
         NodeStorageVec<LayoutVertex<&'_ V>>,
     > {
         use indexmap::IndexMap;
@@ -558,13 +562,14 @@ impl OrientedCut {
     }
 
     /// Take the graph and split it along the cut, putting the cut orientation, and original edge index as additional data.
-    pub fn to_owned_graph_ref<E, V, N: NodeStorageOps<NodeData = V>>(
+    pub fn to_owned_graph_ref<E, V, H, N: NodeStorageOps<NodeData = V>>(
         self,
-        graph: &HedgeGraph<E, V, N>,
-    ) -> HedgeGraph<PossiblyCutEdge<&E>, &V, N::OpStorage<&V>> {
+        graph: &HedgeGraph<E, V, H, N>,
+    ) -> HedgeGraph<PossiblyCutEdge<&E>, &V, &H, N::OpStorage<&V>> {
         let mut new_graph = graph.map_data_ref(
             |_, _, v| v,
             |_, i, _, e| e.map(|d| PossiblyCutEdge::uncut(d, i)),
+            |_, h| h,
         );
         for h in self.iter_left_hedges() {
             new_graph[[&h]].cut(Flow::Source);
@@ -577,10 +582,10 @@ impl OrientedCut {
     }
 
     /// Take the graph and split it along the cut, putting the cut orientation, and original edge index as additional data.
-    pub fn to_owned_graph<E, V, N: NodeStorageOps<NodeData = V>>(
+    pub fn to_owned_graph<E, V, H, N: NodeStorageOps<NodeData = V>>(
         self,
-        graph: HedgeGraph<E, V, N>,
-    ) -> HedgeGraph<PossiblyCutEdge<E>, V, N::OpStorage<V>> {
+        graph: HedgeGraph<E, V, H, N>,
+    ) -> HedgeGraph<PossiblyCutEdge<E>, V, H, N::OpStorage<V>> {
         let mut new_graph = graph.map(
             |_, _, v| v,
             |i, _, h, e| {
@@ -589,6 +594,7 @@ impl OrientedCut {
                     PossiblyCutEdge::uncut(d, h)
                 })
             },
+            |h| h,
         );
         for h in self.iter_left_hedges() {
             new_graph[[&h]].cut(Flow::Source);
@@ -604,9 +610,9 @@ impl OrientedCut {
     }
 }
 
-pub type CutGraph<E, V, N> = HedgeGraph<PossiblyCutEdge<E>, V, N>;
+pub type CutGraph<E, V, H, N> = HedgeGraph<PossiblyCutEdge<E>, V, H, N>;
 
-impl<E, V, N: NodeStorageOps<NodeData = V>> CutGraph<E, V, N> {
+impl<E, V, H, N: NodeStorageOps<NodeData = V>> CutGraph<E, V, H, N> {
     pub fn split(&mut self) {
         let cut = self.cut();
         for h in cut.iter_left_hedges() {

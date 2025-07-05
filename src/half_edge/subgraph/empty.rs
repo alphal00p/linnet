@@ -152,7 +152,10 @@ impl<T> Iterator for EmptyIter<T> {
 impl SubGraph for Empty {
     type Base = Empty;
     type BaseIter<'a> = EmptyIter<Hedge>;
-    fn nedges<E, V, N: NodeStorageOps<NodeData = V>>(&self, _graph: &HedgeGraph<E, V, N>) -> usize {
+    fn nedges<E, V, H, N: NodeStorageOps<NodeData = V>>(
+        &self,
+        _graph: &HedgeGraph<E, V, H, N>,
+    ) -> usize {
         self.nhedges() / 2
     }
 

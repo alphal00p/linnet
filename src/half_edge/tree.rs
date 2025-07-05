@@ -567,7 +567,7 @@ impl<P: ForestNodeStore<NodeData = ()>> SimpleTraversalTree<P> {
 }
 
 impl SimpleTraversalTree {
-    pub fn empty<E, V, N: NodeStorageOps<NodeData = V>>(graph: &HedgeGraph<E, V, N>) -> Self {
+    pub fn empty<E, V, H, N: NodeStorageOps<NodeData = V>>(graph: &HedgeGraph<E, V, H, N>) -> Self {
         let forest = graph.node_store.to_forest(|_| TTRoot::None);
         SimpleTraversalTree {
             forest,
@@ -579,8 +579,8 @@ impl SimpleTraversalTree {
     //     self.forest.root()
     // }
 
-    pub fn depth_first_traverse<S: SubGraph, E, V, N: NodeStorageOps<NodeData = V>>(
-        graph: &HedgeGraph<E, V, N>,
+    pub fn depth_first_traverse<S: SubGraph, E, V, H, N: NodeStorageOps<NodeData = V>>(
+        graph: &HedgeGraph<E, V, H, N>,
         subgraph: &S,
         root_node: &NodeIndex,
         include_hedge: Option<Hedge>,
@@ -648,8 +648,8 @@ impl SimpleTraversalTree {
         Ok(init)
     }
 
-    pub fn breadth_first_traverse<S: SubGraph, E, V, N: NodeStorageOps<NodeData = V>>(
-        graph: &HedgeGraph<E, V, N>,
+    pub fn breadth_first_traverse<S: SubGraph, E, V, H, N: NodeStorageOps<NodeData = V>>(
+        graph: &HedgeGraph<E, V, H, N>,
         subgraph: &S,
         root_node: &NodeIndex,
         include_hedge: Option<Hedge>,
@@ -713,7 +713,7 @@ impl SimpleTraversalTree {
 
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
+// #[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
 /// Represents a traversal tree that owns its graph representation, typically simplified.
 ///
 /// This structure might be used for scenarios where a traversal tree needs to be
@@ -729,13 +729,13 @@ pub struct OwnedTraversalTree<P: ForestNodeStore<NodeData = ()> + Clone + Forest
     /// The graph representation owned by this traversal tree.
     /// Edge data is `()`, and node data is `bool` (likely indicating tree membership or similar).
     /// The node storage of this graph is a `Forest<bool, P>`.
-    graph: HedgeGraph<(), bool, Forest<bool, P>>,
+    graph: HedgeGraph<(), bool, (), Forest<bool, P>>,
     /// An [`InternalSubGraph`] representing the edges that form this traversal tree
     /// within the context of its owned `graph`.
     tree_subgraph: InternalSubGraph,
     /// A bitmask indicating the set of half-edges covered by this traversal tree,
     /// potentially in the context of a larger original graph.
-    #[cfg_attr(feature = "bincode", bincode(with_serde))]
+    // #[cfg_attr(feature = "bincode", bincode(with_serde))]
     covers: BitVec,
 }
 
@@ -821,16 +821,13 @@ pub struct OwnedTraversalTree<P: ForestNodeStore<NodeData = ()> + Clone + Forest
 // }
 #[cfg(test)]
 pub mod tests {
-    use crate::{dot, half_edge::involution::Orientation};
+    use crate::{dot, dot_parser::DotGraph, half_edge::involution::Orientation};
 
     use super::*;
 
     #[test]
     fn double_pentagon_tree() {
-        let mut graph: HedgeGraph<
-            crate::dot_parser::DotEdgeData,
-            crate::dot_parser::DotVertexData,
-        > = dot!(
+        let mut graph: DotGraph = dot!(
             digraph {
         node [shape=circle,height=0.1,label=""];  overlap="scale"; layout="neato";
         00 -> 07[ dir=none,label="a"];

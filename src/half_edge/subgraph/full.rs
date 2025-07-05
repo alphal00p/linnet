@@ -208,7 +208,10 @@ impl Iterator for RangeHedgeIter {
 impl SubGraph for FullOrEmpty {
     type Base = FullOrEmpty;
     type BaseIter<'a> = RangeHedgeIter;
-    fn nedges<E, V, N: NodeStorageOps<NodeData = V>>(&self, graph: &HedgeGraph<E, V, N>) -> usize {
+    fn nedges<E, V, H, N: NodeStorageOps<NodeData = V>>(
+        &self,
+        graph: &HedgeGraph<E, V, H, N>,
+    ) -> usize {
         let mut count = 0;
         for i in self.included_iter() {
             if i != graph.inv(i) && self.includes(&graph.inv(i)) {

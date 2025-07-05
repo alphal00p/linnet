@@ -196,11 +196,11 @@ impl<V> NodeStorageOps for UnionFindNodeStore<V> {
         Ok(())
     }
 
-    fn map_data_ref_graph<'a, E, V2>(
+    fn map_data_ref_graph<'a, E, V2, H>(
         &'a self,
-        graph: &'a crate::half_edge::HedgeGraph<E, Self::NodeData, Self>,
+        graph: &'a crate::half_edge::HedgeGraph<E, Self::NodeData, H, Self>,
         mut node_map: impl FnMut(
-            &'a crate::half_edge::HedgeGraph<E, Self::NodeData, Self>,
+            &'a crate::half_edge::HedgeGraph<E, Self::NodeData, H, Self>,
             Self::NeighborsIter<'a>,
             &'a Self::NodeData,
         ) -> V2,
@@ -225,11 +225,11 @@ impl<V> NodeStorageOps for UnionFindNodeStore<V> {
         }
     }
 
-    fn map_data_ref_graph_result<'a, E, V2, Er>(
+    fn map_data_ref_graph_result<'a, E, V2, H, Er>(
         &'a self,
-        graph: &'a crate::half_edge::HedgeGraph<E, Self::NodeData, Self>,
+        graph: &'a crate::half_edge::HedgeGraph<E, Self::NodeData, H, Self>,
         mut node_map: impl FnMut(
-            &'a crate::half_edge::HedgeGraph<E, Self::NodeData, Self>,
+            &'a crate::half_edge::HedgeGraph<E, Self::NodeData, H, Self>,
             Self::NeighborsIter<'a>,
             &'a Self::NodeData,
         ) -> Result<V2, Er>,

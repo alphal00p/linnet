@@ -81,7 +81,7 @@ use dot_parser::ast::{GraphFromFileError, PestError};
 use itertools::{Either, Itertools};
 
 use crate::half_edge::{
-    builder::HedgeGraphBuilder,
+    builder::{HedgeData, HedgeGraphBuilder},
     involution::{EdgeData, Flow, Orientation},
     nodestore::{NodeStorage, NodeStorageOps},
     GVEdgeAttrs, HedgeGraph, NodeIndex,
@@ -95,6 +95,36 @@ pub struct GlobalGraph<E, V, G, N: NodeStorage<NodeData = V>> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GlobalData {
     pub statements: BTreeMap<String, String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DotHedgeData {
+    pub statement: Option<String>,
+}
+
+impl DotHedgeData {
+    pub fn dot_serialize(&self) -> Option<String> {
+        if let Some(statement) = &self.statement {
+            Some(statement.clone())
+        } else {
+            None
+        }
+    }
+}
+
+impl Display for DotHedgeData {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if let Some(statement) = &self.statement {
+            write!(f, "{}", statement)?;
+        }
+        Ok(())
+    }
+}
+
+impl From<Option<String>> for DotHedgeData {
+    fn from(statement: Option<String>) -> Self {
+        DotHedgeData { statement }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -285,13 +315,20 @@ impl DotEdgeData {
         edge: dot_parser::canonical::Edge<(String, String)>,
         map: &BTreeMap<String, NodeIdOrDangling>,
         orientation: impl Into<Orientation>,
-    ) -> (Self, Orientation, NodeIndex, Either<NodeIndex, Flow>) {
+    ) -> (
+        Self,
+        Orientation,
+        HedgeData<DotHedgeData>,
+        Either<HedgeData<DotHedgeData>, Flow>,
+    ) {
         let mut orientation = orientation.into();
+        let mut source_h_data = None;
+        let mut sink_h_data = None;
         let mut statements: BTreeMap<_, _> = edge
             .attr
             .into_iter()
-            .filter_map(|(key, value)| {
-                if &key == "dir" {
+            .filter_map(|(key, value)| match key.as_str() {
+                "dir" => {
                     match value.as_str() {
                         "forward" => orientation = Orientation::Default,
                         "back" => orientation = Orientation::Reversed,
@@ -299,19 +336,26 @@ impl DotEdgeData {
                         _ => panic!("Invalid edge direction"),
                     }
                     None
-                } else {
-                    Some((key, value))
                 }
+                "source" => {
+                    source_h_data = Some(value);
+                    None
+                }
+                "sink" => {
+                    sink_h_data = Some(value);
+                    None
+                }
+                _ => Some((key, value)),
             })
             .collect();
-
         let source = map[&edge.from].clone();
         let target = map[&edge.to].clone();
 
         let (source, target) = match (source, target) {
-            (NodeIdOrDangling::Id(source), NodeIdOrDangling::Id(target)) => {
-                (source, Either::Left(target))
-            }
+            (NodeIdOrDangling::Id(source), NodeIdOrDangling::Id(target)) => (
+                source.add_data(source_h_data.into()),
+                Either::Left(target.add_data(sink_h_data.into())),
+            ),
             (
                 NodeIdOrDangling::Id(source),
                 NodeIdOrDangling::Dangling {
@@ -325,6 +369,10 @@ impl DotEdgeData {
                         .filter(|(a, _)| !(a.as_str() == "shape" || a.as_str() == "label")),
                 );
                 orientation = orientation.relative_to(-flow);
+                let source = match flow {
+                    Flow::Sink => source.add_data(sink_h_data.into()),
+                    Flow::Source => source.add_data(source_h_data.into()),
+                };
                 (source, Either::Right(-flow))
             }
             (
@@ -340,6 +388,10 @@ impl DotEdgeData {
                         .filter(|(a, _)| !(a.as_str() == "shape" || a.as_str() == "label")),
                 );
                 orientation = orientation.relative_to(flow);
+                let source = match flow {
+                    Flow::Sink => source.add_data(sink_h_data.into()),
+                    Flow::Source => source.add_data(source_h_data.into()),
+                };
                 (source, Either::Right(-flow))
             }
             _ => panic!("Cannot connect an edge to two external nodes"),
@@ -391,15 +443,19 @@ pub enum NodeIdOrDangling {
     },
 }
 
-pub struct HedgeGraphSet<E, V, S: NodeStorageOps<NodeData = V>> {
-    pub set: Vec<HedgeGraph<E, V, S>>,
+pub struct HedgeGraphSet<E, V, H, S: NodeStorageOps<NodeData = V>> {
+    pub set: Vec<HedgeGraph<E, V, H, S>>,
 }
 
-impl<E: TryFrom<DotEdgeData>, V: TryFrom<DotVertexData>, S: NodeStorageOps<NodeData = V>>
-    HedgeGraphSet<E, V, S>
+impl<
+        E: TryFrom<DotEdgeData>,
+        V: TryFrom<DotVertexData>,
+        H: TryFrom<DotHedgeData>,
+        S: NodeStorageOps<NodeData = V>,
+    > HedgeGraphSet<E, V, H, S>
 {
     #[allow(clippy::result_large_err)]
-    pub fn from_file<'a, P>(p: P) -> Result<Self, HedgeParseError<'a, E::Error, V::Error>>
+    pub fn from_file<'a, P>(p: P) -> Result<Self, HedgeParseError<'a, E::Error, V::Error, H::Error>>
     where
         P: AsRef<Path>,
     {
@@ -407,7 +463,7 @@ impl<E: TryFrom<DotEdgeData>, V: TryFrom<DotVertexData>, S: NodeStorageOps<NodeD
         let mut set = Vec::with_capacity(ast_graphs.graphs.len());
         for g in ast_graphs.graphs {
             let graph =
-                HedgeGraph::<_, _, _>::try_from_life(dot_parser::canonical::Graph::from(g))?;
+                HedgeGraph::<_, _, _, _>::try_from_life(dot_parser::canonical::Graph::from(g))?;
 
             set.push(graph);
         }
@@ -417,7 +473,7 @@ impl<E: TryFrom<DotEdgeData>, V: TryFrom<DotVertexData>, S: NodeStorageOps<NodeD
     #[allow(clippy::result_large_err)]
     pub fn from_string<'a, Str: AsRef<str>>(
         s: Str,
-    ) -> Result<Self, HedgeParseError<'a, E::Error, V::Error>> {
+    ) -> Result<Self, HedgeParseError<'a, E::Error, V::Error, H::Error>> {
         let ast_graphs = dot_parser::ast::Graphs::try_from(s.as_ref())?;
 
         let mut set = Vec::with_capacity(ast_graphs.graphs.len());
@@ -425,7 +481,7 @@ impl<E: TryFrom<DotEdgeData>, V: TryFrom<DotVertexData>, S: NodeStorageOps<NodeD
             let can_graph = dot_parser::canonical::Graph::from(
                 g.filter_map(&|a| Some((a.0.to_string(), a.1.to_string()))),
             );
-            let graph = HedgeGraph::<_, _, _>::try_from_life(can_graph)?;
+            let graph = HedgeGraph::<_, _, _, _>::try_from_life(can_graph)?;
 
             set.push(graph);
         }
@@ -434,11 +490,15 @@ impl<E: TryFrom<DotEdgeData>, V: TryFrom<DotVertexData>, S: NodeStorageOps<NodeD
     }
 }
 
-impl<E: TryFrom<DotEdgeData>, V: TryFrom<DotVertexData>, S: NodeStorageOps<NodeData = V>>
-    HedgeGraph<E, V, S>
+impl<
+        E: TryFrom<DotEdgeData>,
+        V: TryFrom<DotVertexData>,
+        H: TryFrom<DotHedgeData>,
+        S: NodeStorageOps<NodeData = V>,
+    > HedgeGraph<E, V, H, S>
 {
     #[allow(clippy::result_large_err)]
-    pub fn from_file<'a, P>(p: P) -> Result<Self, HedgeParseError<'a, E::Error, V::Error>>
+    pub fn from_file<'a, P>(p: P) -> Result<Self, HedgeParseError<'a, E::Error, V::Error, H::Error>>
     where
         P: AsRef<Path>,
     {
@@ -451,7 +511,7 @@ impl<E: TryFrom<DotEdgeData>, V: TryFrom<DotVertexData>, S: NodeStorageOps<NodeD
     #[allow(clippy::result_large_err)]
     pub fn from_string<'a, Str: AsRef<str>>(
         s: Str,
-    ) -> Result<Self, HedgeParseError<'a, E::Error, V::Error>> {
+    ) -> Result<Self, HedgeParseError<'a, E::Error, V::Error, H::Error>> {
         let ast_graph = dot_parser::ast::Graph::try_from(s.as_ref())?;
         let can_graph = dot_parser::canonical::Graph::from(
             ast_graph.filter_map(&|a| Some((a.0.to_string(), a.1.to_string()))),
@@ -461,20 +521,21 @@ impl<E: TryFrom<DotEdgeData>, V: TryFrom<DotVertexData>, S: NodeStorageOps<NodeD
 }
 
 #[derive(Debug)]
-pub enum HedgeParseError<'a, E, V> {
+pub enum HedgeParseError<'a, E, V, H> {
     DotVertexDataError(V),
     GraphFromFile(GraphFromFileError<'a>),
     ParseError(PestError),
     DotEdgeDataError(E),
+    HedgeDataFromStringError(H),
 }
 
-impl<'a, E, V> From<GraphFromFileError<'a>> for HedgeParseError<'a, E, V> {
+impl<'a, E, V, H> From<GraphFromFileError<'a>> for HedgeParseError<'a, E, V, H> {
     fn from(e: GraphFromFileError<'a>) -> Self {
         HedgeParseError::GraphFromFile(e)
     }
 }
 
-impl<E, V> From<PestError> for HedgeParseError<'_, E, V> {
+impl<E, V, H> From<PestError> for HedgeParseError<'_, E, V, H> {
     fn from(e: PestError) -> Self {
         HedgeParseError::ParseError(e)
     }
@@ -483,16 +544,22 @@ impl<E, V> From<PestError> for HedgeParseError<'_, E, V> {
 #[allow(clippy::result_large_err)]
 pub trait HedgeParseExt<'a, D> {
     type Error;
-    fn edge<V>(self) -> Result<D, HedgeParseError<'a, Self::Error, V>>;
-    fn vertex<E>(self) -> Result<D, HedgeParseError<'a, E, Self::Error>>;
+
+    fn hedge<V, E>(self) -> Result<D, HedgeParseError<'a, V, E, Self::Error>>;
+    fn edge<V, H>(self) -> Result<D, HedgeParseError<'a, Self::Error, V, H>>;
+    fn vertex<E, H>(self) -> Result<D, HedgeParseError<'a, E, Self::Error, H>>;
 }
 
 impl<'a, Err, D> HedgeParseExt<'a, D> for Result<D, Err> {
     type Error = Err;
-    fn edge<V>(self) -> Result<D, HedgeParseError<'a, Self::Error, V>> {
+    fn hedge<V, E>(self) -> Result<D, HedgeParseError<'a, V, E, Self::Error>> {
+        self.map_err(|e| HedgeParseError::HedgeDataFromStringError(e))
+    }
+
+    fn edge<V, H>(self) -> Result<D, HedgeParseError<'a, Self::Error, V, H>> {
         self.map_err(|e| HedgeParseError::DotEdgeDataError(e))
     }
-    fn vertex<E>(self) -> Result<D, HedgeParseError<'a, E, Self::Error>> {
+    fn vertex<E, H>(self) -> Result<D, HedgeParseError<'a, E, Self::Error, H>> {
         self.map_err(|e| HedgeParseError::DotVertexDataError(e))
     }
 }
@@ -500,34 +567,58 @@ impl<'a, Err, D> HedgeParseExt<'a, D> for Result<D, Err> {
 impl<
         E: TryFrom<DotEdgeData> + Into<DotEdgeData>,
         V: TryFrom<DotVertexData> + Into<DotVertexData>,
+        H: TryFrom<DotHedgeData> + Into<DotHedgeData>,
         S: NodeStorageOps<NodeData = V>,
-    > HedgeGraph<E, V, S>
+    > HedgeGraph<E, V, H, S>
 where
     E::Error: std::fmt::Debug,
     V::Error: std::fmt::Debug,
+    H::Error: std::fmt::Debug,
 {
-    pub fn back_and_forth_dot(self) -> HedgeGraph<E, V, S::OpStorage<V>> {
-        let mapped: HedgeGraph<DotEdgeData, DotVertexData, S::OpStorage<DotVertexData>> = self.map(
+    pub fn back_and_forth_dot(self) -> HedgeGraph<E, V, H, S::OpStorage<V>> {
+        let mapped: HedgeGraph<
+            DotEdgeData,
+            DotVertexData,
+            DotHedgeData,
+            S::OpStorage<DotVertexData>,
+        > = self.map(
             |_, _, v: V| v.into(),
             |_, _, _, e: EdgeData<E>| e.map(|data| data.into()),
+            |h| h.into(),
         );
 
         let mut out = String::new();
         mapped
-            .dot_serialize_fmt(&mut out, &|d| format!("{d}"), &|d| format!("{d}"))
+            .dot_serialize_fmt(
+                &mut out,
+                &DotHedgeData::dot_serialize,
+                &DotEdgeData::to_string,
+                &DotVertexData::to_string,
+            )
             .unwrap();
 
-        HedgeGraph::<E, V, S::OpStorage<V>>::from_string(out).unwrap()
+        HedgeGraph::<E, V, H, S::OpStorage<V>>::from_string(out).unwrap()
     }
 
     pub fn debug_dot(self) -> String {
-        let mapped: HedgeGraph<DotEdgeData, DotVertexData, S::OpStorage<DotVertexData>> = self.map(
+        let mapped: HedgeGraph<
+            DotEdgeData,
+            DotVertexData,
+            DotHedgeData,
+            S::OpStorage<DotVertexData>,
+        > = self.map(
             |_, _, v: V| v.into(),
             |_, _, _, e: EdgeData<E>| e.map(|data| data.into()),
+            |h| h.into(),
         );
         let mut out = String::new();
         mapped
-            .dot_serialize_fmt(&mut out, &|d| format!("{d}"), &|d| format!("{d}"))
+            .dot_serialize_fmt(
+                &mut out,
+                &DotHedgeData::dot_serialize,
+                &|d| format!("{d}"),
+                &|d| format!("{d}"),
+            )
             .unwrap();
         out
     }
@@ -537,9 +628,15 @@ where
         edge_format: impl AsRef<str>,
         vertex_format: impl AsRef<str>,
     ) -> String {
-        let mapped: HedgeGraph<DotEdgeData, DotVertexData, S::OpStorage<DotVertexData>> = self.map(
+        let mapped: HedgeGraph<
+            DotEdgeData,
+            DotVertexData,
+            DotHedgeData,
+            S::OpStorage<DotVertexData>,
+        > = self.map(
             |_, _, v: V| v.into(),
             |_, _, _, e: EdgeData<E>| e.map(|data| data.into()),
+            |h| h.into(),
         );
         mapped.dot_impl(
             &mapped.full_filter(),
@@ -557,11 +654,17 @@ pub trait LifeTimeTryFrom<'a, O>: Sized {
 
     fn try_from_life(value: O) -> Result<Self, Self::Error<'a>>;
 }
-impl<'a, E: TryFrom<DotEdgeData>, V: TryFrom<DotVertexData>, S: NodeStorageOps<NodeData = V>>
-    LifeTimeTryFrom<'a, dot_parser::canonical::Graph<(String, String)>> for HedgeGraph<E, V, S>
+impl<
+        'a,
+        E: TryFrom<DotEdgeData>,
+        V: TryFrom<DotVertexData>,
+        H: TryFrom<DotHedgeData>,
+        S: NodeStorageOps<NodeData = V>,
+    > LifeTimeTryFrom<'a, dot_parser::canonical::Graph<(String, String)>>
+    for HedgeGraph<E, V, H, S>
 {
     type Error<'b>
-        = HedgeParseError<'b, E::Error, V::Error>
+        = HedgeParseError<'b, E::Error, V::Error, H::Error>
     where
         'b: 'a;
     fn try_from_life(
@@ -596,10 +699,20 @@ impl<'a, E: TryFrom<DotEdgeData>, V: TryFrom<DotVertexData>, S: NodeStorageOps<N
                 DotEdgeData::from_parser(e, &map, value.is_digraph);
             match target {
                 Either::Left(a) => {
-                    g.add_edge(source, a, data.try_into().edge()?, orientation);
+                    g.add_edge(
+                        source.map_result(H::try_from).hedge()?,
+                        a.map_result(H::try_from).hedge()?,
+                        data.try_into().edge()?,
+                        orientation,
+                    );
                 }
                 Either::Right(flow) => {
-                    g.add_external_edge(source, data.try_into().edge()?, orientation, flow);
+                    g.add_external_edge(
+                        source.map_result(H::try_from).hedge()?,
+                        data.try_into().edge()?,
+                        orientation,
+                        flow,
+                    );
                 }
             }
         }
@@ -615,10 +728,11 @@ macro_rules! dot {
     };
 }
 
-impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
+impl<E, V, H, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, H, N> {
     pub fn dot_serialize_io(
         &self,
         writer: &mut impl std::io::Write,
+        hedge_map: &impl Fn(&H) -> Option<String>,
         edge_map: &impl Fn(&E) -> String,
         node_map: &impl Fn(&V) -> String,
     ) -> Result<(), std::io::Error> {
@@ -636,7 +750,9 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
             };
 
             write!(writer, "  ")?;
-            hedge_pair.dot_io(writer, self, data.orientation, attr)?;
+            hedge_pair
+                .add_data(self)
+                .dot_io(writer, self, hedge_map, data.orientation, attr)?;
         }
         writeln!(writer, "}}")?;
         Ok(())
@@ -645,6 +761,7 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
     pub fn dot_serialize_fmt(
         &self,
         writer: &mut impl std::fmt::Write,
+        hedge_map: &impl Fn(&H) -> Option<String>,
         edge_map: &impl Fn(&E) -> String,
         node_map: &impl Fn(&V) -> String,
     ) -> Result<(), std::fmt::Error> {
@@ -662,27 +779,36 @@ impl<E, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, N> {
             };
 
             write!(writer, "  ")?;
-            hedge_pair.dot_fmt(writer, self, data.orientation, attr)?;
+            hedge_pair
+                .add_data(self)
+                .dot_fmt(writer, self, hedge_map, data.orientation, attr)?;
         }
         writeln!(writer, "}}")?;
         Ok(())
     }
 }
 
-pub type DotGraph = HedgeGraph<crate::dot_parser::DotEdgeData, crate::dot_parser::DotVertexData>;
+pub type DotGraph = HedgeGraph<
+    crate::dot_parser::DotEdgeData,
+    crate::dot_parser::DotVertexData,
+    crate::dot_parser::DotHedgeData,
+>;
 #[cfg(test)]
 pub mod test {
-    use crate::{dot_parser::DotGraph, half_edge::HedgeGraph};
+    use crate::{
+        dot_parser::{DotEdgeData, DotGraph, DotHedgeData, DotVertexData},
+        half_edge::HedgeGraph,
+    };
 
     #[test]
     fn test_from_string() {
         let s = "digraph G {
             A      [flow=sink]
-            A -> B [label=\"Hello\"];
+            A -> B [label=\"Hello\" sink=\"AAA\"];
             B -> C [label=\"World\"dir=none];
         }";
-        let graph: HedgeGraph<crate::dot_parser::DotEdgeData, crate::dot_parser::DotVertexData> =
-            HedgeGraph::from_string(s).unwrap();
+        let graph: DotGraph = HedgeGraph::from_string(s).unwrap();
+        // println!("{graph:?}");
         println!(
             "Graph: {}",
             graph.dot_impl(
@@ -692,32 +818,46 @@ pub mod test {
                 &|b| Some(format!("label={:?}", b.id))
             )
         );
+        let mut out = String::new();
+        graph
+            .dot_serialize_fmt(
+                &mut out,
+                &DotHedgeData::dot_serialize,
+                &DotEdgeData::to_string,
+                &DotVertexData::to_string,
+            )
+            .unwrap();
+
+        println!("{out}");
         assert_eq!(graph.n_nodes(), 2);
         assert_eq!(graph.n_internals(), 1);
+        let g = graph.back_and_forth_dot();
+        let gg = g.clone().back_and_forth_dot();
+        // println!("{g:?}");
+        assert_eq!(g, gg);
     }
 
     #[test]
     fn test_macro() {
-        let _: HedgeGraph<crate::dot_parser::DotEdgeData, crate::dot_parser::DotVertexData> =
-            dot!( digraph {
-               node [shape=circle,height=0.1,label=""];  overlap="scale"; layout="neato";
-             0 -> 7[ dir=none color="red:blue;0.5",label="a"];
-            0 -> 12[ dir=forward color="red:blue;0.5",label="d"];
-            1 -> 0[ dir=forward color="red:blue;0.5",label="d"];
-            1 -> 3[ dir=none color="red:blue;0.5",label="a"];
-            2 -> 1[ dir=forward color="red:blue;0.5",label="d"];
-            2 -> 6[ dir=none color="red:blue;0.5",label="a"];
-            3 -> 13[ dir=forward color="red:blue;0.5",label="d"];
-            4 -> 3[ dir=forward color="red:blue;0.5",label="d"];
-            4 -> 5[ dir=none color="red:blue;0.5",label="g"];
-            5 -> 2[ dir=forward color="red:blue;0.5",label="d"];
-            6 -> 7[ dir=forward color="red:blue;0.5",label="e-"];
-            7 -> 11[ dir=forward color="red:blue;0.5",label="e-"];
-            8 -> 6[ dir=forward color="red:blue;0.5",label="e-"];
-            9 -> 4[ dir=forward color="red:blue;0.5",label="d"];
-            10 -> 5[ dir=forward color="red:blue;0.5",label="d"];
-            })
-            .unwrap();
+        let _: DotGraph = dot!( digraph {
+           node [shape=circle,height=0.1,label=""];  overlap="scale"; layout="neato";
+         0 -> 7[ dir=none color="red:blue;0.5",label="a"];
+        0 -> 12[ dir=forward color="red:blue;0.5",label="d"];
+        1 -> 0[ dir=forward color="red:blue;0.5",label="d"];
+        1 -> 3[ dir=none color="red:blue;0.5",label="a"];
+        2 -> 1[ dir=forward color="red:blue;0.5",label="d"];
+        2 -> 6[ dir=none color="red:blue;0.5",label="a"];
+        3 -> 13[ dir=forward color="red:blue;0.5",label="d"];
+        4 -> 3[ dir=forward color="red:blue;0.5",label="d"];
+        4 -> 5[ dir=none color="red:blue;0.5",label="g"];
+        5 -> 2[ dir=forward color="red:blue;0.5",label="d"];
+        6 -> 7[ dir=forward color="red:blue;0.5",label="e-"];
+        7 -> 11[ dir=forward color="red:blue;0.5",label="e-"];
+        8 -> 6[ dir=forward color="red:blue;0.5",label="e-"];
+        9 -> 4[ dir=forward color="red:blue;0.5",label="d"];
+        10 -> 5[ dir=forward color="red:blue;0.5",label="d"];
+        })
+        .unwrap();
     }
 
     #[test]
@@ -739,7 +879,12 @@ pub mod test {
 
         let mut serialized = String::new();
         graph
-            .dot_serialize_fmt(&mut serialized, &|e| format!("{e}"), &|v| format!("{v}"))
+            .dot_serialize_fmt(
+                &mut serialized,
+                &DotHedgeData::dot_serialize,
+                &|e| format!("{e}"),
+                &|v| format!("{v}"),
+            )
             .unwrap();
 
         let colored = graph.dot_impl(&graph.full_filter(), "", &|e| Some(format!("{e}")), &|v| {
@@ -758,7 +903,12 @@ pub mod test {
 
         let mut serialized2 = String::new();
         graph2
-            .dot_serialize_fmt(&mut serialized2, &|e| format!("{e}"), &|v| format!("{v}"))
+            .dot_serialize_fmt(
+                &mut serialized2,
+                &DotHedgeData::dot_serialize,
+                &|e| format!("{e}"),
+                &|v| format!("{v}"),
+            )
             .unwrap();
 
         let colored2 =
@@ -792,7 +942,12 @@ pub mod test {
 
         let mut serialized2 = String::new();
         graph2
-            .dot_serialize_fmt(&mut serialized2, &|e| format!("{e}"), &|v| format!("{v}"))
+            .dot_serialize_fmt(
+                &mut serialized2,
+                &DotHedgeData::dot_serialize,
+                &|e| format!("{e}"),
+                &|v| format!("{v}"),
+            )
             .unwrap();
 
         println!("{}", serialized2);

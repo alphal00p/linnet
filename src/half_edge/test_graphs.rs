@@ -113,7 +113,7 @@ impl fmt::Display for TestGraph {
 }
 
 impl TestGraph {
-    fn build(&self) -> (HedgeGraph<(), (), NodeStorageVec<()>>, GraphProperties) {
+    fn build(&self) -> (HedgeGraph<(), (), (), NodeStorageVec<()>>, GraphProperties) {
         let mut builder = HedgeGraphBuilder::new();
 
         match self {
@@ -581,7 +581,7 @@ struct GraphProperties {
 impl TestGraph {
     fn test_basic_properties(
         &self,
-        graph: &HedgeGraph<(), (), NodeStorageVec<()>>,
+        graph: &HedgeGraph<(), (), (), NodeStorageVec<()>>,
         props: &GraphProperties,
     ) -> TestResult {
         if graph.n_nodes() != props.n_nodes {
@@ -611,7 +611,7 @@ impl TestGraph {
 
     fn test_cycle_properties(
         &self,
-        graph: &HedgeGraph<(), (), NodeStorageVec<()>>,
+        graph: &HedgeGraph<(), (), (), NodeStorageVec<()>>,
         props: &GraphProperties,
     ) -> TestResult {
         let cyclomatic = graph.cyclotomatic_number(&graph.full_graph());
@@ -634,7 +634,7 @@ impl TestGraph {
 
     fn test_degree_distribution(
         &self,
-        graph: &HedgeGraph<(), (), NodeStorageVec<()>>,
+        graph: &HedgeGraph<(), (), (), NodeStorageVec<()>>,
         props: &GraphProperties,
     ) -> TestResult {
         let mut min_degree = usize::MAX;
@@ -665,7 +665,7 @@ impl TestGraph {
         Ok(())
     }
 
-    fn verify_cycle(graph: &HedgeGraph<(), (), NodeStorageVec<()>>, cycle: &Cycle) -> bool {
+    fn verify_cycle(graph: &HedgeGraph<(), (), (), NodeStorageVec<()>>, cycle: &Cycle) -> bool {
         let mut degree_map = std::collections::HashMap::new();
         for hedge in cycle.filter.included_iter() {
             let node = graph.node_id(hedge);

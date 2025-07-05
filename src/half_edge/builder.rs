@@ -6,6 +6,45 @@ use super::{
     HedgeGraph, NodeIndex,
 };
 
+pub struct HedgeData<H> {
+    pub data: H,
+    pub node: NodeIndex,
+}
+
+impl<H: Default> From<NodeIndex> for HedgeData<H> {
+    fn from(node: NodeIndex) -> Self {
+        HedgeData {
+            data: H::default(),
+            node,
+        }
+    }
+}
+
+impl<H> HedgeData<H> {
+    pub fn map<F, T>(self, f: F) -> HedgeData<T>
+    where
+        F: FnOnce(H) -> T,
+    {
+        HedgeData {
+            data: f(self.data),
+            node: self.node,
+        }
+    }
+
+    pub fn map_result<F, T, E>(self, f: F) -> Result<HedgeData<T>, E>
+    where
+        F: FnOnce(H) -> Result<T, E>,
+    {
+        match f(self.data) {
+            Ok(data) => Ok(HedgeData {
+                data,
+                node: self.node,
+            }),
+            Err(err) => Err(err),
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 /// A temporary structure used during the construction of a [`HedgeGraph`].
 ///
@@ -59,22 +98,24 @@ impl<V> HedgeNodeBuilder<V> {
 /// // Assuming a NodeStorage type MyNodeStore is defined and implements NodeStorageOps
 /// // let graph: HedgeGraph<&str, &str, MyNodeStore> = builder.build();
 /// ```
-pub struct HedgeGraphBuilder<E, V> {
+pub struct HedgeGraphBuilder<E, V, H = ()> {
+    hedge_data: Vec<H>,
     /// A list of nodes currently being built, stored as [`HedgeNodeBuilder`] instances.
     nodes: Vec<HedgeNodeBuilder<V>>,
     /// The [`Involution`] structure managing the half-edges being added to the graph.
     pub(crate) involution: Involution<E>,
 }
 
-impl<E, V> HedgeGraphBuilder<E, V> {
+impl<E, V, H> HedgeGraphBuilder<E, V, H> {
     pub fn new() -> Self {
         HedgeGraphBuilder {
+            hedge_data: Vec::new(),
             nodes: Vec::new(),
             involution: Involution::new(),
         }
     }
 
-    pub fn build<N: NodeStorageOps<NodeData = V>>(self) -> HedgeGraph<E, V, N> {
+    pub fn build<N: NodeStorageOps<NodeData = V>>(self) -> HedgeGraph<E, V, H, N> {
         self.into()
     }
 
@@ -89,41 +130,51 @@ impl<E, V> HedgeGraphBuilder<E, V> {
 
     pub fn add_edge(
         &mut self,
-        source: NodeIndex,
-        sink: NodeIndex,
+        source: impl Into<HedgeData<H>>,
+        sink: impl Into<HedgeData<H>>,
         data: E,
         directed: impl Into<Orientation>,
     ) {
+        let source = source.into();
+        let sink = sink.into();
         let (sourceh, sinkh) = self.involution.add_pair(data, directed);
-        self.nodes[source.0].hedges.push(sourceh);
-        self.nodes[sink.0].hedges.push(sinkh);
+        self.hedge_data.push(source.data);
+        self.hedge_data.push(sink.data);
+
+        self.nodes[source.node.0].hedges.push(sourceh);
+        self.nodes[sink.node.0].hedges.push(sinkh);
     }
 
     pub fn add_external_edge(
         &mut self,
-        source: NodeIndex,
+        source: impl Into<HedgeData<H>>,
         data: E,
         orientation: impl Into<Orientation>,
         underlying: Flow,
     ) {
+        let source = source.into();
         let id = self.involution.add_identity(data, orientation, underlying);
-        self.nodes[source.0].hedges.push(id);
+        self.nodes[source.node.0].hedges.push(id);
+        self.hedge_data.push(source.data);
     }
 }
 
-impl<E, V> Default for HedgeGraphBuilder<E, V> {
+impl<E, V, H> Default for HedgeGraphBuilder<E, V, H> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<E, V, N: NodeStorageOps<NodeData = V>> From<HedgeGraphBuilder<E, V>> for HedgeGraph<E, V, N> {
-    fn from(builder: HedgeGraphBuilder<E, V>) -> Self {
+impl<E, V, H, N: NodeStorageOps<NodeData = V>> From<HedgeGraphBuilder<E, V, H>>
+    for HedgeGraph<E, V, H, N>
+{
+    fn from(builder: HedgeGraphBuilder<E, V, H>) -> Self {
         let len = builder.involution.len();
 
         HedgeGraph {
             node_store: N::build(builder.nodes, len),
             edge_store: SmartHedgeVec::new(builder.involution),
+            hedge_data: builder.hedge_data,
         }
     }
 }

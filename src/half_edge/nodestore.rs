@@ -65,11 +65,11 @@ pub trait NodeStorageOps: NodeStorage {
 
     fn check_and_set_nodes(&mut self) -> Result<(), HedgeGraphError>;
 
-    fn map_data_ref_graph<'a, E, V2>(
+    fn map_data_ref_graph<'a, E, V2, H>(
         &'a self,
-        graph: &'a HedgeGraph<E, Self::NodeData, Self>,
+        graph: &'a HedgeGraph<E, Self::NodeData, H, Self>,
         node_map: impl FnMut(
-            &'a HedgeGraph<E, Self::NodeData, Self>,
+            &'a HedgeGraph<E, Self::NodeData, H, Self>,
             Self::NeighborsIter<'a>,
             &'a Self::NodeData,
         ) -> V2,
@@ -80,11 +80,11 @@ pub trait NodeStorageOps: NodeStorage {
         node_map: impl FnMut(Self::NeighborsIter<'a>, &'a mut Self::NodeData) -> V2,
     ) -> Self::OpStorage<V2>;
 
-    fn map_data_ref_graph_result<'a, E, V2, Er>(
+    fn map_data_ref_graph_result<'a, E, V2, H, Er>(
         &'a self,
-        graph: &'a HedgeGraph<E, Self::NodeData, Self>,
+        graph: &'a HedgeGraph<E, Self::NodeData, H, Self>,
         node_map: impl FnMut(
-            &'a HedgeGraph<E, Self::NodeData, Self>,
+            &'a HedgeGraph<E, Self::NodeData, H, Self>,
             Self::NeighborsIter<'a>,
             &'a Self::NodeData,
         ) -> Result<V2, Er>,

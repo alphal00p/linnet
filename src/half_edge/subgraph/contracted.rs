@@ -153,7 +153,10 @@ impl SubGraph for ContractedSubGraph {
         self.allhedges.included_iter()
     }
 
-    fn nedges<E, V, N: NodeStorageOps<NodeData = V>>(&self, graph: &HedgeGraph<E, V, N>) -> usize {
+    fn nedges<E, V, H, N: NodeStorageOps<NodeData = V>>(
+        &self,
+        graph: &HedgeGraph<E, V, H, N>,
+    ) -> usize {
         self.allhedges.nedges(graph)
     }
 
@@ -179,9 +182,9 @@ impl SubGraph for ContractedSubGraph {
 }
 
 impl SubGraphOps for ContractedSubGraph {
-    fn complement<E, V, N: NodeStorageOps<NodeData = V>>(
+    fn complement<E, V, H, N: NodeStorageOps<NodeData = V>>(
         &self,
-        graph: &HedgeGraph<E, V, N>,
+        graph: &HedgeGraph<E, V, H, N>,
     ) -> Self {
         let externalhedges = !self.allhedges.clone() & !self.internal_graph.filter.clone();
 

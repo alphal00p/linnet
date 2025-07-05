@@ -2,7 +2,7 @@ use bitvec::vec::BitVec;
 
 use crate::{
     dot,
-    dot_parser::DotVertexData,
+    dot_parser::{DotGraph, DotVertexData},
     half_edge::{
         builder::HedgeGraphBuilder,
         involution::{Flow, Hedge},
@@ -18,6 +18,7 @@ fn extract_forest() {
     let mut aligned: HedgeGraph<
         crate::dot_parser::DotEdgeData,
         crate::dot_parser::DotVertexData,
+        crate::dot_parser::DotHedgeData,
         Forest<DotVertexData, ChildVecStore<()>>,
     > = dot!(
     digraph {
@@ -82,7 +83,7 @@ fn extact_single_dangling() {
     simple.add_external_edge(n1, (), false, Flow::Sink);
     simple.add_edge(n1, n1, (), false);
     simple.add_external_edge(n2, (), false, Flow::Sink);
-    let mut simple: HedgeGraph<(), ()> = simple.build();
+    let mut simple: HedgeGraph<(), (), ()> = simple.build();
 
     let mut single_hair: BitVec = simple.empty_subgraph();
     if let Some(s) = simple.iter_edges().find(|a| a.0.is_unpaired()) {
@@ -94,11 +95,7 @@ fn extact_single_dangling() {
 
 #[test]
 fn extract_buggy() {
-    let mut aligned: HedgeGraph<
-        crate::dot_parser::DotEdgeData,
-        crate::dot_parser::DotVertexData,
-        // Forest<DotVertexData, ChildVecStore<()>>,
-    > = dot!(
+    let mut aligned: DotGraph = dot!(
     digraph {
         ext0 [flow=sink];
         ext0 -> 0[dir=back];
@@ -174,11 +171,7 @@ fn extract_buggy() {
 
 #[test]
 fn extract_normal() {
-    let mut aligned: HedgeGraph<
-        crate::dot_parser::DotEdgeData,
-        crate::dot_parser::DotVertexData,
-        // Forest<DotVertexData, ChildVecStore<()>>,
-    > = dot!(
+    let mut aligned: DotGraph = dot!(
     digraph {
       ext4 [flow=sink];
       0 -> 1;
@@ -244,7 +237,7 @@ fn orientation_hedges() {
     let a = single_node.add_node(());
     single_node.add_external_edge(a, (), true, Flow::Source);
     single_node.add_external_edge(a, (), true, Flow::Sink);
-    let aligned: HedgeGraph<(), ()> = single_node.build();
+    let aligned: HedgeGraph<(), (), ()> = single_node.build();
 
     println!("{}", aligned.base_dot())
 }

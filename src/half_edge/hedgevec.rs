@@ -249,11 +249,11 @@ impl<T> SmartHedgeVec<T> {
         }
     }
 
-    pub fn map_data_ref<'a, T2, V, N: NodeStorage<NodeData = V>>(
+    pub fn map_data_ref<'a, T2, V, H, N: NodeStorage<NodeData = V>>(
         &'a self,
-        graph: &'a HedgeGraph<T, V, N>,
+        graph: &'a HedgeGraph<T, V, H, N>,
         mut edge_map: impl FnMut(
-            &'a HedgeGraph<T, V, N>,
+            &'a HedgeGraph<T, V, H, N>,
             EdgeIndex,
             HedgePair,
             EdgeData<&'a T>,
@@ -306,11 +306,11 @@ impl<T> SmartHedgeVec<T> {
         }
     }
 
-    pub fn map_data_ref_result<'a, T2, V, N: NodeStorage<NodeData = V>, Er>(
+    pub fn map_data_ref_result<'a, T2, V, H, N: NodeStorage<NodeData = V>, Er>(
         &'a self,
-        graph: &'a HedgeGraph<T, V, N>,
+        graph: &'a HedgeGraph<T, V, H, N>,
         mut edge_map: impl FnMut(
-            &'a HedgeGraph<T, V, N>,
+            &'a HedgeGraph<T, V, H, N>,
             EdgeIndex,
             HedgePair,
             EdgeData<&'a T>,

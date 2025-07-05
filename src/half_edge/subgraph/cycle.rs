@@ -85,9 +85,9 @@ pub struct Cycle {
     pub loop_count: Option<usize>,
 }
 impl Cycle {
-    pub fn internal_graph<E, V, N: NodeStorageOps<NodeData = V>>(
+    pub fn internal_graph<E, V, H, N: NodeStorageOps<NodeData = V>>(
         self,
-        graph: &HedgeGraph<E, V, N>,
+        graph: &HedgeGraph<E, V, H, N>,
     ) -> InternalSubGraph {
         InternalSubGraph::cleaned_filter_pessimist(self.filter, graph)
     }
@@ -97,9 +97,9 @@ impl Cycle {
             loop_count: None,
         }
     }
-    pub fn is_circuit<E, V, N: NodeStorageOps<NodeData = V>>(
+    pub fn is_circuit<E, V, H, N: NodeStorageOps<NodeData = V>>(
         &self,
-        graph: &HedgeGraph<E, V, N>,
+        graph: &HedgeGraph<E, V, H, N>,
     ) -> bool {
         for (e, c, _) in graph.iter_nodes_of(&self.filter) {
             let adgacent = c.filter(|a| self.filter.includes(a));
@@ -112,9 +112,9 @@ impl Cycle {
         }
         true
     }
-    pub fn new_circuit<E, V, N: NodeStorageOps<NodeData = V>>(
+    pub fn new_circuit<E, V, H, N: NodeStorageOps<NodeData = V>>(
         filter: BitVec,
-        graph: &HedgeGraph<E, V, N>,
+        graph: &HedgeGraph<E, V, H, N>,
     ) -> Option<Self> {
         let circuit = Self {
             filter,
@@ -126,9 +126,9 @@ impl Cycle {
             None
         }
     }
-    pub fn new<E, V, N: NodeStorageOps<NodeData = V>>(
+    pub fn new<E, V, H, N: NodeStorageOps<NodeData = V>>(
         filter: BitVec,
-        graph: &HedgeGraph<E, V, N>,
+        graph: &HedgeGraph<E, V, H, N>,
     ) -> Option<Self> {
         for (e, c, _) in graph.iter_nodes_of(&filter) {
             let adgacent = c.filter(|a| filter.includes(a));

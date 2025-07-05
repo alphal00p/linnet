@@ -98,7 +98,10 @@ impl SubGraph for HedgeNode {
         self.internal_graph.join_mut(other.internal_graph);
     }
 
-    fn nedges<E, V, N: NodeStorageOps<NodeData = V>>(&self, graph: &HedgeGraph<E, V, N>) -> usize {
+    fn nedges<E, V, H, N: NodeStorageOps<NodeData = V>>(
+        &self,
+        graph: &HedgeGraph<E, V, H, N>,
+    ) -> usize {
         self.internal_graph.nedges(graph)
     }
 
@@ -191,9 +194,9 @@ impl Inclusion<RangeInclusive<Hedge>> for HedgeNode {
     }
 }
 impl SubGraphOps for HedgeNode {
-    fn complement<E, V, N: NodeStorageOps<NodeData = V>>(
+    fn complement<E, V, H, N: NodeStorageOps<NodeData = V>>(
         &self,
-        graph: &HedgeGraph<E, V, N>,
+        graph: &HedgeGraph<E, V, H, N>,
     ) -> Self {
         Self::from_internal_graph(self.internal_graph.complement(graph), graph)
     }
@@ -235,9 +238,9 @@ impl SubGraphOps for HedgeNode {
     }
 }
 impl HedgeNode {
-    pub fn from_internal_graph<E, V, N: NodeStorageOps<NodeData = V>>(
+    pub fn from_internal_graph<E, V, H, N: NodeStorageOps<NodeData = V>>(
         subgraph: InternalSubGraph,
-        graph: &HedgeGraph<E, V, N>,
+        graph: &HedgeGraph<E, V, H, N>,
     ) -> Self {
         graph.nesting_node_from_subgraph(subgraph)
     }
@@ -303,7 +306,10 @@ impl HedgeNode {
     }
 
     /// Fixes the node by ensuring that all hairs are true hairs and not internal, and if they are move them to the internal graph. ! Also moves dangling edges to the internal graph.// not sure if this is kosher
-    pub fn fix<E, V, N: NodeStorageOps<NodeData = V>>(&mut self, graph: &HedgeGraph<E, V, N>) {
+    pub fn fix<E, V, H, N: NodeStorageOps<NodeData = V>>(
+        &mut self,
+        graph: &HedgeGraph<E, V, H, N>,
+    ) {
         for i in self.hairs.included_iter() {
             let invh = graph.inv(i);
             if self.hairs.includes(&invh) {
@@ -315,9 +321,9 @@ impl HedgeNode {
     }
 
     /// adds all hairs possible
-    pub fn add_all_hairs<E, V, N: NodeStorageOps<NodeData = V>>(
+    pub fn add_all_hairs<E, V, H, N: NodeStorageOps<NodeData = V>>(
         &mut self,
-        graph: &HedgeGraph<E, V, N>,
+        graph: &HedgeGraph<E, V, H, N>,
     ) {
         let mut hairs = bitvec![usize, Lsb0; 0; graph.n_hedges()];
 
@@ -332,9 +338,9 @@ impl HedgeNode {
         self.hairs = !(!hairs | &self.internal_graph.filter);
     }
 
-    pub fn valid<E, V, N: NodeStorageOps<NodeData = V>>(
+    pub fn valid<E, V, H, N: NodeStorageOps<NodeData = V>>(
         &self,
-        graph: &HedgeGraph<E, V, N>,
+        graph: &HedgeGraph<E, V, H, N>,
     ) -> bool {
         for i in self.hairs.included_iter() {
             let invh = graph.inv(i);

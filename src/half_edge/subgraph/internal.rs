@@ -202,7 +202,10 @@ impl Inclusion<RangeInclusive<Hedge>> for InternalSubGraph {
 impl SubGraph for InternalSubGraph {
     type Base = BitVec;
     type BaseIter<'a> = SubGraphHedgeIter<'a>;
-    fn nedges<E, V, N: NodeStorageOps<NodeData = V>>(&self, _graph: &HedgeGraph<E, V, N>) -> usize {
+    fn nedges<E, V, H, N: NodeStorageOps<NodeData = V>>(
+        &self,
+        _graph: &HedgeGraph<E, V, H, N>,
+    ) -> usize {
         self.nhedges() / 2
     }
 
@@ -282,9 +285,9 @@ impl SubGraphOps for InternalSubGraph {
         (self.filter.clone() | &other.filter).count_ones() == 0
     }
 
-    fn complement<E, V, N: NodeStorageOps<NodeData = V>>(
+    fn complement<E, V, H, N: NodeStorageOps<NodeData = V>>(
         &self,
-        graph: &HedgeGraph<E, V, N>,
+        graph: &HedgeGraph<E, V, H, N>,
     ) -> Self {
         InternalSubGraph {
             filter: !self.filter.clone() & !graph.external_filter(),
@@ -299,9 +302,9 @@ impl SubGraphOps for InternalSubGraph {
 }
 
 impl InternalSubGraph {
-    fn valid_filter<E, V, N: NodeStorageOps<NodeData = V>>(
+    fn valid_filter<E, V, H, N: NodeStorageOps<NodeData = V>>(
         filter: &BitVec,
-        graph: &HedgeGraph<E, V, N>,
+        graph: &HedgeGraph<E, V, H, N>,
     ) -> bool {
         for i in filter.included_iter() {
             if !filter.includes(&graph.inv(i)) {
@@ -311,10 +314,10 @@ impl InternalSubGraph {
         true
     }
 
-    pub fn add_edge<E, V, N: NodeStorageOps<NodeData = V>>(
+    pub fn add_edge<E, V, H, N: NodeStorageOps<NodeData = V>>(
         &mut self,
         hedge: Hedge,
-        graph: &HedgeGraph<E, V, N>,
+        graph: &HedgeGraph<E, V, H, N>,
     ) {
         if !graph.edge_store.pair(hedge).is_unpaired() {
             self.filter.set(hedge.0, true);
@@ -322,10 +325,10 @@ impl InternalSubGraph {
         }
     }
 
-    pub fn remove_edge<E, V, N: NodeStorageOps<NodeData = V>>(
+    pub fn remove_edge<E, V, H, N: NodeStorageOps<NodeData = V>>(
         &mut self,
         hedge: Hedge,
-        graph: &HedgeGraph<E, V, N>,
+        graph: &HedgeGraph<E, V, H, N>,
     ) {
         if !graph.edge_store.pair(hedge).is_unpaired() {
             self.filter.set(hedge.0, false);
@@ -333,9 +336,9 @@ impl InternalSubGraph {
         }
     }
 
-    pub fn try_new<E, V, N: NodeStorageOps<NodeData = V>>(
+    pub fn try_new<E, V, H, N: NodeStorageOps<NodeData = V>>(
         filter: BitVec,
-        graph: &HedgeGraph<E, V, N>,
+        graph: &HedgeGraph<E, V, H, N>,
     ) -> Option<Self> {
         if filter.len() != graph.n_hedges() {
             return None;
@@ -350,9 +353,9 @@ impl InternalSubGraph {
         })
     }
 
-    pub fn cleaned_filter_optimist<E, V, N: NodeStorageOps<NodeData = V>>(
+    pub fn cleaned_filter_optimist<E, V, H, N: NodeStorageOps<NodeData = V>>(
         mut filter: BitVec,
-        graph: &HedgeGraph<E, V, N>,
+        graph: &HedgeGraph<E, V, H, N>,
     ) -> Self {
         for (j, _, _) in graph.iter_edges() {
             match j {
@@ -372,9 +375,9 @@ impl InternalSubGraph {
         }
     }
 
-    pub fn cleaned_filter_pessimist<E, V, N: NodeStorageOps<NodeData = V>>(
+    pub fn cleaned_filter_pessimist<E, V, H, N: NodeStorageOps<NodeData = V>>(
         mut filter: BitVec,
-        graph: &HedgeGraph<E, V, N>,
+        graph: &HedgeGraph<E, V, H, N>,
     ) -> Self {
         for (j, _, _) in graph.iter_edges() {
             match j {
@@ -395,30 +398,30 @@ impl InternalSubGraph {
         }
     }
 
-    pub fn valid<E, V, N: NodeStorageOps<NodeData = V>>(
+    pub fn valid<E, V, H, N: NodeStorageOps<NodeData = V>>(
         &self,
-        graph: &HedgeGraph<E, V, N>,
+        graph: &HedgeGraph<E, V, H, N>,
     ) -> bool {
         Self::valid_filter(&self.filter, graph)
     }
 
-    pub fn to_hairy_subgraph<E, V, N: NodeStorageOps<NodeData = V>>(
+    pub fn to_hairy_subgraph<E, V, H, N: NodeStorageOps<NodeData = V>>(
         &self,
-        graph: &HedgeGraph<E, V, N>,
+        graph: &HedgeGraph<E, V, H, N>,
     ) -> HedgeNode {
         graph.nesting_node_from_subgraph(self.clone())
     }
 
-    pub fn set_loopcount<E, V, N: NodeStorageOps<NodeData = V>>(
+    pub fn set_loopcount<E, V, H, N: NodeStorageOps<NodeData = V>>(
         &mut self,
-        graph: &HedgeGraph<E, V, N>,
+        graph: &HedgeGraph<E, V, H, N>,
     ) {
         self.loopcount = Some(graph.cyclotomatic_number(self));
     }
 
-    pub fn cycle_basis<E, V, N: NodeStorageOps<NodeData = V>>(
+    pub fn cycle_basis<E, V, H, N: NodeStorageOps<NodeData = V>>(
         &self,
-        graph: &HedgeGraph<E, V, N>,
+        graph: &HedgeGraph<E, V, H, N>,
     ) -> (Vec<Cycle>, SimpleTraversalTree) {
         let node = graph.iter_node_ids().next().unwrap();
         graph.paton_cycle_basis(self, &node, None).unwrap()

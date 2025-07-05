@@ -127,6 +127,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "bincode-trait-derive"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c1f425dc6064b77d777fdecf6d1b374ae29e0be056b5ba8308a798d381e82632"
+dependencies = [
+ "bincode 2.0.1",
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "bincode_derive"
 version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -627,6 +639,7 @@ dependencies = [
  "ahash",
  "argmin",
  "bincode 2.0.1",
+ "bincode-trait-derive",
  "bitvec",
  "by_address",
  "cgmath",

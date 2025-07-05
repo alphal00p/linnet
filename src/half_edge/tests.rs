@@ -1,10 +1,6 @@
 #[test]
 fn cycle_basis() {
-    let two: HedgeGraph<
-        crate::dot_parser::DotEdgeData,
-        crate::dot_parser::DotVertexData,
-        // Forest<DotVertexData, ChildVecStore<()>>,
-    > = dot!(
+    let two: DotGraph = dot!(
     digraph {
           ext0 [shape=none, label="" flow=sink];
           ext0 -> 2[dir=none color="red"];
@@ -21,11 +17,7 @@ fn cycle_basis() {
 
 #[test]
 fn test_spanning_trees_of_tree() {
-    let tree: HedgeGraph<
-        crate::dot_parser::DotEdgeData,
-        crate::dot_parser::DotVertexData,
-        // Forest<DotVertexData, ChildVecStore<()>>,
-    > = dot!(
+    let tree: DotGraph = dot!(
     digraph {
          1->2
          1->0
@@ -45,11 +37,7 @@ fn test_spanning_trees_of_tree() {
 
 #[test]
 fn join_mut_simple() {
-    let two: HedgeGraph<
-        crate::dot_parser::DotEdgeData,
-        crate::dot_parser::DotVertexData,
-        // Forest<DotVertexData, ChildVecStore<()>>,
-    > = dot!(
+    let two: DotGraph = dot!(
     digraph {
 
       0 [label = "∑"];
@@ -64,11 +52,7 @@ fn join_mut_simple() {
 
     //with
 
-    let mut one: HedgeGraph<
-        crate::dot_parser::DotEdgeData,
-        crate::dot_parser::DotVertexData,
-        // Forest<DotVertexData, ChildVecStore<()>>,
-    > = dot!(digraph {
+    let mut one: DotGraph = dot!(digraph {
       node [shape=circle,height=0.1,label=""];  overlap="scale"; layout="neato";
 
       0 [label = "S:5"];
@@ -106,7 +90,7 @@ fn threeloop() {
     builder.add_edge(c, d, (), false);
     builder.add_edge(d, a, (), false);
 
-    let graph: HedgeGraph<(), ()> = builder.build();
+    let graph: HedgeGraph<(), (), ()> = builder.build();
 
     insta::assert_snapshot!("three_loop_dot", graph.base_dot());
     #[cfg(feature = "serde")]
@@ -156,7 +140,7 @@ fn hairythreeloop() {
     builder.add_edge(d, a, (), false);
 
     assert_eq!(builder.involution.len(), 15);
-    let graph: HedgeGraph<(), ()> = builder.build();
+    let graph: HedgeGraph<(), (), ()> = builder.build();
 
     insta::assert_snapshot!("hairy_three_loop_dot", graph.base_dot());
 
@@ -193,12 +177,12 @@ fn banana_cuts() {
     builder.add_edge(a, b, (), false);
     builder.add_edge(a, b, (), false);
 
-    let three_banana: HedgeGraph<(), ()> = builder.clone().build();
+    let three_banana: HedgeGraph<(), (), ()> = builder.clone().build();
 
     assert_eq!(6, three_banana.non_cut_edges().len());
     builder.add_edge(a, b, (), false);
 
-    let four_banana: HedgeGraph<(), ()> = builder.build();
+    let four_banana: HedgeGraph<(), (), ()> = builder.build();
     assert_eq!(14, four_banana.non_cut_edges().len());
 }
 
@@ -217,7 +201,7 @@ fn three_loop_fly() {
     builder.add_edge(c, d, (), false);
     builder.add_edge(d, c, (), false);
 
-    let fly: HedgeGraph<(), ()> = builder.clone().build();
+    let fly: HedgeGraph<(), (), ()> = builder.clone().build();
     assert_eq!(32, fly.non_cut_edges().len());
 }
 
@@ -235,7 +219,7 @@ fn doubletriangle() {
     builder.add_edge(c, d, (), true);
     builder.add_edge(a, c, (), true);
 
-    let fly: HedgeGraph<(), ()> = builder.clone().build();
+    let fly: HedgeGraph<(), (), ()> = builder.clone().build();
 
     for _c in fly.non_cut_edges() {
         // println!("{c:?}");
@@ -281,7 +265,7 @@ fn cube() {
     builder.add_edge(c, g, (), false);
     builder.add_edge(d, h, (), false);
 
-    let graph: HedgeGraph<(), ()> = builder.build();
+    let graph: HedgeGraph<(), (), ()> = builder.build();
 
     insta::assert_snapshot!("cube_dot", graph.base_dot());
 
@@ -295,7 +279,7 @@ fn cube() {
 #[ignore]
 fn alt_vs_pair() {
     for s in 0..100 {
-        let rand_graph = HedgeGraph::<(), (), NodeStorageVec<()>>::random(10, 14, s);
+        let rand_graph = HedgeGraph::<(), (), (), NodeStorageVec<()>>::random(10, 14, s);
 
         let before = Instant::now();
         let all_spinneys = rand_graph.all_spinneys();
@@ -385,7 +369,7 @@ fn K33() {
     builder.add_edge(c, e, (), false);
     builder.add_edge(c, f, (), false);
 
-    let graph: HedgeGraph<(), ()> = builder.build();
+    let graph: HedgeGraph<(), (), ()> = builder.build();
     graph.full_node();
     println!("built");
 
@@ -488,7 +472,7 @@ fn petersen() {
 
     builder.add_edge(h, j, (), false);
 
-    let graph: HedgeGraph<(), ()> = builder.build();
+    let graph: HedgeGraph<(), (), ()> = builder.build();
 
     println!("{}", graph.base_dot());
 
@@ -553,7 +537,7 @@ fn wagner_graph() {
 
     builder.add_edge(n8, n1, (), false);
 
-    let graph: HedgeGraph<(), ()> = builder.build();
+    let graph: HedgeGraph<(), (), ()> = builder.build();
 
     println!("{}", graph.base_dot());
 
@@ -652,7 +636,7 @@ fn flower_snark() {
 
     builder.add_edge(n20, n6, (), false); //next
 
-    let graph: HedgeGraph<(), ()> = builder.build();
+    let graph: HedgeGraph<(), (), ()> = builder.build();
 
     println!("{}", graph.base_dot());
 
@@ -752,7 +736,7 @@ use std::time::Instant;
 use insta::assert_snapshot;
 use nodestore::NodeStorageVec;
 
-use crate::dot;
+use crate::{dot, dot_parser::DotGraph};
 
 use super::*;
 
@@ -770,7 +754,7 @@ fn double_triangle() {
     builder.add_edge(d, a, (), true);
     builder.add_edge(b, d, (), true);
 
-    let graph: HedgeGraph<(), ()> = builder.build();
+    let graph: HedgeGraph<(), (), ()> = builder.build();
     let cuts = graph.all_cuts_from_ids(&[a], &[c]);
     assert_eq!(cuts.len(), 4);
     for cut in cuts {
@@ -786,7 +770,7 @@ fn double_self_loop() {
     builder.add_edge(a, a, (), true);
     builder.add_edge(a, a, (), true);
 
-    let graph: HedgeGraph<(), ()> = builder.build();
+    let graph: HedgeGraph<(), (), ()> = builder.build();
     let (loops, _) = graph.cycle_basis();
     assert_eq!(loops.len(), 2);
 }
@@ -808,7 +792,7 @@ fn self_energy_cut() {
     epem_builder.add_external_edge(nodes[3], (), true, Flow::Source);
     epem_builder.add_external_edge(nodes[3], (), true, Flow::Source);
 
-    let epem = epem_builder.build::<NodeStorageVec<()>>();
+    let epem: HedgeGraph<(), ()> = epem_builder.build::<NodeStorageVec<()>>();
     println!("{}", epem.dot(&epem.full_filter()));
 
     let cuts = epem.all_cuts_from_ids(&nodes[0..=0], &nodes[3..=3]);
@@ -818,7 +802,7 @@ fn self_energy_cut() {
 
 #[test]
 fn double_pentagon_all_cuts() {
-    let graph: HedgeGraph<crate::dot_parser::DotEdgeData, crate::dot_parser::DotVertexData> = dot!(
+    let graph: DotGraph = dot!(
         digraph {
     node [shape=circle,height=0.1,label=""];  overlap="scale"; layout="neato";
     00 -> 07[ dir=none,label="a"];
@@ -879,7 +863,7 @@ fn double_pentagon_all_cuts() {
 
 #[test]
 fn box_all_cuts_multiple() {
-    let graph: HedgeGraph<crate::dot_parser::DotEdgeData, crate::dot_parser::DotVertexData> = dot!(
+    let graph: DotGraph = dot!(
         digraph G {
          00->01
          01->02
@@ -920,7 +904,7 @@ fn box_all_cuts_multiple() {
 
 #[test]
 fn self_energy_box() {
-    let mut self_energy_builder = HedgeGraphBuilder::new();
+    let mut self_energy_builder: HedgeGraphBuilder<(), (), ()> = HedgeGraphBuilder::new();
     let nodes = (0..8)
         .map(|_| self_energy_builder.add_node(()))
         .collect::<Vec<_>>();
@@ -950,7 +934,7 @@ fn self_energy_box() {
 
     cut_to_look_for.sort();
 
-    let self_energy = self_energy_builder.build::<NodeStorageVec<()>>();
+    let self_energy: HedgeGraph<(), (), _> = self_energy_builder.build::<NodeStorageVec<()>>();
 
     let cuts = self_energy.all_cuts_from_ids(&[nodes[0]], &[nodes[7]]);
 
@@ -977,7 +961,7 @@ fn self_energy_box() {
 
 #[test]
 fn tadpoles() {
-    let graph: HedgeGraph<crate::dot_parser::DotEdgeData, crate::dot_parser::DotVertexData> = dot!(
+    let graph: DotGraph = dot!(
         digraph{
             a->b->c
             b->aa->d

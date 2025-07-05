@@ -135,17 +135,17 @@ impl<E> LayoutEdge<E> {
 }
 
 impl HedgePair {
-    pub fn cetz<E: CetzEdge, V>(
+    pub fn cetz<E: CetzEdge, V, H>(
         &self,
-        graph: &PositionalHedgeGraph<E, V>,
+        graph: &PositionalHedgeGraph<E, V, H>,
         orientation: Orientation,
     ) -> String {
         self.cetz_impl(graph, &|e| e.label(), &|e| e.decoration(), orientation)
     }
 
-    fn cetz_impl<E, V, L: Display>(
+    fn cetz_impl<E, V, H, L: Display>(
         &self,
-        graph: &PositionalHedgeGraph<E, V>,
+        graph: &PositionalHedgeGraph<E, V, H>,
         label: &impl Fn(&E) -> L,
         decoration: &impl Fn(&E) -> Decoration,
         orientation: Orientation,
@@ -186,8 +186,8 @@ impl HedgePair {
 
 impl<E> LayoutEdge<E> {}
 
-pub type PositionalHedgeGraph<E, V> =
-    HedgeGraph<LayoutEdge<E>, LayoutVertex<V>, NodeStorageVec<LayoutVertex<V>>>;
+pub type PositionalHedgeGraph<E, V, H> =
+    HedgeGraph<LayoutEdge<E>, LayoutVertex<V>, H, NodeStorageVec<LayoutVertex<V>>>;
 
 /// A constant string containing Cetz (a TikZ library for Typst) code preamble.
 /// This preamble defines reusable drawing commands and styles (like node shapes,
@@ -257,7 +257,7 @@ impl FancySettings {
     }
 }
 
-impl<E, V> PositionalHedgeGraph<E, V> {
+impl<E, V, H> PositionalHedgeGraph<E, V, H> {
     pub fn to_fancy(&mut self, settings: &FancySettings) {
         self.edge_store.data.iter_mut().for_each(|(e, p)| match p {
             HedgePair::Paired { source, sink } => {
@@ -366,9 +366,10 @@ impl<E, V> PositionalHedgeGraph<E, V> {
 /// - `'a`: Lifetime of the borrowed graph.
 /// - `E`: The type of custom data associated with edges.
 /// - `V`: The type of custom data associated with vertices.
-pub struct GraphLayout<'a, E, V> {
+/// - `H`: The type of custom data associated with half-edges.
+pub struct GraphLayout<'a, E, V, H> {
     /// A reference to the graph whose layout is being computed.
-    pub graph: &'a HedgeGraph<E, V, NodeStorageVec<V>>,
+    pub graph: &'a HedgeGraph<E, V, H, NodeStorageVec<V>>,
     /// The current set of optimizable and fixed positions for graph elements.
     pub positions: Positions,
     /// Parameters controlling the forces in a force-directed layout algorithm.
@@ -513,11 +514,11 @@ impl Positions {
             (None, None) => None,
         }
     }
-    pub fn to_graph<E, V>(
+    pub fn to_graph<E, V, H>(
         self,
-        graph: HedgeGraph<E, V, NodeStorageVec<V>>,
+        graph: HedgeGraph<E, V, H, NodeStorageVec<V>>,
         params: &[f64],
-    ) -> PositionalHedgeGraph<E, V> {
+    ) -> PositionalHedgeGraph<E, V, H> {
         graph.map(
             |_, i, v| {
                 let pos = self.vertex_positions[i.0];
@@ -561,10 +562,14 @@ impl Positions {
                     e.map(|d| LayoutEdge::new_external(d, &source_pos, pos.0, pos.1, flow))
                 }
             },
+            |h| h,
         )
     }
 
-    pub fn new<E, V>(graph: &HedgeGraph<E, V, NodeStorageVec<V>>, seed: u64) -> (Vec<f64>, Self) {
+    pub fn new<E, V, H>(
+        graph: &HedgeGraph<E, V, H, NodeStorageVec<V>>,
+        seed: u64,
+    ) -> (Vec<f64>, Self) {
         let mut rng = SmallRng::seed_from_u64(seed);
         let mut vertex_positions = Vec::new();
         let mut params = Vec::new();
@@ -598,8 +603,8 @@ impl Positions {
             },
         )
     }
-    pub fn circle_ext<E, V>(
-        graph: &HedgeGraph<E, V, NodeStorageVec<V>>,
+    pub fn circle_ext<E, V, H>(
+        graph: &HedgeGraph<E, V, H, NodeStorageVec<V>>,
         seed: u64,
         radius: f64,
     ) -> (Vec<f64>, Self) {
@@ -682,7 +687,7 @@ impl Positions {
     }
 }
 
-impl<E, V> CostFunction for GraphLayout<'_, E, V> {
+impl<E, V, H> CostFunction for GraphLayout<'_, E, V, H> {
     type Param = Vec<f64>;
     type Output = f64;
 
@@ -790,7 +795,7 @@ impl<E, V> CostFunction for GraphLayout<'_, E, V> {
     }
 }
 
-impl<E, V> Anneal for GraphLayout<'_, E, V> {
+impl<E, V, H> Anneal for GraphLayout<'_, E, V, H> {
     type Param = Vec<f64>;
     type Output = Vec<f64>;
     type Float = f64;
@@ -852,8 +857,8 @@ pub struct LayoutIters {
 }
 
 impl LayoutSettings {
-    pub fn new<E, V>(
-        graph: &HedgeGraph<E, V, NodeStorageVec<V>>,
+    pub fn new<E, V, H>(
+        graph: &HedgeGraph<E, V, H, NodeStorageVec<V>>,
         params: LayoutParams,
         iters: LayoutIters,
     ) -> Self {
@@ -867,8 +872,8 @@ impl LayoutSettings {
         }
     }
 
-    pub fn left_right_square<E, V>(
-        graph: &HedgeGraph<E, V, NodeStorageVec<V>>,
+    pub fn left_right_square<E, V, H>(
+        graph: &HedgeGraph<E, V, H, NodeStorageVec<V>>,
         params: LayoutParams,
         iters: LayoutIters,
         edge: f64,
@@ -1002,11 +1007,11 @@ impl LayoutSettings {
     }
 }
 
-impl<E, V> HedgeGraph<E, V, NodeStorageVec<V>> {
+impl<E, V, H> HedgeGraph<E, V, H, NodeStorageVec<V>> {
     pub fn layout(
         self,
         mut settings: LayoutSettings,
-    ) -> HedgeGraph<LayoutEdge<E>, LayoutVertex<V>, NodeStorageVec<LayoutVertex<V>>> {
+    ) -> HedgeGraph<LayoutEdge<E>, LayoutVertex<V>, H, NodeStorageVec<LayoutVertex<V>>> {
         let layout = GraphLayout {
             rng: Arc::new(Mutex::new(SmallRng::seed_from_u64(0))),
             positions: settings.positions.clone(),
@@ -1044,7 +1049,7 @@ pub mod test {
 
     use crate::{
         dot,
-        dot_parser::{DotEdgeData, DotGraph, DotVertexData},
+        dot_parser::{DotEdgeData, DotGraph, DotHedgeData, DotVertexData},
         half_edge::{drawing::Decoration, HedgeGraph},
     };
 
@@ -1099,10 +1104,7 @@ pub mod test {
                 seed: 1,
             },
         );
-        let mut layout: HedgeGraph<
-            super::LayoutEdge<crate::dot_parser::DotEdgeData>,
-            super::LayoutVertex<crate::dot_parser::DotVertexData>,
-        > = sunshine.layout(layout_settings);
+        let mut layout = sunshine.layout(layout_settings);
         layout.to_fancy(&super::FancySettings {
             label_shift: 0.1,
             arrow_angle_percentage: Some(0.6),
@@ -1110,7 +1112,7 @@ pub mod test {
         });
 
         let out = String::from_str("#set page(width: 35cm, height: auto)\n").unwrap()
-            + PositionalHedgeGraph::<DotEdgeData, DotVertexData>::cetz_impl_collection(
+            + PositionalHedgeGraph::<DotEdgeData, DotVertexData,DotHedgeData>::cetz_impl_collection(
                 &[(
                     "".to_string(),
                     "".to_string(),
