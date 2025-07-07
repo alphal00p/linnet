@@ -26,10 +26,10 @@ pub struct SignedCycle {
 }
 
 impl SignedCycle {
-    pub fn from_cycle<V, E, N: NodeStorageOps<NodeData = V>>(
+    pub fn from_cycle<V, E, H, N: NodeStorageOps<NodeData = V>>(
         cycle: Cycle,
         according_to: Hedge,
-        graph: &HedgeGraph<E, V, N>,
+        graph: &HedgeGraph<E, V, H, N>,
     ) -> Option<Self> {
         if !cycle.is_circuit(graph) {
             return None;
