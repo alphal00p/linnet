@@ -1453,7 +1453,7 @@ impl<E, V, H, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, H, N> {
         }
     }
 
-    pub fn as_ref(&self) -> HedgeGraph<&E, &V, &H, N::OpStorage<&V>> {
+    pub fn to_ref(&self) -> HedgeGraph<&E, &V, &H, N::OpStorage<&V>> {
         self.map_data_ref(|_, _, v| v, |_, _, _, e| e, |_, h| h)
     }
 
@@ -1843,7 +1843,7 @@ impl<E, V, H, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, H, N> {
             + ModifySubgraph<HedgePair>
             + ModifySubgraph<Hedge>,
     {
-        let ref_self = self.as_ref();
+        let ref_self = self.to_ref();
 
         let exts = self.internal_crown(subgraph);
 
