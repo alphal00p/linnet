@@ -193,9 +193,9 @@ impl OrientedCut {
 
         winding_number
     }
-    pub fn iter_edges<'a, E, V, N: NodeStorageOps<NodeData = V>>(
+    pub fn iter_edges<'a, E, V, H, N: NodeStorageOps<NodeData = V>>(
         &'a self,
-        graph: &'a HedgeGraph<E, V, N>,
+        graph: &'a HedgeGraph<E, V, H, N>,
     ) -> impl Iterator<Item = (Orientation, EdgeData<&'a E>)> {
         self.left
             .included_iter()
@@ -327,10 +327,10 @@ impl OrientedCut {
     /// If it is in the cut, and the left set contains the source hedge [Orientation::Default] or the sink hedge [Orientation::Reversed].
     ///
     /// Equivalently tells you if the source hedge is in the left side of the cut [Orientation::Default] or the right side [Orientation::Reversed].
-    pub fn orientation<E, V, N: NodeStorage<NodeData = V>>(
+    pub fn orientation<E, V, H, N: NodeStorage<NodeData = V>>(
         &self,
         i: Hedge,
-        graph: &HedgeGraph<E, V, N>,
+        graph: &HedgeGraph<E, V, H, N>,
     ) -> Orientation {
         let pair = graph.edge_store.pair(i);
         self.get_from_pair(pair)
