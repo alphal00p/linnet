@@ -588,13 +588,13 @@ impl OrientedCut {
     ) -> HedgeGraph<PossiblyCutEdge<E>, V, H, N::OpStorage<V>> {
         let mut new_graph = graph.map(
             |_, _, v| v,
-            |i, _, h, e| {
+            |i, _, h, _, e| {
                 e.map(|d| {
                     let h = i[h.any_hedge()];
                     PossiblyCutEdge::uncut(d, h)
                 })
             },
-            |h| h,
+            |_, h| h,
         );
         for h in self.iter_left_hedges() {
             new_graph[[&h]].cut(Flow::Source);

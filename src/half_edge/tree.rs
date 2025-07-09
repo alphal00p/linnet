@@ -287,8 +287,14 @@ impl<P: ForestNodeStore<NodeData = ()>> SimpleTraversalTree<P> {
                     Some(roothedge)
                 }
             }
-            TTRoot::None => None,
-            TTRoot::Root => None, // if it is attached to the root node, it has no parent
+            TTRoot::None => {
+                // println!("None");
+                None
+            }
+            TTRoot::Root => {
+                // println!("Root");
+                None
+            } // if it is attached to the root node, it has no parent
         }
     }
 }
@@ -472,9 +478,9 @@ impl<P: ForestNodeStore<NodeData = ()>> SimpleTraversalTree<P> {
         }
     }
 
-    pub fn dot<E, V, N: NodeStorageOps<NodeData = V>>(
+    pub fn dot<E, V, H, N: NodeStorageOps<NodeData = V>>(
         &self,
-        graph: &HedgeGraph<E, V, N>,
+        graph: &HedgeGraph<E, V, H, N>,
     ) -> String {
         let mut structure = graph.just_structure();
         structure.align_superficial_to_tree(self);

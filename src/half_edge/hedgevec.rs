@@ -29,7 +29,7 @@ use super::{
 /// # Type Parameters
 ///
 /// - `T`: The type of custom data associated with each edge.
-pub struct SmartHedgeVec<T> {
+pub struct SmartEdgeVec<T> {
     /// A vector where each element is a tuple containing the custom edge data (`T`)
     /// and the [`HedgePair`] that describes the topological state of the edge
     /// (e.g., paired, unpaired, split). The index into this vector serves as
@@ -41,7 +41,7 @@ pub struct SmartHedgeVec<T> {
     involution: Involution,
 }
 
-impl<T> AsRef<Involution> for SmartHedgeVec<T> {
+impl<T> AsRef<Involution> for SmartEdgeVec<T> {
     fn as_ref(&self) -> &Involution {
         &self.involution
     }
@@ -70,7 +70,7 @@ pub trait Accessors<Index> {
     fn data_mut(&mut self, index: Index) -> &mut Self::Data;
 }
 
-impl<T> Accessors<EdgeIndex> for SmartHedgeVec<T> {
+impl<T> Accessors<EdgeIndex> for SmartEdgeVec<T> {
     type Data = T;
 
     fn orientation(&self, index: EdgeIndex) -> Orientation {
@@ -96,7 +96,7 @@ impl<T> Accessors<EdgeIndex> for SmartHedgeVec<T> {
     }
 }
 
-impl<T> Accessors<Hedge> for SmartHedgeVec<T> {
+impl<T> Accessors<Hedge> for SmartEdgeVec<T> {
     type Data = T;
 
     fn orientation(&self, index: Hedge) -> Orientation {
@@ -123,7 +123,7 @@ impl<T> Accessors<Hedge> for SmartHedgeVec<T> {
     }
 }
 
-impl<T> Accessors<HedgePair> for SmartHedgeVec<T> {
+impl<T> Accessors<HedgePair> for SmartEdgeVec<T> {
     type Data = T;
 
     fn orientation(&self, index: HedgePair) -> Orientation {
@@ -153,7 +153,7 @@ impl<T> Accessors<HedgePair> for SmartHedgeVec<T> {
     }
 }
 
-impl<T> SmartHedgeVec<T> {
+impl<T> SmartEdgeVec<T> {
     pub fn new(involution: Involution<T>) -> Self {
         let mut data = Vec::new();
 
@@ -163,7 +163,7 @@ impl<T> SmartHedgeVec<T> {
             data.push((new_data.data, a));
             EdgeData::new(edgeid, new_data.orientation)
         });
-        SmartHedgeVec { data, involution }
+        SmartEdgeVec { data, involution }
     }
 
     pub(crate) fn fix_hedge_pairs(&mut self) {
@@ -184,7 +184,7 @@ impl<T> SmartHedgeVec<T> {
     pub fn map<T2, F: Fn(HedgePair, EdgeData<&T>) -> EdgeData<T2>>(
         &self,
         f: &F,
-    ) -> SmartHedgeVec<T2> {
+    ) -> SmartEdgeVec<T2> {
         let mut data = Vec::new();
         let involution = self.involution.clone().map_full(|a, d| {
             let d = d.map(|i| &self.data[i.0].0);
@@ -194,13 +194,13 @@ impl<T> SmartHedgeVec<T> {
             EdgeData::new(edgeid, new_data.orientation)
         });
 
-        SmartHedgeVec { data, involution }
+        SmartEdgeVec { data, involution }
     }
 
     pub fn new_hedgevec<T2>(
         &self,
         mut f: impl FnMut(&T, EdgeIndex, &HedgePair) -> T2,
-    ) -> HedgeVec<T2> {
+    ) -> EdgeVec<T2> {
         let data = self
             .data
             .iter()
@@ -208,36 +208,44 @@ impl<T> SmartHedgeVec<T> {
             .map(|(i, (e, pair))| f(e, EdgeIndex(i), pair))
             .collect();
 
-        HedgeVec(data)
+        EdgeVec(data)
     }
 
     pub fn new_hedgevec_from_iter<T2, I: IntoIterator<Item = T2>>(
         &self,
         iter: I,
-    ) -> Result<HedgeVec<T2>, HedgeGraphError> {
+    ) -> Result<EdgeVec<T2>, HedgeGraphError> {
         let data: Vec<_> = iter.into_iter().collect();
         if data.len() != self.data.len() {
             return Err(HedgeGraphError::DataLengthMismatch);
         }
 
-        Ok(HedgeVec(data))
+        Ok(EdgeVec(data))
     }
 
     pub fn map_data<T2, V, N: NodeStorage<NodeData = V>>(
         self,
         node_store: &N,
-        mut edge_map: impl FnMut(&Involution<EdgeIndex>, &N, HedgePair, EdgeData<T>) -> EdgeData<T2>,
-    ) -> SmartHedgeVec<T2> {
+        mut edge_map: impl FnMut(
+            &Involution<EdgeIndex>,
+            &N,
+            HedgePair,
+            EdgeIndex,
+            EdgeData<T>,
+        ) -> EdgeData<T2>,
+    ) -> SmartEdgeVec<T2> {
         let mut involution = self.involution.clone();
-        SmartHedgeVec {
+        SmartEdgeVec {
             data: self
                 .data
                 .into_iter()
-                .map(|(e, h)| {
+                .enumerate()
+                .map(|(i, (e, h))| {
                     let new_data = edge_map(
                         &involution,
                         node_store,
                         h,
+                        EdgeIndex::from(i),
                         EdgeData::new(e, involution.orientation(h.any_hedge())),
                     );
 
@@ -258,9 +266,9 @@ impl<T> SmartHedgeVec<T> {
             HedgePair,
             EdgeData<&'a T>,
         ) -> EdgeData<T2>,
-    ) -> SmartHedgeVec<T2> {
+    ) -> SmartEdgeVec<T2> {
         let mut involution = self.involution.clone();
-        SmartHedgeVec {
+        SmartEdgeVec {
             data: self
                 .data
                 .iter()
@@ -284,9 +292,9 @@ impl<T> SmartHedgeVec<T> {
     pub fn map_data_ref_mut<'a, T2>(
         &'a mut self,
         mut edge_map: impl FnMut(EdgeIndex, HedgePair, EdgeData<&'a mut T>) -> EdgeData<T2>,
-    ) -> SmartHedgeVec<T2> {
+    ) -> SmartEdgeVec<T2> {
         let mut involution = self.involution.clone();
-        SmartHedgeVec {
+        SmartEdgeVec {
             data: self
                 .data
                 .iter_mut()
@@ -315,7 +323,7 @@ impl<T> SmartHedgeVec<T> {
             HedgePair,
             EdgeData<&'a T>,
         ) -> Result<EdgeData<T2>, Er>,
-    ) -> Result<SmartHedgeVec<T2>, Er> {
+    ) -> Result<SmartEdgeVec<T2>, Er> {
         let mut involution = self.involution.clone();
         let data: Result<Vec<_>, Er> = self
             .data
@@ -339,7 +347,7 @@ impl<T> SmartHedgeVec<T> {
                 }
             })
             .collect();
-        Ok(SmartHedgeVec {
+        Ok(SmartEdgeVec {
             data: data?,
             involution,
         })
@@ -364,7 +372,7 @@ impl<T> SmartHedgeVec<T> {
         edge_data.push((data, HedgePair::Unpaired { hedge, flow }));
 
         (
-            SmartHedgeVec {
+            SmartEdgeVec {
                 data: edge_data,
                 involution,
             },
@@ -386,7 +394,7 @@ impl<T> SmartHedgeVec<T> {
         edge_data.push((data, HedgePair::Paired { source, sink }));
 
         (
-            SmartHedgeVec {
+            SmartEdgeVec {
                 data: edge_data,
                 involution,
             },
@@ -689,7 +697,7 @@ impl<T> SmartHedgeVec<T> {
         graph: &S,
         mut split_edge_fn: impl FnMut(EdgeData<&T>) -> EdgeData<O>,
         mut internal_data: impl FnMut(EdgeData<T>) -> EdgeData<O>,
-    ) -> SmartHedgeVec<O> {
+    ) -> SmartEdgeVec<O> {
         let mut new_id_data = vec![];
         let mut extracted = self.involution.extract(
             graph,
@@ -772,7 +780,7 @@ impl<T> SmartHedgeVec<T> {
             new_data_mapped[d.data.0].1 = hedge_pair;
         }
         self.fix_hedge_pairs();
-        SmartHedgeVec {
+        SmartEdgeVec {
             data: new_data_mapped,
             involution: new_inv,
         }
@@ -1072,11 +1080,11 @@ impl<T> SmartHedgeVec<T> {
             data.push((new_data.data, a));
             EdgeData::new(edgeid, new_data.orientation)
         });
-        SmartHedgeVec { data, involution }
+        SmartEdgeVec { data, involution }
     }
 }
 
-impl<T> IntoIterator for SmartHedgeVec<T> {
+impl<T> IntoIterator for SmartEdgeVec<T> {
     type Item = (EdgeIndex, T, HedgePair);
     type IntoIter = std::iter::Map<
         std::iter::Enumerate<std::vec::IntoIter<(T, HedgePair)>>,
@@ -1090,7 +1098,7 @@ impl<T> IntoIterator for SmartHedgeVec<T> {
     }
 }
 
-impl<'a, T> IntoIterator for &'a SmartHedgeVec<T> {
+impl<'a, T> IntoIterator for &'a SmartEdgeVec<T> {
     type Item = (EdgeIndex, &'a T, HedgePair);
     type IntoIter = std::iter::Map<
         std::iter::Enumerate<std::slice::Iter<'a, (T, HedgePair)>>,
@@ -1110,32 +1118,32 @@ impl<'a, T> IntoIterator for &'a SmartHedgeVec<T> {
 //     }
 // }
 
-impl<T> IndexMut<EdgeIndex> for SmartHedgeVec<T> {
+impl<T> IndexMut<EdgeIndex> for SmartEdgeVec<T> {
     fn index_mut(&mut self, index: EdgeIndex) -> &mut Self::Output {
         &mut self.data[index.0].0
     }
 }
-impl<T> Index<EdgeIndex> for SmartHedgeVec<T> {
+impl<T> Index<EdgeIndex> for SmartEdgeVec<T> {
     type Output = T;
     fn index(&self, index: EdgeIndex) -> &Self::Output {
         &self.data[index.0].0
     }
 }
 
-impl<T> Index<&EdgeIndex> for SmartHedgeVec<T> {
+impl<T> Index<&EdgeIndex> for SmartEdgeVec<T> {
     type Output = (T, HedgePair);
     fn index(&self, index: &EdgeIndex) -> &Self::Output {
         &self.data[index.0]
     }
 }
 
-impl<T> IndexMut<&EdgeIndex> for SmartHedgeVec<T> {
+impl<T> IndexMut<&EdgeIndex> for SmartEdgeVec<T> {
     fn index_mut(&mut self, index: &EdgeIndex) -> &mut Self::Output {
         &mut self.data[index.0]
     }
 }
 
-impl<T> Index<Hedge> for SmartHedgeVec<T> {
+impl<T> Index<Hedge> for SmartEdgeVec<T> {
     type Output = T;
     fn index(&self, hedge: Hedge) -> &Self::Output {
         let eid = self.involution[hedge];
@@ -1143,14 +1151,14 @@ impl<T> Index<Hedge> for SmartHedgeVec<T> {
     }
 }
 
-impl<T> IndexMut<Hedge> for SmartHedgeVec<T> {
+impl<T> IndexMut<Hedge> for SmartEdgeVec<T> {
     fn index_mut(&mut self, hedge: Hedge) -> &mut Self::Output {
         let eid = self.involution[hedge];
         &mut self[eid]
     }
 }
 
-impl<T> Index<&Hedge> for SmartHedgeVec<T> {
+impl<T> Index<&Hedge> for SmartEdgeVec<T> {
     type Output = EdgeIndex;
     fn index(&self, hedge: &Hedge) -> &Self::Output {
         &self.involution[*hedge]
@@ -1172,13 +1180,19 @@ impl<T> Index<&Hedge> for SmartHedgeVec<T> {
 /// # Type Parameters
 ///
 /// - `T`: The type of data to be stored for each edge.
-pub struct HedgeVec<T>(
+pub struct EdgeVec<T>(
     /// The underlying vector storing the edge data. The index in this vector
     /// corresponds to an `EdgeIndex`.
     pub(super) Vec<T>,
 );
 
-impl<T> IntoIterator for HedgeVec<T> {
+impl<T> From<Vec<T>> for EdgeVec<T> {
+    fn from(vec: Vec<T>) -> Self {
+        EdgeVec(vec)
+    }
+}
+
+impl<T> IntoIterator for EdgeVec<T> {
     type Item = (EdgeIndex, T);
     type IntoIter = std::iter::Map<
         std::iter::Enumerate<std::vec::IntoIter<T>>,
@@ -1192,7 +1206,7 @@ impl<T> IntoIterator for HedgeVec<T> {
     }
 }
 
-impl<'a, T> IntoIterator for &'a HedgeVec<T> {
+impl<'a, T> IntoIterator for &'a EdgeVec<T> {
     type Item = (EdgeIndex, &'a T);
     type IntoIter = std::iter::Map<
         std::iter::Enumerate<std::slice::Iter<'a, T>>,
@@ -1203,14 +1217,80 @@ impl<'a, T> IntoIterator for &'a HedgeVec<T> {
     }
 }
 
-impl<T> IndexMut<EdgeIndex> for HedgeVec<T> {
+impl<T> IndexMut<EdgeIndex> for EdgeVec<T> {
     fn index_mut(&mut self, index: EdgeIndex) -> &mut Self::Output {
         &mut self.0[index.0]
     }
 }
-impl<T> Index<EdgeIndex> for HedgeVec<T> {
+impl<T> Index<EdgeIndex> for EdgeVec<T> {
     type Output = T;
     fn index(&self, index: EdgeIndex) -> &Self::Output {
+        &self.0[index.0]
+    }
+}
+
+impl<T> EdgeVec<T> {
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    pub fn map_ref<O>(&self, f: &impl Fn(&T) -> O) -> EdgeVec<O> {
+        EdgeVec(self.0.iter().map(f).collect())
+    }
+
+    pub fn get_raw(self) -> Vec<T> {
+        self.0
+    }
+
+    pub fn from_raw(data: Vec<T>) -> Self {
+        EdgeVec(data)
+    }
+}
+
+pub struct HedgeVec<T>(
+    /// The underlying vector storing the edge data. The index in this vector
+    /// corresponds to an `EdgeIndex`.
+    pub(super) Vec<T>,
+);
+
+impl<T> From<Vec<T>> for HedgeVec<T> {
+    fn from(data: Vec<T>) -> Self {
+        HedgeVec(data)
+    }
+}
+
+impl<T> IntoIterator for HedgeVec<T> {
+    type Item = (Hedge, T);
+    type IntoIter =
+        std::iter::Map<std::iter::Enumerate<std::vec::IntoIter<T>>, fn((usize, T)) -> (Hedge, T)>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter().enumerate().map(|(u, t)| (Hedge(u), t))
+    }
+}
+
+impl<'a, T> IntoIterator for &'a HedgeVec<T> {
+    type Item = (Hedge, &'a T);
+    type IntoIter = std::iter::Map<
+        std::iter::Enumerate<std::slice::Iter<'a, T>>,
+        fn((usize, &T)) -> (Hedge, &T),
+    >;
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.iter().enumerate().map(|(u, t)| (Hedge(u), t))
+    }
+}
+
+impl<T> IndexMut<Hedge> for HedgeVec<T> {
+    fn index_mut(&mut self, index: Hedge) -> &mut Self::Output {
+        &mut self.0[index.0]
+    }
+}
+impl<T> Index<Hedge> for HedgeVec<T> {
+    type Output = T;
+    fn index(&self, index: Hedge) -> &Self::Output {
         &self.0[index.0]
     }
 }
@@ -1230,9 +1310,5 @@ impl<T> HedgeVec<T> {
 
     pub fn get_raw(self) -> Vec<T> {
         self.0
-    }
-
-    pub fn from_raw(data: Vec<T>) -> Self {
-        HedgeVec(data)
     }
 }

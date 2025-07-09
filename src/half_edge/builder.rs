@@ -1,5 +1,5 @@
 use super::{
-    hedgevec::SmartHedgeVec,
+    hedgevec::SmartEdgeVec,
     involution::{Flow, Hedge, Involution, Orientation},
     nodestore::NodeStorageOps,
     subgraph::BaseSubgraph,
@@ -173,7 +173,7 @@ impl<E, V, H, N: NodeStorageOps<NodeData = V>> From<HedgeGraphBuilder<E, V, H>>
 
         HedgeGraph {
             node_store: N::build(builder.nodes, len),
-            edge_store: SmartHedgeVec::new(builder.involution),
+            edge_store: SmartEdgeVec::new(builder.involution),
             hedge_data: builder.hedge_data,
         }
     }

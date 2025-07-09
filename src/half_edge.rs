@@ -95,7 +95,7 @@ use bitvec::prelude::*;
 use bitvec::{slice::IterOnes, vec::BitVec};
 use builder::{HedgeData, HedgeGraphBuilder};
 use derive_more::{From, Into};
-use hedgevec::{Accessors, HedgeVec, SmartHedgeVec};
+use hedgevec::{Accessors, EdgeVec, SmartEdgeVec};
 use indexmap::IndexSet;
 use involution::{
     EdgeData, EdgeIndex, Flow, Hedge, HedgePair, Involution, InvolutionError, InvolutiveMapping,
@@ -242,7 +242,7 @@ pub struct HedgeGraph<E, V, H = (), S: NodeStorage<NodeData = V> = NodeStorageVe
     /// Internal storage for all half-edges, their data, and their topological
     /// relationships (e.g., opposite half-edge, next half-edge around a node).
     /// This is typically a [`SmartHedgeVec<E>`].
-    edge_store: SmartHedgeVec<E>,
+    edge_store: SmartEdgeVec<E>,
     /// Storage for all nodes in the graph, including their data (`V`) and
     /// information about the half-edges incident to them.
     /// The specific implementation is determined by the `S` type parameter.
@@ -355,7 +355,7 @@ impl<E, V: Default, H: Default, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V
         HedgeGraph {
             hedge_data,
             node_store: N::random(&sources, &sinks),
-            edge_store: SmartHedgeVec::new(inv),
+            edge_store: SmartEdgeVec::new(inv),
         }
     }
 }
@@ -1091,6 +1091,10 @@ impl<E, V, H, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, H, N> {
         self.edge_store.hedge_len()
     }
 
+    pub fn n_edges(&self) -> usize {
+        self.edge_store.edge_len()
+    }
+
     /// Returns the total number of nodes in the graph.
     pub fn n_nodes(&self) -> usize {
         self.node_store.node_len()
@@ -1427,8 +1431,8 @@ impl<E, V, H, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, H, N> {
         let saturator = saturator.build();
         let new_graph = self.map(
             node_map,
-            |_, _, p, e| e.map(|d| DanglingMatcher::new(p, d)),
-            |h| h,
+            |_, _, p, _, e| e.map(|d| DanglingMatcher::new(p, d)),
+            |_, h| h,
         );
         new_graph
             .join(
@@ -1437,17 +1441,22 @@ impl<E, V, H, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, H, N> {
                 |fl, dl, _, _| (fl, dl),
             )
             .unwrap()
-            .map(|_, _, v| v, |_, _, _, e| e.map(|d| d.unwrap()), |h| h)
+            .map(|_, _, v| v, |_, _, _, _, e| e.map(|d| d.unwrap()), |_, h| h)
     }
 
     pub fn map_data_ref<'a, E2, V2, H2>(
         &'a self,
         node_map: impl FnMut(&'a Self, N::NeighborsIter<'a>, &'a V) -> V2,
         edge_map: impl FnMut(&'a Self, EdgeIndex, HedgePair, EdgeData<&'a E>) -> EdgeData<E2>,
-        mut hedge_map: impl FnMut(&'a Self, &'a H) -> H2,
+        mut hedge_map: impl FnMut(Hedge, &'a H) -> H2,
     ) -> HedgeGraph<E2, V2, H2, N::OpStorage<V2>> {
         HedgeGraph {
-            hedge_data: self.hedge_data.iter().map(|a| hedge_map(self, a)).collect(),
+            hedge_data: self
+                .hedge_data
+                .iter()
+                .enumerate()
+                .map(|(i, a)| hedge_map(Hedge(i), a))
+                .collect(),
             node_store: self.node_store.map_data_ref_graph(self, node_map),
             edge_store: self.edge_store.map_data_ref(self, edge_map),
         }
@@ -1509,13 +1518,18 @@ impl<E, V, H, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, H, N> {
     }
     pub fn map<E2, V2, H2>(
         self,
-        f: impl for<'b> FnMut(&Involution, NodeIndex, V) -> V2,
-        g: impl FnMut(&Involution, &N, HedgePair, EdgeData<E>) -> EdgeData<E2>,
-        h: impl FnMut(H) -> H2,
+        f: impl FnMut(&Involution, NodeIndex, V) -> V2,
+        g: impl FnMut(&Involution, &N, HedgePair, EdgeIndex, EdgeData<E>) -> EdgeData<E2>,
+        mut h: impl FnMut(Hedge, H) -> H2,
     ) -> HedgeGraph<E2, V2, H2, N::OpStorage<V2>> {
         let edge_store = self.edge_store.map_data(&self.node_store, g);
         HedgeGraph {
-            hedge_data: self.hedge_data.into_iter().map(h).collect(),
+            hedge_data: self
+                .hedge_data
+                .into_iter()
+                .enumerate()
+                .map(|(heg, i)| h(Hedge(heg), i))
+                .collect(),
             node_store: self.node_store.map_data_graph(edge_store.as_ref(), f),
             edge_store,
         }
@@ -1523,18 +1537,18 @@ impl<E, V, H, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, H, N> {
     pub fn new_smart_hedgevec<T>(
         &self,
         f: &impl Fn(HedgePair, EdgeData<&E>) -> EdgeData<T>,
-    ) -> SmartHedgeVec<T> {
+    ) -> SmartEdgeVec<T> {
         self.edge_store.map(f)
     }
 
-    pub fn new_hedgevec<T>(&self, f: impl FnMut(&E, EdgeIndex, &HedgePair) -> T) -> HedgeVec<T> {
+    pub fn new_edgevec<T>(&self, f: impl FnMut(&E, EdgeIndex, &HedgePair) -> T) -> EdgeVec<T> {
         self.edge_store.new_hedgevec(f)
     }
 
-    pub fn new_hedgevec_from_iter<T, I: IntoIterator<Item = T>>(
+    pub fn new_edgevec_from_iter<T, I: IntoIterator<Item = T>>(
         &self,
         iter: I,
-    ) -> Result<HedgeVec<T>, HedgeGraphError> {
+    ) -> Result<EdgeVec<T>, HedgeGraphError> {
         self.edge_store.new_hedgevec_from_iter(iter)
     }
 }

@@ -583,8 +583,8 @@ where
             S::OpStorage<DotVertexData>,
         > = self.map(
             |_, _, v: V| v.into(),
-            |_, _, _, e: EdgeData<E>| e.map(|data| data.into()),
-            |h| h.into(),
+            |_, _, _, _, e: EdgeData<E>| e.map(|data| data.into()),
+            |_, h| h.into(),
         );
 
         let mut out = String::new();
@@ -608,8 +608,8 @@ where
             S::OpStorage<DotVertexData>,
         > = self.map(
             |_, _, v: V| v.into(),
-            |_, _, _, e: EdgeData<E>| e.map(|data| data.into()),
-            |h| h.into(),
+            |_, _, _, _, e: EdgeData<E>| e.map(|data| data.into()),
+            |_, h| h.into(),
         );
         let mut out = String::new();
         mapped
@@ -635,8 +635,8 @@ where
             S::OpStorage<DotVertexData>,
         > = self.map(
             |_, _, v: V| v.into(),
-            |_, _, _, e: EdgeData<E>| e.map(|data| data.into()),
-            |h| h.into(),
+            |_, _, _, _, e: EdgeData<E>| e.map(|data| data.into()),
+            |_, h| h.into(),
         );
         mapped.dot_impl(
             &mapped.full_filter(),

@@ -16,7 +16,7 @@ use rand::{rngs::SmallRng, Rng, SeedableRng};
 // #[cfg(feature = "drawing")]
 use super::drawing::{CetzEdge, CetzString, Decoration, EdgeGeometry};
 use super::{
-    hedgevec::HedgeVec,
+    hedgevec::EdgeVec,
     involution::{EdgeIndex, HedgePair},
     nodestore::{NodeStorageOps, NodeStorageVec},
     Flow, HedgeGraph, NodeIndex, Orientation,
@@ -459,7 +459,7 @@ pub struct Positions {
     /// Stores position information for each edge's control point(s).
     /// Similar structure to `vertex_positions`, but wrapped in `HedgeVec` to be
     /// indexed by `EdgeIndex`.
-    edge_positions: HedgeVec<(Option<(f64, f64)>, usize, usize)>,
+    edge_positions: EdgeVec<(Option<(f64, f64)>, usize, usize)>,
 }
 
 impl Positions {
@@ -524,7 +524,7 @@ impl Positions {
                 let pos = self.vertex_positions[i.0];
                 LayoutVertex::new(v, params[pos.1], params[pos.2])
             },
-            |i, p, h, e| match h {
+            |i, p, h, _, e| match h {
                 HedgePair::Paired { source, sink } => {
                     let eid = i[h.any_hedge()];
                     let src = p.node_id_ref(source);
@@ -562,7 +562,7 @@ impl Positions {
                     e.map(|d| LayoutEdge::new_external(d, &source_pos, pos.0, pos.1, flow))
                 }
             },
-            |h| h,
+            |_, h| h,
         )
     }
 
@@ -576,7 +576,7 @@ impl Positions {
         let ext_range = 2.0..4.0;
         let range = -1.0..1.0;
 
-        let edge_positions = graph.new_hedgevec(|_, _, pair| {
+        let edge_positions = graph.new_edgevec(|_, _, pair| {
             let j = params.len();
             if pair.is_unpaired() {
                 params.push(rng.gen_range(ext_range.clone()));
@@ -618,7 +618,7 @@ impl Positions {
         let mut angle = 0.;
         let angle_step = 2. * std::f64::consts::PI / f64::from(graph.n_externals() as u32);
 
-        let edge_positions = graph.new_hedgevec(|_, _, pair| {
+        let edge_positions = graph.new_edgevec(|_, _, pair| {
             let j = params.len();
             params.push(rng.gen_range(range.clone()));
             params.push(rng.gen_range(range.clone()));
@@ -913,7 +913,7 @@ impl LayoutSettings {
             (edge / 2., -edge / 2.)
         };
 
-        let mut edge_positions = graph.new_hedgevec(|_, _, _| {
+        let mut edge_positions = graph.new_edgevec(|_, _, _| {
             let j = init_params.len();
             init_params.push(rng.gen_range(range.clone()));
             init_params.push(rng.gen_range(range.clone()));
@@ -971,7 +971,7 @@ impl LayoutSettings {
 
         let mut exti = 0;
 
-        let edge_positions = graph.new_hedgevec(|_, _, e| {
+        let edge_positions = graph.new_edgevec(|_, _, e| {
             let j = init_params.len();
             init_params.push(rng.gen_range(range.clone()));
             init_params.push(rng.gen_range(range.clone()));
