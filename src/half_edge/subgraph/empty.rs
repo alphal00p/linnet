@@ -36,11 +36,11 @@ impl Inclusion<Hedge> for Empty {
     }
 }
 impl Inclusion<HedgePair> for Empty {
-    fn includes(&self, other: &HedgePair) -> bool {
+    fn includes(&self, _other: &HedgePair) -> bool {
         false
     }
 
-    fn intersects(&self, other: &HedgePair) -> bool {
+    fn intersects(&self, _other: &HedgePair) -> bool {
         false
     }
 }

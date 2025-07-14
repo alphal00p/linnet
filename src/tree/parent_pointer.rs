@@ -43,7 +43,7 @@ impl<V> PPNode<V> {
     ) {
         write!(writer, "{}", self.parent).unwrap();
         if let Some(root_data) = draw_data(self.data.as_ref()) {
-            writeln!(writer, "{}", root_data).unwrap();
+            writeln!(writer, "{root_data}").unwrap();
         } else {
             writeln!(writer).unwrap();
         }
@@ -132,9 +132,9 @@ pub enum ParentId {
 impl Display for ParentId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ParentId::Node(n) => write!(f, "parent node: {}", n),
-            ParentId::Root(r) => write!(f, "root id:{}", r),
-            ParentId::PointingRoot(n) => write!(f, "root node:{}", n),
+            ParentId::Node(n) => write!(f, "parent node: {n}"),
+            ParentId::Root(r) => write!(f, "root id:{r}"),
+            ParentId::PointingRoot(n) => write!(f, "root node:{n}"),
         }
     }
 }

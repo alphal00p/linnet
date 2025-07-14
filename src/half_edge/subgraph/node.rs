@@ -10,7 +10,7 @@ use super::contracted::ContractedSubGraph;
 use super::{internal::InternalSubGraph, SubGraph, SubGraphOps};
 use super::{Inclusion, ModifySubgraph, SubGraphHedgeIter};
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
 /// Represents a "node" in a graph that might itself have internal structure,

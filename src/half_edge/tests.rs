@@ -162,6 +162,7 @@ fn hairythreeloop() {
         );
     }
 
+    #[cfg(feature = "serde")]
     let cycles = graph.cycle_basis().0;
 
     #[cfg(feature = "serde")]
@@ -720,7 +721,7 @@ fn join() {
             b,
             |_, _, _, _| true,
             |af, ad, bf, bd| {
-                println!("af: {:?}, ad: {:?}, bf: {:?}, bd: {:?}", af, ad, bf, bd);
+                println!("af: {af:?}, ad: {ad:?}, bf: {bf:?}, bd: {bd:?}");
                 (af, ad)
             },
         )
@@ -903,6 +904,7 @@ fn box_all_cuts_multiple() {
 }
 
 #[test]
+#[cfg(feature = "serde")]
 fn self_energy_box() {
     let mut self_energy_builder: HedgeGraphBuilder<(), (), ()> = HedgeGraphBuilder::new();
     let nodes = (0..8)
@@ -947,13 +949,10 @@ fn self_energy_box() {
         edges_in_cut.sort();
 
         if cut_to_look_for == edges_in_cut {
-            #[cfg(feature = "serde")]
             insta::assert_ron_snapshot!(left);
 
-            #[cfg(feature = "serde")]
             insta::assert_ron_snapshot!(right);
 
-            #[cfg(feature = "serde")]
             insta::assert_ron_snapshot!(cut.left);
         }
     }

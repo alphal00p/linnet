@@ -427,8 +427,7 @@ impl<N> NodeStorageOps for NodeStorageVec<N> {
         }
 
         let _ = self.nodes.split_off(left_nodes.0);
-        let a = self.node_data.split_off(left_nodes.0);
-        a
+        self.node_data.split_off(left_nodes.0)
     }
 
     fn to_forest<U, H>(

@@ -27,9 +27,9 @@ fn invextract() {
     subgraph.add(h3);
     subgraph.add(h4);
 
-    println!("{}", a);
+    println!("{a}");
     let extracted = a.extract(&subgraph, |a| a.map(Clone::clone), |a| a);
 
-    println!("{}", a);
-    println!("{}", extracted);
+    println!("{a}");
+    println!("{extracted}");
 }

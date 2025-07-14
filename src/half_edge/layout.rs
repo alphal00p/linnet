@@ -304,10 +304,10 @@ impl<E, V, H> PositionalHedgeGraph<E, V, H> {
             }
         }
         for (col_name, label, gs) in graphs.iter() {
-            out.push_str(&format!("[{}]\n", label));
+            out.push_str(&format!("[{label}]\n"));
             out.push_str("grid(columns: cols,gutter: 20pt,");
             for (i, (lab, _)) in gs.iter().enumerate() {
-                out.push_str(&format!("box[#{col_name}{i} {}],", lab));
+                out.push_str(&format!("box[#{col_name}{i} {lab}],"));
             }
             out.push_str(")\n");
             if pagebreak {
@@ -330,7 +330,7 @@ impl<E, V, H> PositionalHedgeGraph<E, V, H> {
                 a,
                 self.node_store.node_data[a].pos.to_cetz()
             ));
-            out.push_str(&format!("node(node{}.pos)\n", a));
+            out.push_str(&format!("node(node{a}.pos)\n"));
         }
 
         for (eid, _, nid) in self.iter_edges() {
@@ -1124,6 +1124,6 @@ pub mod test {
             )
             .as_str();
 
-        println!("{}", out);
+        println!("{out}");
     }
 }

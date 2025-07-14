@@ -103,19 +103,16 @@ pub struct DotHedgeData {
 }
 
 impl DotHedgeData {
+    #[allow(clippy::useless_asref)]
     pub fn dot_serialize(&self) -> Option<String> {
-        if let Some(statement) = &self.statement {
-            Some(statement.clone())
-        } else {
-            None
-        }
+        self.statement.as_ref().map(Clone::clone)
     }
 }
 
 impl Display for DotHedgeData {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if let Some(statement) = &self.statement {
-            write!(f, "{}", statement)?;
+            write!(f, "{statement}")?;
         }
         Ok(())
     }
@@ -135,7 +132,7 @@ pub struct DotEdgeData {
 impl Display for DotEdgeData {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         for (key, value) in &self.statements {
-            write!(f, "{}={},", key, value)?;
+            write!(f, "{key}={value},")?;
         }
         Ok(())
     }
@@ -161,7 +158,7 @@ impl DotVertexData {
 
         // Find all occurrences of {key} in the template
         for (key, value) in &self.statements {
-            let placeholder = format!("{{{}}}", key);
+            let placeholder = format!("{{{key}}}");
             result = result.replace(&placeholder, value);
         }
 
@@ -203,13 +200,13 @@ impl DotVertexData {
 impl Display for DotVertexData {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if let Some(id) = self.id() {
-            write!(f, "id={},", id)?;
+            write!(f, "id={id},")?;
         }
         for (key, value) in &self.statements {
             if key == "id" {
                 continue;
             }
-            write!(f, "{}={},", key, value)?;
+            write!(f, "{key}={value},")?;
         }
         Ok(())
     }
@@ -284,7 +281,7 @@ impl DotEdgeData {
 
         // Find all occurrences of {key} in the template
         for (key, value) in &self.statements {
-            let placeholder = format!("{{{}}}", key);
+            let placeholder = format!("{{{key}}} ");
             result = result.replace(&placeholder, value);
         }
 
@@ -454,7 +451,7 @@ impl<
         S: NodeStorageOps<NodeData = V>,
     > HedgeGraphSet<E, V, H, S>
 {
-    #[allow(clippy::result_large_err)]
+    #[allow(clippy::result_large_err, clippy::type_complexity)]
     pub fn from_file<'a, P>(p: P) -> Result<Self, HedgeParseError<'a, E::Error, V::Error, H::Error>>
     where
         P: AsRef<Path>,
@@ -470,7 +467,7 @@ impl<
         Ok(HedgeGraphSet { set })
     }
 
-    #[allow(clippy::result_large_err)]
+    #[allow(clippy::result_large_err, clippy::type_complexity)]
     pub fn from_string<'a, Str: AsRef<str>>(
         s: Str,
     ) -> Result<Self, HedgeParseError<'a, E::Error, V::Error, H::Error>> {
@@ -497,7 +494,7 @@ impl<
         S: NodeStorageOps<NodeData = V>,
     > HedgeGraph<E, V, H, S>
 {
-    #[allow(clippy::result_large_err)]
+    #[allow(clippy::result_large_err, clippy::type_complexity)]
     pub fn from_file<'a, P>(p: P) -> Result<Self, HedgeParseError<'a, E::Error, V::Error, H::Error>>
     where
         P: AsRef<Path>,
@@ -508,7 +505,7 @@ impl<
         Self::try_from_life(can_graph)
     }
 
-    #[allow(clippy::result_large_err)]
+    #[allow(clippy::result_large_err, clippy::type_complexity)]
     pub fn from_string<'a, Str: AsRef<str>>(
         s: Str,
     ) -> Result<Self, HedgeParseError<'a, E::Error, V::Error, H::Error>> {
@@ -918,8 +915,7 @@ pub mod test {
 
         assert_eq!(
             serialized, serialized2,
-            "{}//not equal to \n{}",
-            serialized, serialized2
+            "{serialized}//not equal to \n{serialized2}",
         );
         assert_eq!(colored, colored2);
 
@@ -950,7 +946,7 @@ pub mod test {
             )
             .unwrap();
 
-        println!("{}", serialized2);
+        println!("{serialized2}");
 
         let aligned: DotGraph = dot!(
         digraph {

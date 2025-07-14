@@ -86,6 +86,6 @@ pub mod test {
 
         // Write to file
         let mut file = File::create("output.svg").unwrap();
-        write!(file, "{}", svg_string).unwrap();
+        write!(file, "{svg_string}").unwrap();
     }
 }

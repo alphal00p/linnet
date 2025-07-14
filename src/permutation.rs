@@ -684,7 +684,7 @@ impl fmt::Display for Permutation {
                     if i > 0 {
                         write!(f, " ")?;
                     }
-                    write!(f, "{}", x)?;
+                    write!(f, "{x}")?;
                 }
                 write!(f, ")")?;
                 first = false;
@@ -701,7 +701,7 @@ impl fmt::Display for Permutation {
             if i > 0 {
                 write!(f, " ")?;
             }
-            write!(f, "{}", x)?;
+            write!(f, "{x}")?;
         }
         write!(f, "]")
     }
@@ -1030,7 +1030,7 @@ impl<E, V, H, O: Ord> PermutationExt<O> for HedgeGraph<E, V, H> {
                 }
             }
             Err(PermutationError::EmptyGenerators) => maps.push(map),
-            Err(e) => panic!("Error generating permutations: {}", e),
+            Err(e) => panic!("Error generating permutations: {e}"),
         }
         maps
     }
@@ -1077,9 +1077,7 @@ impl<'a, T: 'a> PermutationMapIterMut<'a, T> {
         let perm_len = map_indices.len();
         assert!(
             slice_len >= perm_len,
-            "Slice length ({}) must be at least the permutation length ({}) for mutable iteration via map.",
-            slice_len,
-            perm_len
+            "Slice length ({slice_len}) must be at least the permutation length ({perm_len}) for mutable iteration via map.",
         );
         // This assertion also implicitly ensures that all indices in map_indices are valid
         // if the permutation itself is valid (i.e., all its map indices are < perm_len).

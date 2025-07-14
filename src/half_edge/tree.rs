@@ -98,9 +98,9 @@ impl TTRoot {
 /// # Type Parameters
 ///
 /// - `P`: The type of [`ForestNodeStore`] used by the underlying `Forest`.
-///        It stores `()` as `NodeData` because the tree nodes (representing half-edges)
-///        don't need additional data beyond their structural role in the traversal tree.
-///        Defaults to [`ParentPointerStore<()>`].
+///   It stores `()` as `NodeData` because the tree nodes (representing half-edges)
+///   don't need additional data beyond their structural role in the traversal tree.
+///   Defaults to [`ParentPointerStore<()>`].
 pub struct SimpleTraversalTree<P: ForestNodeStore<NodeData = ()> = ParentPointerStore<()>> {
     /// The underlying forest structure representing the traversal tree(s).
     /// Each root in this forest is a graph node, and its data is its [`TTRoot`] status.
@@ -338,7 +338,7 @@ impl<P: ForestNodeStore<NodeData = ()>> Iterator for TraversalTreeAncestorHedgeI
 ///
 /// - `'a`: The lifetime of the borrowed [`SimpleTraversalTree`] and [`Involution`].
 /// - `S`: The type of [`ForestNodeStore`] used by the `SimpleTraversalTree`, which
-///        must also implement [`ForestNodeStoreDown`] to allow child iteration.
+///   must also implement [`ForestNodeStoreDown`] to allow child iteration.
 pub struct PreorderTraversalIter<'a, S: ForestNodeStore<NodeData = ()>>
 where
     S: ForestNodeStoreBfs,
@@ -730,19 +730,19 @@ impl SimpleTraversalTree {
 /// # Type Parameters
 ///
 /// - `P`: The type of [`ForestNodeStore`] used by the underlying `Forest` within the
-///        owned `HedgeGraph`. `P` must also implement `Clone` and [`ForestNodeStorePreorder`].
+///   owned `HedgeGraph`. `P` must also implement `Clone` and [`ForestNodeStorePreorder`].
 pub struct OwnedTraversalTree<P: ForestNodeStore<NodeData = ()> + Clone + ForestNodeStorePreorder> {
     /// The graph representation owned by this traversal tree.
     /// Edge data is `()`, and node data is `bool` (likely indicating tree membership or similar).
     /// The node storage of this graph is a `Forest<bool, P>`.
-    graph: HedgeGraph<(), bool, (), Forest<bool, P>>,
+    pub graph: HedgeGraph<(), bool, (), Forest<bool, P>>,
     /// An [`InternalSubGraph`] representing the edges that form this traversal tree
     /// within the context of its owned `graph`.
-    tree_subgraph: InternalSubGraph,
+    pub tree_subgraph: InternalSubGraph,
     /// A bitmask indicating the set of half-edges covered by this traversal tree,
     /// potentially in the context of a larger original graph.
     // #[cfg_attr(feature = "bincode", bincode(with_serde))]
-    covers: BitVec,
+    pub covers: BitVec,
 }
 
 // impl TraversalTree {

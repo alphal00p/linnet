@@ -46,7 +46,7 @@ impl<V> PCNode<V> {
     ) {
         write!(writer, "{}<- ->{}", self.neighbor_left, self.neighbor_right).unwrap();
         if let Some(child) = self.child {
-            write!(writer, "child: {}", child).unwrap();
+            write!(writer, "child: {child}").unwrap();
         }
         self.parent_pointer.debug_display(writer, draw_data);
     }
@@ -335,7 +335,7 @@ impl<V> ForestNodeStore for ParentChildStore<V> {
                 "├── "
             };
 
-            write!(f, "{}{}{}:", prefix, connector, node_id)?;
+            write!(f, "{prefix}{connector}{node_id}:")?;
             nodes.nodes[node_id.0].debug_display(f, format_node);
 
             seen.add(Hedge::from(node_id));
@@ -364,14 +364,14 @@ impl<V> ForestNodeStore for ParentChildStore<V> {
 
         while let Some(next) = seen.iter_zeros().next() {
             let root_id = self.root_node(TreeNodeId(next));
-            println!("{}", root_id);
+            println!("{root_id}");
             seen.add(Hedge(next));
 
             seen.add(Hedge::from(root_id));
 
             let node_line_prefix = "  ";
 
-            write!(output, "{}{}:", node_line_prefix, root_id).unwrap();
+            write!(output, "{node_line_prefix}{root_id}:").unwrap();
             self.nodes[root_id.0].debug_display(&mut output, &mut node_display);
 
             let children: Vec<_> = self

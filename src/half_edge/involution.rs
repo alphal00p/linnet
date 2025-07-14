@@ -77,18 +77,14 @@ impl<H> HedgePairWithData<H> {
         //we interpret this node as the hidden one. so the flow is reversed.
         match flow {
             Flow::Sink => {
-                writeln!(
-                    writer,
-                    "ext{} [shape=none, label=\"\" flow=source];",
-                    edge_id
-                )?;
+                writeln!(writer, "ext{edge_id} [shape=none, label=\"\" flow=source];",)?;
             }
             Flow::Source => {
-                writeln!(writer, "ext{} [shape=none, label=\"\" flow=sink];", edge_id)?;
+                writeln!(writer, "ext{edge_id} [shape=none, label=\"\" flow=sink];")?;
             }
         }
 
-        write!(writer, "  ext{} -> {}[", edge_id, source)?;
+        write!(writer, "  ext{edge_id} -> {source}[")?;
         match (orientation, flow) {
             (Orientation::Default, Flow::Source) => {
                 write!(writer, "dir=back ")?;
@@ -108,13 +104,13 @@ impl<H> HedgePairWithData<H> {
         }
         if let Some(hedge_label) = hedge_label {
             match flow {
-                Flow::Sink => write!(writer, "sink=\"{}\" ", hedge_label)?,
-                Flow::Source => write!(writer, "source=\"{}\" ", hedge_label)?,
+                Flow::Sink => write!(writer, "sink=\"{hedge_label}\" ")?,
+                Flow::Source => write!(writer, "source=\"{hedge_label}\" ")?,
             }
         }
 
         if let Some(attr) = attr {
-            write!(writer, "{}", attr)?;
+            write!(writer, "{attr}")?;
         }
         writeln!(writer, "];")?;
         Ok(())
@@ -132,18 +128,14 @@ impl<H> HedgePairWithData<H> {
         //we interpret this node as the hidden one. so the flow is reversed.
         match flow {
             Flow::Sink => {
-                writeln!(
-                    writer,
-                    "ext{} [shape=none, label=\"\" flow=source];",
-                    edge_id
-                )?;
+                writeln!(writer, "ext{edge_id} [shape=none, label=\"\" flow=source];",)?;
             }
             Flow::Source => {
-                writeln!(writer, "ext{} [shape=none, label=\"\" flow=sink];", edge_id)?;
+                writeln!(writer, "ext{edge_id} [shape=none, label=\"\" flow=sink];")?;
             }
         }
 
-        write!(writer, "  ext{} -> {}[", edge_id, source)?;
+        write!(writer, "  ext{edge_id} -> {source}[")?;
         match (orientation, flow) {
             (Orientation::Default, Flow::Source) => {
                 write!(writer, "dir=back ")?;
@@ -163,12 +155,12 @@ impl<H> HedgePairWithData<H> {
         }
         if let Some(hedge_label) = hedge_label {
             match flow {
-                Flow::Sink => write!(writer, "source={} ", hedge_label)?,
-                Flow::Source => write!(writer, "sink={} ", hedge_label)?,
+                Flow::Sink => write!(writer, "source={hedge_label} ")?,
+                Flow::Source => write!(writer, "sink={hedge_label} ")?,
             }
         }
         if let Some(attr) = attr {
-            write!(writer, "{}", attr)?;
+            write!(writer, "{attr}")?;
         }
         writeln!(writer, "];")?;
         Ok(())
@@ -194,14 +186,14 @@ impl<H> HedgePairWithData<H> {
             }
         }
         if let Some(source_label) = source.data {
-            write!(writer, " source={} ", source_label)?;
+            write!(writer, " source={source_label} ")?;
         }
         if let Some(sink_label) = sink.data {
-            write!(writer, " sink={} ", sink_label)?;
+            write!(writer, " sink={sink_label} ")?;
         }
 
         if let Some(attr) = attr {
-            writeln!(writer, "{}];", attr)?;
+            writeln!(writer, "{attr}];")?;
         } else {
             writeln!(writer, " color=\"red:blue;0.5 \" ];")?;
         }
@@ -228,13 +220,13 @@ impl<H> HedgePairWithData<H> {
             }
         }
         if let Some(source_label) = source.data {
-            write!(writer, " source=\"{}\" ", source_label)?;
+            write!(writer, " source=\"{source_label}\" ")?;
         }
         if let Some(sink_label) = sink.data {
-            write!(writer, " sink=\"{}\" ", sink_label)?;
+            write!(writer, " sink=\"{sink_label}\" ")?;
         }
         if let Some(attr) = attr {
-            writeln!(writer, "{}];", attr)?;
+            writeln!(writer, "{attr}];")?;
         } else {
             writeln!(writer, " color=\"red:blue;0.5 \" ];")?;
         }
@@ -582,18 +574,14 @@ impl HedgePair {
         //we interpret this node as the hidden one. so the flow is reversed.
         match flow {
             Flow::Sink => {
-                writeln!(
-                    writer,
-                    "ext{} [shape=none, label=\"\" flow=source];",
-                    edge_id
-                )?;
+                writeln!(writer, "ext{edge_id} [shape=none, label=\"\" flow=source];")?;
             }
             Flow::Source => {
-                writeln!(writer, "ext{} [shape=none, label=\"\" flow=sink];", edge_id)?;
+                writeln!(writer, "ext{edge_id} [shape=none, label=\"\" flow=sink];")?;
             }
         }
 
-        write!(writer, "  ext{} -> {}[", edge_id, source)?;
+        write!(writer, "  ext{edge_id} -> {source}[")?;
         match (orientation, flow) {
             (Orientation::Default, Flow::Source) => {
                 write!(writer, "dir=back ")?;
@@ -612,7 +600,7 @@ impl HedgePair {
             }
         }
         if let Some(attr) = attr {
-            write!(writer, "{}", attr)?;
+            write!(writer, "{attr}")?;
         }
         writeln!(writer, "];")?;
         Ok(())
@@ -629,18 +617,14 @@ impl HedgePair {
         //we interpret this node as the hidden one. so the flow is reversed.
         match flow {
             Flow::Sink => {
-                writeln!(
-                    writer,
-                    "ext{} [shape=none, label=\"\" flow=source];",
-                    edge_id
-                )?;
+                writeln!(writer, "ext{edge_id} [shape=none, label=\"\" flow=source];",)?;
             }
             Flow::Source => {
-                writeln!(writer, "ext{} [shape=none, label=\"\" flow=sink];", edge_id)?;
+                writeln!(writer, "ext{edge_id} [shape=none, label=\"\" flow=sink];")?;
             }
         }
 
-        write!(writer, "  ext{} -> {}[", edge_id, source)?;
+        write!(writer, "  ext{edge_id} -> {source}[")?;
         match (orientation, flow) {
             (Orientation::Default, Flow::Source) => {
                 write!(writer, "dir=back ")?;
@@ -659,7 +643,7 @@ impl HedgePair {
             }
         }
         if let Some(attr) = attr {
-            write!(writer, "{}", attr)?;
+            write!(writer, "{attr}")?;
         }
         writeln!(writer, "];")?;
         Ok(())
@@ -672,7 +656,7 @@ impl HedgePair {
         attr: Option<&GVEdgeAttrs>,
         orientation: Orientation,
     ) -> Result<(), std::fmt::Error> {
-        write!(writer, "{} -> {}[", source, sink)?;
+        write!(writer, "{source} -> {sink}[")?;
         match orientation {
             Orientation::Default => {
                 write!(writer, " dir=forward ")?;
@@ -685,7 +669,7 @@ impl HedgePair {
             }
         }
         if let Some(attr) = attr {
-            writeln!(writer, "{}];", attr)?;
+            writeln!(writer, "{attr}];")?;
         } else {
             writeln!(writer, " color=\"red:blue;0.5 \" ];")?;
         }
@@ -699,7 +683,7 @@ impl HedgePair {
         attr: Option<&GVEdgeAttrs>,
         orientation: Orientation,
     ) -> Result<(), std::io::Error> {
-        write!(writer, "{} -> {}[", source, sink)?;
+        write!(writer, "{source} -> {sink}[")?;
         match orientation {
             Orientation::Default => {
                 write!(writer, " dir=forward ")?;
@@ -712,7 +696,7 @@ impl HedgePair {
             }
         }
         if let Some(attr) = attr {
-            writeln!(writer, "{}];", attr)?;
+            writeln!(writer, "{attr}];")?;
         } else {
             writeln!(writer, " color=\"red:blue;0.5 \" ];")?;
         }
@@ -1449,19 +1433,17 @@ impl<E> InvolutiveMapping<E> {
         match flow {
             Flow::Sink => {
                 out.push_str(&format!(
-                    "ext{} [shape=none, label=\"\" flow=source];\n",
-                    edge_id
+                    "ext{edge_id} [shape=none, label=\"\" flow=source];\n"
                 ));
             }
             Flow::Source => {
                 out.push_str(&format!(
-                    "ext{} [shape=none, label=\"\" flow=sink];\n",
-                    edge_id
+                    "ext{edge_id} [shape=none, label=\"\" flow=sink];\n"
                 ));
             }
         }
 
-        out.push_str(&format!("  ext{} -> {}[", edge_id, source));
+        out.push_str(&format!("  ext{edge_id} -> {source}["));
         match (orientation, flow) {
             (Orientation::Default, Flow::Source) => {
                 out.push_str("dir=back ");
@@ -1480,7 +1462,7 @@ impl<E> InvolutiveMapping<E> {
             }
         }
         if let Some(attr) = attr {
-            out.push_str(&format!("{}", attr));
+            out.push_str(&format!("{attr}"));
         }
         out.push_str("];\n");
         out
@@ -1494,7 +1476,7 @@ impl<E> InvolutiveMapping<E> {
     ) -> String {
         let mut out = "".to_string();
 
-        out.push_str(&format!("{} -> {}[", source, sink));
+        out.push_str(&format!("{source} -> {sink}["));
         match orientation {
             Orientation::Default => {
                 out.push_str(" dir=forward ");
@@ -1507,7 +1489,7 @@ impl<E> InvolutiveMapping<E> {
             }
         }
         if let Some(attr) = attr {
-            out.push_str(&format!("{}];\n", attr));
+            out.push_str(&format!("{attr}];\n"));
         } else {
             out.push_str(" color=\"red:blue;0.5 \" ];\n");
         }
@@ -1542,8 +1524,8 @@ pub enum InvolutionError {
 /// # Type Parameters
 ///
 /// - `E`: The type of data associated with each edge. Defaults to `EdgeIndex` if not specified,
-///        implying edges primarily store their own index as data, but typically this is
-///        instantiated with custom edge data for a `HedgeGraph`.
+///   implying edges primarily store their own index as data, but typically this is
+///   instantiated with custom edge data for a `HedgeGraph`.
 pub struct Involution<E = EdgeIndex> {
     /// The core data storage: a vector where each element describes the mapping
     /// and data for a specific half-edge. The index in this vector corresponds
@@ -1572,14 +1554,14 @@ impl<E> Involution<E> {
         for (i, e) in self.inv.iter().enumerate() {
             match e {
                 InvolutiveMapping::Identity { underlying, data } => match underlying {
-                    Flow::Sink => out.push_str(&format!("{}<< :{data}\n", i)),
-                    Flow::Source => out.push_str(&format!("{}>> :{data}\n", i)),
+                    Flow::Sink => out.push_str(&format!("{i}<< :{data}\n")),
+                    Flow::Source => out.push_str(&format!("{i}>> :{data}\n")),
                 },
                 InvolutiveMapping::Source { sink_idx, data } => {
-                    out.push_str(&format!("{}->{}: {data}\n", i, sink_idx));
+                    out.push_str(&format!("{i}->{sink_idx}: {data}\n"));
                 }
                 InvolutiveMapping::Sink { source_idx } => {
-                    out.push_str(&format!("{}<-{}\n", i, source_idx));
+                    out.push_str(&format!("{i}->{source_idx}\n"));
                 }
             }
         }
@@ -2264,18 +2246,18 @@ impl<E> Involution<E> {
             }
             match e {
                 InvolutiveMapping::Identity { .. } => {
-                    out.push_str(&format!("{}\n", i));
+                    out.push_str(&format!("{i}\n"));
                 }
                 InvolutiveMapping::Source { data, sink_idx } => {
                     let d = &data.data;
                     if let Some(l) = h_label(d) {
-                        out.push_str(&format!("{}-{}->{}\n", i, sink_idx, l));
+                        out.push_str(&format!("{i}->{sink_idx}: {l}\n"));
                     } else {
-                        out.push_str(&format!("{}->{}\n", i, sink_idx));
+                        out.push_str(&format!("{i}->{sink_idx}\n"));
                     }
                 }
                 InvolutiveMapping::Sink { source_idx } => {
-                    out.push_str(&format!("{}<-{}\n", i, source_idx));
+                    out.push_str(&format!("{i}->{source_idx}\n"));
                 }
             }
         }
@@ -2500,18 +2482,18 @@ impl<E> Display for Involution<E> {
         for (i, e) in self.inv.iter().enumerate() {
             match e {
                 InvolutiveMapping::Identity { underlying, .. } => match underlying {
-                    Flow::Sink => out.push_str(&format!("{}<<\n", i)),
-                    Flow::Source => out.push_str(&format!("{}>>\n", i)),
+                    Flow::Sink => out.push_str(&format!("{i}<<\n")),
+                    Flow::Source => out.push_str(&format!("{i}>>\n")),
                 },
                 InvolutiveMapping::Source { sink_idx, .. } => {
-                    out.push_str(&format!("{}->{}\n", i, sink_idx));
+                    out.push_str(&format!("{i}->{sink_idx}\n"));
                 }
                 InvolutiveMapping::Sink { source_idx } => {
-                    out.push_str(&format!("{}<-{}\n", i, source_idx));
+                    out.push_str(&format!("{i}<-{source_idx}\n"));
                 }
             }
         }
-        write!(f, "{}", out)
+        write!(f, "{out}")
     }
 }
 

@@ -12,8 +12,7 @@
 //! This is the central struct representing a graph.
 //!   - `E`: Generic type for data associated with edges.
 //!   - `V`: Generic type for data associated with nodes (vertices).
-//!   - `S`: A type implementing `NodeStorage`, which defines how node data and
-//!          their connectivity to half-edges are stored.
+//!   - `S`: A type implementing `NodeStorage`, which defines how node data and their connectivity to half-edges are stored.
 //!
 //! `HedgeGraph` stores half-edges in an `edge_store` (typically `SmartHedgeVec`)
 //! and nodes in a `node_store`.
@@ -195,18 +194,15 @@ impl std::fmt::Display for GVEdgeAttrs {
             ("label=", self.label.as_ref()),
             (
                 "color=",
-                self.color
-                    .as_ref()
-                    .map(|str| format!("\"{}\"", str))
-                    .as_ref(),
+                self.color.as_ref().map(|str| format!("\"{str}\"")).as_ref(),
             ),
             ("", self.other.as_ref()),
         ]
         .iter()
-        .filter_map(|(prefix, x)| x.map(|s| format!("{}{}", prefix, s)))
+        .filter_map(|(prefix, x)| x.map(|s| format!("{prefix}{s}")))
         .join(",")
         .to_string();
-        write!(f, "{}", out)
+        write!(f, "{out}")
     }
 }
 pub mod builder;
@@ -235,8 +231,8 @@ pub mod subgraph;
 /// - `E`: The type of data associated with each edge (or pair of half-edges).
 /// - `V`: The type of data associated with each node (vertex).
 /// - `S`: The node storage strategy, implementing the [`NodeStorage`] trait.
-///        This determines how node data and their connectivity to half-edges
-///        are stored. Defaults to [`NodeStorageVec<V>`].
+///   This determines how node data and their connectivity to half-edges
+///   are stored. Defaults to [`NodeStorageVec<V>`].
 pub struct HedgeGraph<E, V, H = (), S: NodeStorage<NodeData = V> = NodeStorageVec<V>> {
     hedge_data: Vec<H>,
     /// Internal storage for all half-edges, their data, and their topological
@@ -387,7 +383,7 @@ impl<E, V, H, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, H, N> {
                 }
             }
         }
-        self.hedge_data.split_off(left.0);
+        let _ = self.hedge_data.split_off(left.0);
 
         self.edge_store.delete(subgraph);
         self.node_store.delete(subgraph);
@@ -608,7 +604,7 @@ impl<E, V, H, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, H, N> {
     ///   if node validation fails).
     pub fn join_mut(
         &mut self,
-        mut other: Self,
+        other: Self,
         matching_fn: impl Fn(Flow, EdgeData<&E>, Flow, EdgeData<&E>) -> bool,
         merge_fn: impl Fn(Flow, EdgeData<E>, Flow, EdgeData<E>) -> (Flow, EdgeData<E>),
     ) -> Result<(), HedgeGraphError> {
@@ -2427,8 +2423,8 @@ impl<E, V, H, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, H, N> {
             &mut output,
             node_as_graph,
             "start=2;\n",
-            &|a| Some(format!("{}", a)),
-            &|v| Some(format!("{}", v)),
+            &|a| Some(format!("{a}")),
+            &|v| Some(format!("{v}")),
         )
         .unwrap();
         output
@@ -2444,8 +2440,8 @@ impl<E, V, H, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, H, N> {
             &mut output,
             node_as_graph,
             "start=2;\n",
-            &|a| Some(format!("label=\"{}\"", a)),
-            &|v| Some(format!("label=\"{}\"", v)),
+            &|a| Some(format!("label=\"{a}\"")),
+            &|v| Some(format!("label=\"{v}\"")),
         )
         .unwrap();
         output

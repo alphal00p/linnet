@@ -101,13 +101,13 @@ impl fmt::Display for TestGraph {
             TestGraph::Leech => write!(f, "Leech"),
             TestGraph::Tutte => write!(f, "Tutte"),
             TestGraph::Petersen => write!(f, "Petersen"),
-            TestGraph::MoebiusLadder(n) => write!(f, "MoebiusLadder({})", n),
-            TestGraph::Complete(n) => write!(f, "Complete({})", n),
-            TestGraph::Flower(n) => write!(f, "Flower({})", n),
-            TestGraph::Cycle(n) => write!(f, "Cycle({})", n),
-            TestGraph::CompleteBipartite(n, m) => write!(f, "CompleteBipartite({}, {})", n, m),
-            TestGraph::PrismGraph(n) => write!(f, "PrismGraph({})", n),
-            TestGraph::GeneralizedPetersen(n, k) => write!(f, "GeneralizedPetersen({}, {})", n, k),
+            TestGraph::MoebiusLadder(n) => write!(f, "MoebiusLadder({n})"),
+            TestGraph::Complete(n) => write!(f, "Complete({n})"),
+            TestGraph::Flower(n) => write!(f, "Flower({n})"),
+            TestGraph::Cycle(n) => write!(f, "Cycle({n})"),
+            TestGraph::CompleteBipartite(n, m) => write!(f, "CompleteBipartite({n}, {m})"),
+            TestGraph::PrismGraph(n) => write!(f, "PrismGraph({n})"),
+            TestGraph::GeneralizedPetersen(n, k) => write!(f, "GeneralizedPetersen({n}, {k})"),
         }
     }
 }
@@ -522,23 +522,19 @@ impl std::fmt::Display for TestError {
         match self {
             TestError::WrongNodeCount { expected, found } => write!(
                 f,
-                "Wrong number of nodes. Expected: {}, Found: {}",
-                expected, found
+                "Wrong number of nodes. Expected: {expected}, Found: {found}",
             ),
             TestError::WrongEdgeCount { expected, found } => write!(
                 f,
-                "Wrong number of edges. Expected: {}, Found: {}",
-                expected, found
+                "Wrong number of edges. Expected: {expected}, Found: {found}",
             ),
             TestError::WrongComponentCount { expected, found } => write!(
                 f,
-                "Wrong number of components. Expected: {}, Found: {}",
-                expected, found
+                "Wrong number of components. Expected: {expected}, Found: {found}",
             ),
             TestError::WrongCyclomaticNumber { expected, found } => write!(
                 f,
-                "Wrong cyclotomatic number. Expected: {}, Found: {}",
-                expected, found
+                "Wrong cyclotomatic number. Expected: {expected}, Found: {found}",
             ),
             TestError::WrongDegree {
                 kind,
@@ -546,11 +542,10 @@ impl std::fmt::Display for TestError {
                 found,
             } => write!(
                 f,
-                "Wrong {} degree. Expected: {}, Found: {}",
-                kind, expected, found
+                "Wrong {kind} degree. Expected: {expected}, Found: {found}",
             ),
             TestError::InvalidCycle => write!(f, "Invalid cycle detected"),
-            TestError::Custom(msg) => write!(f, "{}", msg),
+            TestError::Custom(msg) => write!(f, "{msg}"),
         }
     }
 }

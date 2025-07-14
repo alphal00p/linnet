@@ -435,8 +435,7 @@ impl<U, P: ForestNodeStore> Forest<U, P> {
             // Write the line for the current node
             writeln!(
                 f,
-                "{}{}{}:{}", // TreeNodeId needs Debug
-                prefix, connector, node_id, node_data_str
+                "{prefix}{connector}{node_id}:{node_data_str}", // TreeNodeId needs Debug
             )?;
 
             // Prepare the prefix for the children of this node
@@ -472,8 +471,7 @@ impl<U, P: ForestNodeStore> Forest<U, P> {
             // 1. Print the Root line
             let _ = writeln!(
                 output,
-                "{}:{}", // RootId needs Debug
-                root_id, root_data_str
+                "{root_id}:{root_data_str}", // RootId needs Debug
             );
 
             // 2. Print the connector line
@@ -485,8 +483,7 @@ impl<U, P: ForestNodeStore> Forest<U, P> {
             // 4. Print the root TreeNodeId line
             let _ = writeln!(
                 output,
-                "{}{}:{}", // TreeNodeId needs Debug
-                node_line_prefix, start_node_id, root_node_data_str
+                "{node_line_prefix}{start_node_id}:{root_node_data_str}", // TreeNodeId needs Debug
             );
 
             // 5. Draw children, starting the recursion with the correct prefix

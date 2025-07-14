@@ -39,7 +39,7 @@ impl<V> CVNode<V> {
     ) {
         write!(writer, "children:").unwrap();
         for child in &self.children {
-            write!(writer, "{},", child).unwrap();
+            write!(writer, "{child},").unwrap();
         }
         self.parent_pointer.debug_display(writer, draw_data);
     }
@@ -122,7 +122,7 @@ impl<V> ForestNodeStore for ChildVecStore<V> {
                 "├── "
             };
 
-            write!(f, "{}{}{}:", prefix, connector, node_id)?;
+            write!(f, "{prefix}{connector}{node_id}:")?;
             nodes.nodes[node_id.0].debug_display(f, format_node);
 
             seen.add(Hedge::from(node_id));
@@ -159,7 +159,7 @@ impl<V> ForestNodeStore for ChildVecStore<V> {
 
             let node_line_prefix = "  ";
 
-            write!(output, "{}{}:", node_line_prefix, root_id).unwrap();
+            write!(output, "{node_line_prefix}{root_id}:").unwrap();
             self.nodes[root_id.0].debug_display(&mut output, &mut node_display);
 
             let children: Vec<_> = self
@@ -384,8 +384,8 @@ impl<V> ForestNodeStore for ChildVecStore<V> {
             return;
         }
 
-        println!("{}", self.debug_draw(|_| None));
-        println!("swapping {a} <-> {b}");
+        // println!("{}", self.debug_draw(|_| None));
+        // println!("swapping {a} <-> {b}");
         // Before modifying the parent pointers of the children, we save them.
         let parent_a = self.parent(a);
         let parent_b = self.parent(b);
@@ -398,7 +398,7 @@ impl<V> ForestNodeStore for ChildVecStore<V> {
             for c in &anode.children {
                 if *c <= a {
                     if let Some(child) = bef.get_mut(c.0) {
-                        println!("{}", b);
+                        // println!("{}", b);
                         if let ParentId::Node(pp) = &mut child.parent_pointer.parent {
                             if *pp == a {
                                 *pp = b;

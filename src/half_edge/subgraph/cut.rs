@@ -56,10 +56,10 @@ impl Display for OrientedCut {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         for (i, c) in self.left.iter().enumerate() {
             if *c {
-                write!(f, "+{}", i)?;
+                write!(f, "+{i}")?;
             }
             if self.right[i] {
-                write!(f, "-{}", i)?;
+                write!(f, "-{i}")?;
             }
         }
         Ok(())
@@ -1011,6 +1011,7 @@ impl<E> PossiblyCutEdge<E> {
 }
 
 #[cfg(test)]
+#[cfg(feature = "drawing")]
 pub mod test {
     use super::*;
     use crate::{dot, dot_parser::DotGraph};
@@ -1018,7 +1019,6 @@ pub mod test {
     //
 
     #[test]
-    #[cfg(feature = "drawing")]
     fn cut_assembly() {
         let twocycle: DotGraph = dot!(
         digraph{

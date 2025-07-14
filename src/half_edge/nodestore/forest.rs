@@ -25,8 +25,8 @@ use bitvec::vec::BitVec;
 ///
 /// - `'a`: The lifetime of the borrow from the underlying forest node store.
 /// - `P`: The type of the [`ForestNodeStore`] used by the `Forest`, which must
-///        also implement [`ForestNodeStorePreorder`] to allow pre-order traversal
-///        of tree nodes (representing half-edges).
+///   also implement [`ForestNodeStorePreorder`] to allow pre-order traversal
+///   of tree nodes (representing half-edges).
 pub struct ForestNeighborIter<'a, P: ForestNodeStorePreorder + 'a> {
     // root: Option<TreeNodeId>, // Potentially for future use or alternative iteration strategies
     /// The underlying pre-order iterator from the forest's node store.

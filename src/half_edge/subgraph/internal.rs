@@ -13,7 +13,7 @@ use super::{
     node::HedgeNode, Cycle, Inclusion, ModifySubgraph, SubGraph, SubGraphHedgeIter, SubGraphOps,
 };
 
-#[derive(Clone, Debug, Eq, Ord)]
+#[derive(Clone, Debug, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
 /// Represents a subgraph consisting entirely of "internal" edges.
@@ -100,7 +100,7 @@ impl Inclusion<Hedge> for InternalSubGraph {
 impl Inclusion<HedgePair> for InternalSubGraph {
     fn includes(&self, other: &HedgePair) -> bool {
         match other {
-            HedgePair::Unpaired { hedge, .. } => false,
+            HedgePair::Unpaired { .. } => false,
             HedgePair::Split {
                 source,
                 sink,

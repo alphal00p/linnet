@@ -101,7 +101,7 @@ impl Cycle {
         &self,
         graph: &HedgeGraph<E, V, H, N>,
     ) -> bool {
-        for (e, c, _) in graph.iter_nodes_of(&self.filter) {
+        for (_, c, _) in graph.iter_nodes_of(&self.filter) {
             let adgacent = c.filter(|a| self.filter.includes(a));
             if adgacent.count() != 2 {
                 return false;
@@ -130,7 +130,7 @@ impl Cycle {
         filter: BitVec,
         graph: &HedgeGraph<E, V, H, N>,
     ) -> Option<Self> {
-        for (e, c, _) in graph.iter_nodes_of(&filter) {
+        for (_, c, _) in graph.iter_nodes_of(&filter) {
             let adgacent = c.filter(|a| filter.includes(a));
             if adgacent.count() % 2 == 1 {
                 return None;
