@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0](https://github.com/alphal00p/linnet/compare/v0.7.1...v0.8.0) - 2025-07-14
+
+### Other
+
+- clippy fix
+- Rename HedgeVec to EdgeVec and introduce HedgeVec
+- Add H parameter to HedgeGraph in iter_edges and orientation
+- add H to SignedCycle
+- rename as_ref to to_ref
+- Add hedge_data to hedge_graph
+- add perm by key
+- update symbolica
+- Fix tree traversal and modify ForestNodeStore API to use Option
+
 ## [0.7.1](https://github.com/alphal00p/linnet/compare/v0.7.0...v0.7.1) - 2025-05-24
 
 ### Other
