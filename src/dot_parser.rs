@@ -87,6 +87,11 @@ use crate::half_edge::{
     GVEdgeAttrs, HedgeGraph, NodeIndex,
 };
 
+pub struct GraphSet<E, V, G, N: NodeStorage<NodeData = V>> {
+    pub global_data: Vec<G>,
+    pub graphs: Vec<HedgeGraph<E, V, N>>,
+}
+
 pub struct GlobalGraph<E, V, G, N: NodeStorage<NodeData = V>> {
     pub global_data: G,
     pub graph: HedgeGraph<E, V, N>,
@@ -440,50 +445,61 @@ pub enum NodeIdOrDangling {
     },
 }
 
-pub struct HedgeGraphSet<E, V, H, S: NodeStorageOps<NodeData = V>> {
+pub struct HedgeGraphSet<E, V, H, G, S: NodeStorageOps<NodeData = V>> {
+    pub global_data: Vec<G>,
     pub set: Vec<HedgeGraph<E, V, H, S>>,
 }
 
 impl<
+        GE,
+        G: for<'a> TryFrom<&'a Vec<dot_parser::canonical::AttrStmt<(String, String)>>, Error = GE>,
         E: TryFrom<DotEdgeData>,
         V: TryFrom<DotVertexData>,
         H: TryFrom<DotHedgeData>,
         S: NodeStorageOps<NodeData = V>,
-    > HedgeGraphSet<E, V, H, S>
+    > HedgeGraphSet<E, V, H, G, S>
 {
     #[allow(clippy::result_large_err, clippy::type_complexity)]
-    pub fn from_file<'a, P>(p: P) -> Result<Self, HedgeParseError<'a, E::Error, V::Error, H::Error>>
+    pub fn from_file<'a, P>(
+        p: P,
+    ) -> Result<Self, HedgeParseError<'a, E::Error, V::Error, H::Error, GE>>
     where
         P: AsRef<Path>,
     {
         let ast_graphs = dot_parser::ast::Graphs::from_file(p)?;
         let mut set = Vec::with_capacity(ast_graphs.graphs.len());
+        let mut global_data = Vec::new();
         for g in ast_graphs.graphs {
-            let graph =
-                HedgeGraph::<_, _, _, _>::try_from_life(dot_parser::canonical::Graph::from(g))?;
+            let can_graph = dot_parser::canonical::Graph::from(g);
+            let data = G::try_from(&can_graph.attr).global()?;
+            let graph = HedgeGraph::<_, _, _, _>::try_from_life(can_graph).map_global()?;
 
             set.push(graph);
+            global_data.push(data);
         }
-        Ok(HedgeGraphSet { set })
+        Ok(HedgeGraphSet { set, global_data })
     }
 
     #[allow(clippy::result_large_err, clippy::type_complexity)]
     pub fn from_string<'a, Str: AsRef<str>>(
         s: Str,
-    ) -> Result<Self, HedgeParseError<'a, E::Error, V::Error, H::Error>> {
+    ) -> Result<Self, HedgeParseError<'a, E::Error, V::Error, H::Error, GE>> {
         let ast_graphs = dot_parser::ast::Graphs::try_from(s.as_ref())?;
 
+        let mut global_data = Vec::new();
         let mut set = Vec::with_capacity(ast_graphs.graphs.len());
         for g in ast_graphs.graphs {
             let can_graph = dot_parser::canonical::Graph::from(
                 g.filter_map(&|a| Some((a.0.to_string(), a.1.to_string()))),
             );
-            let graph = HedgeGraph::<_, _, _, _>::try_from_life(can_graph)?;
 
+            let data = G::try_from(&can_graph.attr).global()?;
+            let graph = HedgeGraph::<_, _, _, _>::try_from_life(can_graph).map_global()?;
+            global_data.push(data);
             set.push(graph);
         }
 
-        Ok(HedgeGraphSet { set })
+        Ok(HedgeGraphSet { set, global_data })
     }
 }
 
@@ -495,7 +511,9 @@ impl<
     > HedgeGraph<E, V, H, S>
 {
     #[allow(clippy::result_large_err, clippy::type_complexity)]
-    pub fn from_file<'a, P>(p: P) -> Result<Self, HedgeParseError<'a, E::Error, V::Error, H::Error>>
+    pub fn from_file<'a, P>(
+        p: P,
+    ) -> Result<Self, HedgeParseError<'a, E::Error, V::Error, H::Error, ()>>
     where
         P: AsRef<Path>,
     {
@@ -508,7 +526,7 @@ impl<
     #[allow(clippy::result_large_err, clippy::type_complexity)]
     pub fn from_string<'a, Str: AsRef<str>>(
         s: Str,
-    ) -> Result<Self, HedgeParseError<'a, E::Error, V::Error, H::Error>> {
+    ) -> Result<Self, HedgeParseError<'a, E::Error, V::Error, H::Error, ()>> {
         let ast_graph = dot_parser::ast::Graph::try_from(s.as_ref())?;
         let can_graph = dot_parser::canonical::Graph::from(
             ast_graph.filter_map(&|a| Some((a.0.to_string(), a.1.to_string()))),
@@ -518,23 +536,50 @@ impl<
 }
 
 #[derive(Debug)]
-pub enum HedgeParseError<'a, E, V, H> {
+pub enum HedgeParseError<'a, E, V, H, G> {
     DotVertexDataError(V),
     GraphFromFile(GraphFromFileError<'a>),
     ParseError(PestError),
     DotEdgeDataError(E),
     HedgeDataFromStringError(H),
+    GraphDataFromStringError(G),
 }
 
-impl<'a, E, V, H> From<GraphFromFileError<'a>> for HedgeParseError<'a, E, V, H> {
+impl<'a, E, V, H, G> From<GraphFromFileError<'a>> for HedgeParseError<'a, E, V, H, G> {
     fn from(e: GraphFromFileError<'a>) -> Self {
         HedgeParseError::GraphFromFile(e)
     }
 }
 
-impl<E, V, H> From<PestError> for HedgeParseError<'_, E, V, H> {
+impl<E, V, H, G> From<PestError> for HedgeParseError<'_, E, V, H, G> {
     fn from(e: PestError) -> Self {
         HedgeParseError::ParseError(e)
+    }
+}
+
+pub trait MapGlobal<'a, E, V, H, D> {
+    #[allow(clippy::result_large_err)]
+    fn map_global<G>(self) -> Result<D, HedgeParseError<'a, E, V, H, G>>;
+}
+
+impl<'a, E, V, H, D> MapGlobal<'a, E, V, H, D> for Result<D, HedgeParseError<'a, E, V, H, ()>> {
+    fn map_global<G>(self) -> Result<D, HedgeParseError<'a, E, V, H, G>> {
+        self.map_err(|e| e.map_global())
+    }
+}
+
+impl<'a, E, V, H> HedgeParseError<'a, E, V, H, ()> {
+    pub fn map_global<G>(self) -> HedgeParseError<'a, E, V, H, G> {
+        match self {
+            HedgeParseError::GraphDataFromStringError(_) => unreachable!(),
+            HedgeParseError::DotEdgeDataError(a) => HedgeParseError::DotEdgeDataError(a),
+            HedgeParseError::DotVertexDataError(a) => HedgeParseError::DotVertexDataError(a),
+            HedgeParseError::HedgeDataFromStringError(a) => {
+                HedgeParseError::HedgeDataFromStringError(a)
+            }
+            HedgeParseError::GraphFromFile(a) => HedgeParseError::GraphFromFile(a),
+            HedgeParseError::ParseError(a) => HedgeParseError::ParseError(a),
+        }
     }
 }
 
@@ -542,21 +587,27 @@ impl<E, V, H> From<PestError> for HedgeParseError<'_, E, V, H> {
 pub trait HedgeParseExt<'a, D> {
     type Error;
 
-    fn hedge<V, E>(self) -> Result<D, HedgeParseError<'a, V, E, Self::Error>>;
-    fn edge<V, H>(self) -> Result<D, HedgeParseError<'a, Self::Error, V, H>>;
-    fn vertex<E, H>(self) -> Result<D, HedgeParseError<'a, E, Self::Error, H>>;
+    fn global<E, V, H>(self) -> Result<D, HedgeParseError<'a, E, V, H, Self::Error>>;
+    fn hedge<V, E, G>(self) -> Result<D, HedgeParseError<'a, V, E, Self::Error, G>>;
+    fn edge<V, H, G>(self) -> Result<D, HedgeParseError<'a, Self::Error, V, H, G>>;
+    fn vertex<E, H, G>(self) -> Result<D, HedgeParseError<'a, E, Self::Error, H, G>>;
 }
 
 impl<'a, Err, D> HedgeParseExt<'a, D> for Result<D, Err> {
     type Error = Err;
-    fn hedge<V, E>(self) -> Result<D, HedgeParseError<'a, V, E, Self::Error>> {
+
+    fn global<E, V, H>(self) -> Result<D, HedgeParseError<'a, E, V, H, Self::Error>> {
+        self.map_err(|e| HedgeParseError::GraphDataFromStringError(e))
+    }
+
+    fn hedge<V, E, G>(self) -> Result<D, HedgeParseError<'a, V, E, Self::Error, G>> {
         self.map_err(|e| HedgeParseError::HedgeDataFromStringError(e))
     }
 
-    fn edge<V, H>(self) -> Result<D, HedgeParseError<'a, Self::Error, V, H>> {
+    fn edge<V, H, G>(self) -> Result<D, HedgeParseError<'a, Self::Error, V, H, G>> {
         self.map_err(|e| HedgeParseError::DotEdgeDataError(e))
     }
-    fn vertex<E, H>(self) -> Result<D, HedgeParseError<'a, E, Self::Error, H>> {
+    fn vertex<E, H, G>(self) -> Result<D, HedgeParseError<'a, E, Self::Error, H, G>> {
         self.map_err(|e| HedgeParseError::DotVertexDataError(e))
     }
 }
@@ -661,7 +712,7 @@ impl<
     for HedgeGraph<E, V, H, S>
 {
     type Error<'b>
-        = HedgeParseError<'b, E::Error, V::Error, H::Error>
+        = HedgeParseError<'b, E::Error, V::Error, H::Error, ()>
     where
         'b: 'a;
     fn try_from_life(
