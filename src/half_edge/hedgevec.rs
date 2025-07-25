@@ -1,16 +1,17 @@
 use std::ops::{Index, IndexMut, Neg};
 
-use bitvec::vec::BitVec;
+use bitvec::{ptr::Mut, vec::BitVec};
 
 use crate::permutation::Permutation;
 
 use super::{
     involution::{
-        EdgeData, EdgeIndex, Flow, Hedge, HedgePair, Involution, InvolutionError,
+        EdgeData, EdgeIndex, EdgeVec, Flow, Hedge, HedgePair, Involution, InvolutionError,
         InvolutiveMapping, Orientation,
     },
     subgraph::SubGraph,
-    HedgeGraph, HedgeGraphError, NodeStorage,
+    swap::Swap,
+    HedgeGraph, HedgeGraphError, NodeIndex, NodeStorage,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -197,30 +198,27 @@ impl<T> SmartEdgeVec<T> {
         SmartEdgeVec { data, involution }
     }
 
-    pub fn new_hedgevec<T2>(
+    pub fn new_edgevec<T2>(
         &self,
         mut f: impl FnMut(&T, EdgeIndex, &HedgePair) -> T2,
     ) -> EdgeVec<T2> {
-        let data = self
-            .data
+        self.data
             .iter()
             .enumerate()
             .map(|(i, (e, pair))| f(e, EdgeIndex(i), pair))
-            .collect();
-
-        EdgeVec(data)
+            .collect()
     }
 
     pub fn new_hedgevec_from_iter<T2, I: IntoIterator<Item = T2>>(
         &self,
         iter: I,
     ) -> Result<EdgeVec<T2>, HedgeGraphError> {
-        let data: Vec<_> = iter.into_iter().collect();
+        let data: EdgeVec<T2> = iter.into_iter().collect();
         if data.len() != self.data.len() {
             return Err(HedgeGraphError::DataLengthMismatch);
         }
 
-        Ok(EdgeVec(data))
+        Ok(data)
     }
 
     pub fn map_data<T2, V, N: NodeStorage<NodeData = V>>(
@@ -255,6 +253,45 @@ impl<T> SmartEdgeVec<T> {
                 .collect(),
             involution,
         }
+    }
+    pub fn map_data_result<T2, V, N: NodeStorage<NodeData = V>, Err>(
+        self,
+        node_store: &N,
+        mut edge_map: impl FnMut(
+            &Involution<EdgeIndex>,
+            &N,
+            HedgePair,
+            EdgeIndex,
+            EdgeData<T>,
+        ) -> Result<EdgeData<T2>, Err>,
+    ) -> Result<SmartEdgeVec<T2>, Err> {
+        let mut involution = self.involution.clone();
+        Ok(SmartEdgeVec {
+            data: self
+                .data
+                .into_iter()
+                .enumerate()
+                .map(|(i, (e, h))| {
+                    let new_data = edge_map(
+                        &involution,
+                        node_store,
+                        h,
+                        EdgeIndex::from(i),
+                        EdgeData::new(e, involution.orientation(h.any_hedge())),
+                    );
+
+                    match new_data {
+                        Ok(new_data) => {
+                            involution.edge_data_mut(h.any_hedge()).orientation =
+                                new_data.orientation;
+                            Ok((new_data.data, h))
+                        }
+                        Err(e) => Err(e),
+                    }
+                })
+                .collect::<Result<Vec<_>, Err>>()?,
+            involution,
+        })
     }
 
     pub fn map_data_ref<'a, T2, V, H, N: NodeStorage<NodeData = V>>(
@@ -554,7 +591,7 @@ impl<T> SmartEdgeVec<T> {
                 if !graph.includes(&extracted) {
                     // println!("{extracted}<=>{left}");
                     //only with an extracted that is in the wrong spot
-                    self.swap_hedges(left, extracted);
+                    self.swap(left, extracted);
                     left.0 += 1;
                 }
             }
@@ -597,7 +634,7 @@ impl<T> SmartEdgeVec<T> {
                 if self.data[extracted].1.any_hedge() < left {
                     // println!("{extracted}<=>{split_at}");
                     //only with an extracted that is in the wrong spot
-                    self.swap_edges(EdgeIndex(split_at), EdgeIndex(extracted));
+                    self.swap(EdgeIndex(split_at), EdgeIndex(extracted));
                     // println!("{}", self.involution.display());
 
                     split_at += 1;
@@ -610,86 +647,6 @@ impl<T> SmartEdgeVec<T> {
         let _ = self.involution.inv.split_off(left.0);
         let _ = self.data.split_off(split_at);
         // self.fix_hedge_pairs();
-    }
-
-    fn swap_edges(&mut self, e1: EdgeIndex, e2: EdgeIndex) {
-        if e1 != e2 {
-            let a = &mut self
-                .involution
-                .edge_data_mut(self.data[e1.0].1.any_hedge())
-                .data;
-
-            // println!("{a}{e1}");
-            *a = e1;
-
-            // = e1;
-            self.involution
-                .edge_data_mut(self.data[e2.0].1.any_hedge())
-                .data = e1;
-            self.data.swap(e1.0, e2.0);
-        }
-    }
-
-    fn swap_hedges(&mut self, e1: Hedge, e2: Hedge) {
-        if e1 != e2 {
-            if e1 == self.inv(e1) {
-                match &mut self.data[self.involution[e1].0].1 {
-                    HedgePair::Paired { source, sink } => {
-                        std::mem::swap(source, sink);
-                    }
-                    HedgePair::Split { source, sink, .. } => {
-                        std::mem::swap(source, sink);
-                    }
-                    _ => {}
-                };
-            } else {
-                match &mut self.data[self.involution[e1].0].1 {
-                    HedgePair::Split { source, sink, .. } | HedgePair::Paired { source, sink } => {
-                        if *source == e1 {
-                            *source = e1;
-                        } else if *source == e2 {
-                            *source = e2;
-                        }
-                        if *sink == e1 {
-                            *sink = e1;
-                        } else if *sink == e2 {
-                            *sink = e2;
-                        }
-                    }
-                    HedgePair::Unpaired { hedge, .. } => {
-                        if *hedge == e1 {
-                            *hedge = e1;
-                        } else if *hedge == e2 {
-                            *hedge = e2;
-                        }
-                    }
-                };
-
-                match &mut self.data[self.involution[e2].0].1 {
-                    HedgePair::Split { source, sink, .. } | HedgePair::Paired { source, sink } => {
-                        if *source == e1 {
-                            *source = e1;
-                        } else if *source == e2 {
-                            *source = e2;
-                        }
-                        if *sink == e1 {
-                            *sink = e1;
-                        } else if *sink == e2 {
-                            *sink = e2;
-                        }
-                    }
-                    HedgePair::Unpaired { hedge, .. } => {
-                        if *hedge == e1 {
-                            *hedge = e1;
-                        } else if *hedge == e2 {
-                            *hedge = e2;
-                        }
-                    }
-                };
-            }
-            self.involution.swap(e1, e2);
-            self.fix_hedge_pairs();
-        }
     }
 
     pub fn extract<S: SubGraph, O>(
@@ -1165,150 +1122,86 @@ impl<T> Index<&Hedge> for SmartEdgeVec<T> {
     }
 }
 
-// Data stored once per edge (pair of half-edges or external edge)
-#[derive(Clone, Debug, PartialEq, Eq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
-/// A simple wrapper around a `Vec<T>` for storing data associated with each edge,
-/// where edges are identified by an [`EdgeIndex`].
-///
-/// This provides a more direct way to store per-edge data compared to
-/// [`SmartHedgeVec`], if the detailed pairing information (`HedgePair`) and
-/// tight integration with `Involution`'s internal structure are not needed
-/// directly alongside the data.
-///
-/// # Type Parameters
-///
-/// - `T`: The type of data to be stored for each edge.
-pub struct EdgeVec<T>(
-    /// The underlying vector storing the edge data. The index in this vector
-    /// corresponds to an `EdgeIndex`.
-    pub(super) Vec<T>,
-);
+impl<T> Swap<Hedge> for SmartEdgeVec<T> {
+    fn swap(&mut self, e1: Hedge, e2: Hedge) {
+        if e1 != e2 {
+            if e1 == self.inv(e1) {
+                match &mut self.data[self.involution[e1].0].1 {
+                    HedgePair::Paired { source, sink } => {
+                        std::mem::swap(source, sink);
+                    }
+                    HedgePair::Split { source, sink, .. } => {
+                        std::mem::swap(source, sink);
+                    }
+                    _ => {}
+                };
+            } else {
+                match &mut self.data[self.involution[e1].0].1 {
+                    HedgePair::Split { source, sink, .. } | HedgePair::Paired { source, sink } => {
+                        if *source == e1 {
+                            *source = e1;
+                        } else if *source == e2 {
+                            *source = e2;
+                        }
+                        if *sink == e1 {
+                            *sink = e1;
+                        } else if *sink == e2 {
+                            *sink = e2;
+                        }
+                    }
+                    HedgePair::Unpaired { hedge, .. } => {
+                        if *hedge == e1 {
+                            *hedge = e1;
+                        } else if *hedge == e2 {
+                            *hedge = e2;
+                        }
+                    }
+                };
 
-impl<T> From<Vec<T>> for EdgeVec<T> {
-    fn from(vec: Vec<T>) -> Self {
-        EdgeVec(vec)
+                match &mut self.data[self.involution[e2].0].1 {
+                    HedgePair::Split { source, sink, .. } | HedgePair::Paired { source, sink } => {
+                        if *source == e1 {
+                            *source = e1;
+                        } else if *source == e2 {
+                            *source = e2;
+                        }
+                        if *sink == e1 {
+                            *sink = e1;
+                        } else if *sink == e2 {
+                            *sink = e2;
+                        }
+                    }
+                    HedgePair::Unpaired { hedge, .. } => {
+                        if *hedge == e1 {
+                            *hedge = e1;
+                        } else if *hedge == e2 {
+                            *hedge = e2;
+                        }
+                    }
+                };
+            }
+            self.involution.swap(e1, e2);
+            self.fix_hedge_pairs();
+        }
     }
 }
 
-impl<T> IntoIterator for EdgeVec<T> {
-    type Item = (EdgeIndex, T);
-    type IntoIter = std::iter::Map<
-        std::iter::Enumerate<std::vec::IntoIter<T>>,
-        fn((usize, T)) -> (EdgeIndex, T),
-    >;
-    fn into_iter(self) -> Self::IntoIter {
-        self.0
-            .into_iter()
-            .enumerate()
-            .map(|(u, t)| (EdgeIndex(u), t))
-    }
-}
+impl<T> Swap<EdgeIndex> for SmartEdgeVec<T> {
+    fn swap(&mut self, e1: EdgeIndex, e2: EdgeIndex) {
+        if e1 != e2 {
+            let a = &mut self
+                .involution
+                .edge_data_mut(self.data[e1.0].1.any_hedge())
+                .data;
 
-impl<'a, T> IntoIterator for &'a EdgeVec<T> {
-    type Item = (EdgeIndex, &'a T);
-    type IntoIter = std::iter::Map<
-        std::iter::Enumerate<std::slice::Iter<'a, T>>,
-        fn((usize, &T)) -> (EdgeIndex, &T),
-    >;
-    fn into_iter(self) -> Self::IntoIter {
-        self.0.iter().enumerate().map(|(u, t)| (EdgeIndex(u), t))
-    }
-}
+            // println!("{a}{e1}");
+            *a = e1;
 
-impl<T> IndexMut<EdgeIndex> for EdgeVec<T> {
-    fn index_mut(&mut self, index: EdgeIndex) -> &mut Self::Output {
-        &mut self.0[index.0]
-    }
-}
-impl<T> Index<EdgeIndex> for EdgeVec<T> {
-    type Output = T;
-    fn index(&self, index: EdgeIndex) -> &Self::Output {
-        &self.0[index.0]
-    }
-}
-
-impl<T> EdgeVec<T> {
-    pub fn len(&self) -> usize {
-        self.0.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
-
-    pub fn map_ref<O>(&self, f: &impl Fn(&T) -> O) -> EdgeVec<O> {
-        EdgeVec(self.0.iter().map(f).collect())
-    }
-
-    pub fn get_raw(self) -> Vec<T> {
-        self.0
-    }
-
-    pub fn from_raw(data: Vec<T>) -> Self {
-        EdgeVec(data)
-    }
-}
-
-pub struct HedgeVec<T>(
-    /// The underlying vector storing the edge data. The index in this vector
-    /// corresponds to an `EdgeIndex`.
-    pub(super) Vec<T>,
-);
-
-impl<T> From<Vec<T>> for HedgeVec<T> {
-    fn from(data: Vec<T>) -> Self {
-        HedgeVec(data)
-    }
-}
-
-impl<T> IntoIterator for HedgeVec<T> {
-    type Item = (Hedge, T);
-    type IntoIter =
-        std::iter::Map<std::iter::Enumerate<std::vec::IntoIter<T>>, fn((usize, T)) -> (Hedge, T)>;
-    fn into_iter(self) -> Self::IntoIter {
-        self.0.into_iter().enumerate().map(|(u, t)| (Hedge(u), t))
-    }
-}
-
-impl<'a, T> IntoIterator for &'a HedgeVec<T> {
-    type Item = (Hedge, &'a T);
-    type IntoIter = std::iter::Map<
-        std::iter::Enumerate<std::slice::Iter<'a, T>>,
-        fn((usize, &T)) -> (Hedge, &T),
-    >;
-    fn into_iter(self) -> Self::IntoIter {
-        self.0.iter().enumerate().map(|(u, t)| (Hedge(u), t))
-    }
-}
-
-impl<T> IndexMut<Hedge> for HedgeVec<T> {
-    fn index_mut(&mut self, index: Hedge) -> &mut Self::Output {
-        &mut self.0[index.0]
-    }
-}
-impl<T> Index<Hedge> for HedgeVec<T> {
-    type Output = T;
-    fn index(&self, index: Hedge) -> &Self::Output {
-        &self.0[index.0]
-    }
-}
-
-impl<T> HedgeVec<T> {
-    pub fn len(&self) -> usize {
-        self.0.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
-
-    pub fn map_ref<O>(&self, f: &impl Fn(&T) -> O) -> HedgeVec<O> {
-        HedgeVec(self.0.iter().map(f).collect())
-    }
-
-    pub fn get_raw(self) -> Vec<T> {
-        self.0
+            // = e1;
+            self.involution
+                .edge_data_mut(self.data[e2.0].1.any_hedge())
+                .data = e1;
+            self.data.swap(e1.0, e2.0);
+        }
     }
 }

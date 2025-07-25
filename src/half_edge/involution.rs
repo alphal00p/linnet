@@ -3,8 +3,7 @@ use std::{
     ops::{Index, IndexMut, Mul, Neg},
 };
 
-use crate::num_traits::RefZero;
-use derive_more::{From, Into};
+use crate::{define_indexed_vec, num_traits::RefZero};
 use rand::{rngs::SmallRng, Rng, SeedableRng};
 use thiserror::Error;
 
@@ -15,19 +14,49 @@ use super::{
     GVEdgeAttrs, HedgeGraph, NodeIndex,
 };
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
-/// A type-safe wrapper around a `usize` representing a directed half-edge.
-///
-/// Each undirected edge in a graph is typically composed of two oppositely
-/// directed half-edges. `Hedge` identifies one of these. The actual edge data
-/// and topological information (like its opposite or next half-edge) are
-/// stored within the graph structure (e.g., [`HedgeGraph`]).
-pub struct Hedge(
-    /// The underlying `usize` value serving as the index or identifier for this half-edge.
-    pub usize,
+define_indexed_vec!(
+    /// A type-safe wrapper around a `usize` representing an undirected edge in the graph.
+    ///
+    /// An `EdgeIndex` typically refers to one of the two `Hedge`s that constitute
+    /// the full edge. The specific `Hedge` it points to (e.g., the "source" or "canonical"
+    /// half-edge) depends on the conventions used by the `Involution` or `HedgeGraph`.
+    /// It's used to retrieve data common to both half-edges of an edge pair.
+    pub struct EdgeIndex; // new‑type around usize
+
+    /// Vector whose items are `T`, indexable only by `EntityId`.
+    pub struct EdgeVec;
 );
+
+impl Display for EdgeIndex {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "e{}", self.0)
+    }
+}
+define_indexed_vec!(
+    /// A type-safe wrapper around a `usize` representing a directed half-edge.
+    ///
+    /// Each undirected edge in a graph is typically composed of two oppositely
+    /// directed half-edges. `Hedge` identifies one of these. The actual edge data
+    /// and topological information (like its opposite or next half-edge) are
+    /// stored within the graph structure (e.g., [`HedgeGraph`]).
+    pub struct Hedge; // new‑type around usize
+
+    /// Vector whose items are `T`, indexable only by `EntityId`.
+    pub struct HedgeVec;
+);
+
+impl<T: Display> Display for HedgeVec<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "HedgeVec:{{")?;
+        for (i, (_, item)) in self.iter().enumerate() {
+            if i > 0 {
+                write!(f, ", ")?;
+            }
+            write!(f, "{item}")?;
+        }
+        write!(f, "}}")
+    }
+}
 
 impl Hedge {
     pub fn to_edge_id<E>(self, involution: &Involution<E>) -> HedgePair {
@@ -2294,27 +2323,6 @@ impl<E> IndexMut<Hedge> for Involution<E> {
             InvolutiveMapping::Source { data, .. } => &mut data.data,
             _ => panic!("should have gotten data inv"),
         }
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, From, Into, Hash)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
-/// A type-safe wrapper around a `usize` representing an undirected edge in the graph.
-///
-/// An `EdgeIndex` typically refers to one of the two `Hedge`s that constitute
-/// the full edge. The specific `Hedge` it points to (e.g., the "source" or "canonical"
-/// half-edge) depends on the conventions used by the `Involution` or `HedgeGraph`.
-/// It's used to retrieve data common to both half-edges of an edge pair.
-pub struct EdgeIndex(
-    /// The underlying `usize` value. This often corresponds to the index of
-    /// the "source" `Hedge` of the edge pair.
-    pub(crate) usize,
-);
-
-impl Display for EdgeIndex {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "e{}", self.0)
     }
 }
 

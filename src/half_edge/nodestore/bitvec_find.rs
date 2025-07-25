@@ -4,7 +4,8 @@ use crate::{
     half_edge::{
         involution::Hedge,
         nodestore::{BitVecNeighborIter, NodeStorage, NodeStorageOps, NodeStorageVec},
-        NodeIndex,
+        swap::Swap,
+        NodeIndex, NodeVec,
     },
     tree::{parent_pointer::PPNode, Forest, RootData, RootId},
     union_find::{SetIndex, UFNode, UnionFind},
@@ -62,7 +63,7 @@ impl<V> From<NodeStorageVec<V>> for UnionFindNodeStore<V> {
             .node_data
             .into_iter()
             .zip(vecnodes.nodes)
-            .map(|(v, h)| HedgeNodeStore { data: v, node: h })
+            .map(|((_, v), (_, h))| HedgeNodeStore { data: v, node: h })
             .collect();
 
         let hairs: Vec<_> = node_data.iter().map(|a| a.node.clone()).collect();
@@ -96,15 +97,22 @@ impl<V> UnionFindNodeStore<V> {
     }
 }
 
+impl<V> Swap<Hedge> for UnionFindNodeStore<V> {
+    fn swap(&mut self, _i: Hedge, _j: Hedge) {
+        todo!()
+    }
+}
+impl<V> Swap<NodeIndex> for UnionFindNodeStore<V> {
+    fn swap(&mut self, _i: NodeIndex, _j: NodeIndex) {
+        todo!()
+    }
+}
+
 impl<V> NodeStorageOps for UnionFindNodeStore<V> {
     type OpStorage<A> = Self::Storage<A>;
     type Base = BitVec;
 
-    fn swap(&mut self, _a: Hedge, _b: Hedge) {
-        todo!()
-    }
-
-    fn forget_identification_history(&mut self) -> Vec<Self::NodeData> {
+    fn forget_identification_history(&mut self) -> NodeVec<Self::NodeData> {
         todo!()
     }
 
@@ -112,6 +120,13 @@ impl<V> NodeStorageOps for UnionFindNodeStore<V> {
         &mut self,
         _subgraph: &S,
     ) {
+        todo!()
+    }
+
+    fn new_nodevec<'a, V2>(
+        &'a self,
+        node_map: impl FnMut(NodeIndex, Self::NeighborsIter<'a>, &'a Self::NodeData) -> V2,
+    ) -> NodeVec<V2> {
         todo!()
     }
 
@@ -295,6 +310,19 @@ impl<V> NodeStorageOps for UnionFindNodeStore<V> {
                 node: n.node.clone(),
             }),
         }
+    }
+    fn map_data_graph_result<'a, V2, Err>(
+        self,
+        _involution: &'a crate::half_edge::involution::Involution<
+            crate::half_edge::involution::EdgeIndex,
+        >,
+        _f: impl FnMut(
+            &'a crate::half_edge::involution::Involution<crate::half_edge::involution::EdgeIndex>,
+            NodeIndex,
+            Self::NodeData,
+        ) -> Result<V2, Err>,
+    ) -> Result<Self::OpStorage<V2>, Err> {
+        todo!()
     }
 
     fn extend(mut self, other: Self) -> Self {

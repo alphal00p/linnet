@@ -52,7 +52,7 @@ fn join_mut_simple() {
 
     //with
 
-    let mut one: DotGraph = dot!(digraph {
+    let one: DotGraph = dot!(digraph {
       node [shape=circle,height=0.1,label=""];  overlap="scale"; layout="neato";
 
       0 [label = "S:5"];
@@ -61,8 +61,10 @@ fn join_mut_simple() {
     })
     .unwrap();
 
+    let mut one = one.graph;
+
     one.join_mut(
-        two,
+        two.graph,
         |sf, _, of, _| {
             println!("{sf:?}vs{of:?}");
             sf == -of
@@ -737,7 +739,7 @@ use std::time::Instant;
 use insta::assert_snapshot;
 use nodestore::NodeStorageVec;
 
-use crate::{dot, dot_parser::DotGraph};
+use crate::{dot, parser::DotGraph};
 
 use super::*;
 

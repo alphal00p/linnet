@@ -3,12 +3,13 @@ use bitvec::{order::Lsb0, slice::IterOnes, vec::BitVec};
 use crate::{
     half_edge::{
         builder::HedgeNodeBuilder,
-        involution::{EdgeIndex, Hedge, Involution},
+        involution::{EdgeIndex, Hedge, HedgeVec, Involution},
         subgraph::{
             BaseSubgraph, HedgeNode, Inclusion, InternalSubGraph, ModifySubgraph, SubGraph,
             SubGraphOps,
         },
-        HedgeGraph, HedgeGraphError, NodeIndex,
+        swap::Swap,
+        HedgeGraph, HedgeGraphError, NodeIndex, NodeVec,
     },
     tree::{
         parent_pointer::{PPNode, ParentPointerStore},
@@ -44,13 +45,13 @@ use super::{NodeStorage, NodeStorageOps};
 ///   of half-edges incident to that node.
 pub struct NodeStorageVec<N> {
     /// Stores the custom data for each node. Indexed by `NodeIndex.0`.
-    pub(crate) node_data: Vec<N>,
+    pub(crate) node_data: NodeVec<N>,
     /// Maps each half-edge index (`Hedge.0`) to the `NodeIndex` it belongs to.
-    pub(crate) hedge_data: Vec<NodeIndex>,
+    pub(crate) hedge_data: HedgeVec<NodeIndex>,
     /// For each node (indexed by `NodeIndex.0`), stores a `BitVec` representing
     /// the set of half-edges incident to it.
     #[cfg_attr(feature = "bincode", bincode(with_serde))]
-    pub(crate) nodes: Vec<BitVec>, // Nodes
+    pub(crate) nodes: NodeVec<BitVec>, // Nodes
 }
 
 #[derive(Clone, Debug)]
@@ -117,32 +118,71 @@ impl<N> NodeStorage for NodeStorageVec<N> {
 impl<N> NodeStorageVec<N> {
     fn swap_nodes(&mut self, a: NodeIndex, b: NodeIndex) {
         if a != b {
-            for i in self.nodes[a.0].included_iter() {
-                self.hedge_data[i.0] = b;
+            for i in self.nodes[a].included_iter() {
+                self.hedge_data[i] = b;
             }
-            for i in self.nodes[b.0].included_iter() {
-                self.hedge_data[i.0] = a;
+            for i in self.nodes[b].included_iter() {
+                self.hedge_data[i] = a;
             }
-            self.node_data.swap(a.0, b.0);
-            self.nodes.swap(a.0, b.0);
+            self.node_data.swap(a, b);
+            self.nodes.swap(a, b);
         }
     }
 
-    fn from_hairs_and_data(node_data: Vec<N>, nodes: Vec<BitVec>) -> Option<Self> {
-        let n_hedges = nodes[0].size();
-        let mut hedge_data = vec![None; n_hedges];
+    fn from_hairs_and_data(
+        node_data: impl Into<NodeVec<N>>,
+        nodes: impl Into<NodeVec<BitVec>>,
+    ) -> Option<Self> {
+        let nodes = nodes.into();
+        let node_data = node_data.into();
+        let n_hedges = nodes[NodeIndex(0)].size();
+        let mut hedge_data: HedgeVec<_> = vec![None; n_hedges].into();
 
-        for (i, n) in nodes.iter().enumerate() {
+        for (i, n) in nodes.iter() {
             // println!("{:?}", n);
             for h in n.included_iter() {
-                hedge_data[h.0] = Some(NodeIndex(i));
+                hedge_data[h] = Some(i);
             }
         }
         Some(Self {
             node_data,
-            hedge_data: hedge_data.into_iter().collect::<Option<Vec<_>>>()?,
+            hedge_data: hedge_data
+                .into_iter()
+                .map(|(_, i)| i)
+                .collect::<Option<HedgeVec<_>>>()?,
             nodes,
         })
+    }
+}
+
+impl<N> Swap<Hedge> for NodeStorageVec<N> {
+    fn swap(&mut self, a: Hedge, b: Hedge) {
+        if a != b {
+            let node_a = self.hedge_data[a];
+            let node_b = self.hedge_data[b];
+
+            self.hedge_data.swap(a, b);
+            self.hedge_data[a] = node_b;
+            self.hedge_data[b] = node_a;
+
+            self.nodes[node_a].swap(a.0, b.0);
+            self.nodes[node_b].swap(a.0, b.0);
+        }
+    }
+}
+
+impl<N> Swap<NodeIndex> for NodeStorageVec<N> {
+    fn swap(&mut self, a: NodeIndex, b: NodeIndex) {
+        if a != b {
+            for i in self.nodes[a].included_iter() {
+                self.hedge_data[i] = b;
+            }
+            for i in self.nodes[b].included_iter() {
+                self.hedge_data[i] = a;
+            }
+            self.node_data.swap(a, b);
+            self.nodes.swap(a, b);
+        }
     }
 }
 
@@ -152,20 +192,6 @@ impl<N> NodeStorageOps for NodeStorageVec<N> {
 
     fn node_len(&self) -> usize {
         self.nodes.len()
-    }
-
-    fn swap(&mut self, a: Hedge, b: Hedge) {
-        if a != b {
-            let node_a = self.hedge_data[a.0];
-            let node_b = self.hedge_data[b.0];
-
-            self.hedge_data.swap(a.0, b.0);
-            self.hedge_data[a.0] = node_b;
-            self.hedge_data[b.0] = node_a;
-
-            self.nodes[node_a.0].swap(a.0, b.0);
-            self.nodes[node_b.0].swap(a.0, b.0);
-        }
     }
 
     fn delete<S: SubGraph<Base = Self::Base>>(&mut self, subgraph: &S) {
@@ -191,13 +217,13 @@ impl<N> NodeStorageOps for NodeStorageVec<N> {
         let mut left_nodes = NodeIndex(0);
         let mut extracted_nodes = NodeIndex(self.node_data.len());
         while left_nodes < extracted_nodes {
-            if !self.nodes[left_nodes.0].has_greater(left) {
+            if !self.nodes[left_nodes].has_greater(left) {
                 //left is in the right place
                 left_nodes.0 += 1;
             } else {
                 //left needs to be swapped
                 extracted_nodes.0 -= 1;
-                if !self.nodes[extracted_nodes.0].has_greater(left) {
+                if !self.nodes[extracted_nodes].has_greater(left) {
                     //only with an extracted that is in the wrong spot
                     self.swap_nodes(left_nodes, extracted_nodes);
                     left_nodes.0 += 1;
@@ -209,13 +235,13 @@ impl<N> NodeStorageOps for NodeStorageVec<N> {
         let mut non_overlapping_extracted = NodeIndex(self.node_len());
 
         while overlapping_nodes < non_overlapping_extracted {
-            if self.nodes[overlapping_nodes.0].intersects(&(..left)) {
+            if self.nodes[overlapping_nodes].intersects(&(..left)) {
                 //overlapping is in the right place, as it intersects (is after left_nodes) but isn't fully included
                 overlapping_nodes.0 += 1;
             } else {
                 //overlapping needs to be swapped
                 non_overlapping_extracted.0 -= 1;
-                if self.nodes[non_overlapping_extracted.0].intersects(&(..left)) {
+                if self.nodes[non_overlapping_extracted].intersects(&(..left)) {
                     //only with an extracted that is in the wrong spot
                     self.swap_nodes(overlapping_nodes, non_overlapping_extracted);
                     overlapping_nodes.0 += 1;
@@ -223,18 +249,18 @@ impl<N> NodeStorageOps for NodeStorageVec<N> {
             }
         }
 
-        let _ = self.nodes.split_off(overlapping_nodes.0);
-        let _ = self.node_data.split_off(overlapping_nodes.0);
-        let _ = self.hedge_data.split_off(left.0);
+        let _ = self.nodes.split_off(overlapping_nodes);
+        let _ = self.node_data.split_off(overlapping_nodes);
+        let _ = self.hedge_data.split_off(left);
 
         for i in 0..(left_nodes.0) {
-            let _ = self.nodes[i].split_off(left.0);
+            let _ = self.nodes[NodeIndex(i)].split_off(left.0);
             // self.nodes[i].internal_graph.filter.split_off(left.0);
 
             // split == 0;
         }
         for i in (left_nodes.0)..(overlapping_nodes.0) {
-            let _ = self.nodes[i].split_off(left.0);
+            let _ = self.nodes[NodeIndex(i)].split_off(left.0);
         }
     }
 
@@ -242,7 +268,7 @@ impl<N> NodeStorageOps for NodeStorageVec<N> {
         &mut self,
         subgraph: &S,
         mut split_node: impl FnMut(&Self::NodeData) -> V2,
-        owned_node: impl FnMut(Self::NodeData) -> V2,
+        mut owned_node: impl FnMut(Self::NodeData) -> V2,
     ) -> Self::OpStorage<V2> {
         let mut left = Hedge(0);
         let mut extracted = Hedge(self.hedge_data.len());
@@ -266,13 +292,13 @@ impl<N> NodeStorageOps for NodeStorageVec<N> {
         let mut left_nodes = NodeIndex(0);
         let mut extracted_nodes = NodeIndex(self.node_data.len());
         while left_nodes < extracted_nodes {
-            if !self.nodes[left_nodes.0].has_greater(left) {
+            if !self.nodes[left_nodes].has_greater(left) {
                 //left is in the right place
                 left_nodes.0 += 1;
             } else {
                 //left needs to be swapped
                 extracted_nodes.0 -= 1;
-                if !self.nodes[extracted_nodes.0].has_greater(left) {
+                if !self.nodes[extracted_nodes].has_greater(left) {
                     //only with an extracted that is in the wrong spot
                     self.swap_nodes(left_nodes, extracted_nodes);
                     left_nodes.0 += 1;
@@ -284,13 +310,13 @@ impl<N> NodeStorageOps for NodeStorageVec<N> {
         let mut non_overlapping_extracted = NodeIndex(self.node_len());
 
         while overlapping_nodes < non_overlapping_extracted {
-            if self.nodes[overlapping_nodes.0].intersects(&(..left)) {
+            if self.nodes[overlapping_nodes].intersects(&(..left)) {
                 //overlapping is in the right place, as it intersects (is after left_nodes) but isn't fully included
                 overlapping_nodes.0 += 1;
             } else {
                 //overlapping needs to be swapped
                 non_overlapping_extracted.0 -= 1;
-                if self.nodes[non_overlapping_extracted.0].intersects(&(..left)) {
+                if self.nodes[non_overlapping_extracted].intersects(&(..left)) {
                     //only with an extracted that is in the wrong spot
                     self.swap_nodes(overlapping_nodes, non_overlapping_extracted);
                     overlapping_nodes.0 += 1;
@@ -298,35 +324,35 @@ impl<N> NodeStorageOps for NodeStorageVec<N> {
             }
         }
 
-        let mut extracted_nodes = self.nodes.split_off(overlapping_nodes.0);
-        let mut extracted_data: Vec<_> = self
+        let mut extracted_nodes = self.nodes.split_off(overlapping_nodes);
+        let mut extracted_data: NodeVec<_> = self
             .node_data
-            .split_off(overlapping_nodes.0)
+            .split_off(overlapping_nodes)
             .into_iter()
-            .map(owned_node)
+            .map(|(_nid, n)| owned_node(n))
             .collect();
 
-        let _ = self.hedge_data.split_off(left.0);
+        let _ = self.hedge_data.split_off(left);
 
-        let mut overlapping_node_hairs = vec![];
-        let mut overlapping_data = vec![];
+        let mut overlapping_node_hairs = NodeVec::new();
+        let mut overlapping_data = NodeVec::new();
 
         for i in 0..(left_nodes.0) {
-            let _ = self.nodes[i].split_off(left.0);
+            let _ = self.nodes[NodeIndex(i)].split_off(left.0);
             // self.nodes[i].internal_graph.filter.split_off(left.0);
 
             // split == 0;
         }
         for i in (left_nodes.0)..(overlapping_nodes.0) {
-            overlapping_data.push(split_node(&self.node_data[i]));
+            overlapping_data.push(split_node(&self.node_data[NodeIndex(i)]));
             // println!("og {}", self.nodes[i].nhedges());
 
-            let overlapped = self.nodes[i].split_off(left.0);
+            let overlapped = self.nodes[NodeIndex(i)].split_off(left.0);
             // println!("overlapped {}", overlapped.nhedges());
             overlapping_node_hairs.push(overlapped);
         }
 
-        for h in &mut extracted_nodes {
+        for (_, h) in &mut extracted_nodes {
             // println!("Init nhedges {}", h.nhedges());
             *h = h.split_off(left.0);
 
@@ -357,7 +383,7 @@ impl<N> NodeStorageOps for NodeStorageVec<N> {
 
         for n in nodes {
             removed.set(n.0, true);
-            full_node.union_with(&self.nodes[n.0]);
+            full_node.union_with(&self.nodes[*n]);
         }
 
         let replacement = NodeIndex(removed.iter_ones().next().unwrap());
@@ -366,7 +392,7 @@ impl<N> NodeStorageOps for NodeStorageVec<N> {
             // let last_index = self.nodes.len() - 1;
 
             // Before doing anything, update any hedge pointers that point to the node being removed.
-            for hedge in self.hedge_data.iter_mut() {
+            for (_, hedge) in self.hedge_data.iter_mut() {
                 if *hedge == NodeIndex(r) {
                     *hedge = replacement;
                 }
@@ -391,21 +417,21 @@ impl<N> NodeStorageOps for NodeStorageVec<N> {
             // self.node_data.pop();
         }
 
-        self.nodes[replacement.0] = full_node;
-        self.node_data[replacement.0] = node_data_merge;
+        self.nodes[replacement] = full_node;
+        self.node_data[replacement] = node_data_merge;
 
         replacement
     }
 
-    fn forget_identification_history(&mut self) -> Vec<Self::NodeData> {
+    fn forget_identification_history(&mut self) -> NodeVec<Self::NodeData> {
         let mut to_keep = BitVec::empty(self.nodes.len());
 
-        for h in &self.hedge_data {
+        for (_, h) in &self.hedge_data {
             to_keep.add(Hedge(h.0));
         }
 
         for n in to_keep.iter_zeros() {
-            self.nodes[n] = BitVec::empty(self.hedge_len());
+            self.nodes[NodeIndex(n)] = BitVec::empty(self.hedge_len());
         }
 
         let mut left_nodes = NodeIndex(0);
@@ -426,8 +452,8 @@ impl<N> NodeStorageOps for NodeStorageVec<N> {
             }
         }
 
-        let _ = self.nodes.split_off(left_nodes.0);
-        self.node_data.split_off(left_nodes.0)
+        let _ = self.nodes.split_off(left_nodes);
+        self.node_data.split_off(left_nodes)
     }
 
     fn to_forest<U, H>(
@@ -440,7 +466,7 @@ impl<N> NodeStorageOps for NodeStorageVec<N> {
 
         let mut roots = vec![];
 
-        for (set, d) in self.nodes.iter().zip(&self.node_data) {
+        for ((_, set), (_, d)) in self.nodes.iter().zip(&self.node_data) {
             let mut first = None;
             for i in set.included_iter() {
                 if let Some(root) = first {
@@ -467,32 +493,26 @@ impl<N> NodeStorageOps for NodeStorageVec<N> {
     }
 
     fn iter(&self) -> impl Iterator<Item = (NodeIndex, &Self::NodeData)> {
-        self.node_data
-            .iter()
-            .enumerate()
-            .map(|(i, v)| (NodeIndex(i), v))
+        self.node_data.iter()
     }
 
     fn drain(self) -> impl Iterator<Item = (NodeIndex, Self::NodeData)> {
-        self.node_data
-            .into_iter()
-            .enumerate()
-            .map(|(i, v)| (NodeIndex(i), v))
+        self.node_data.into_iter()
     }
     fn build<I: IntoIterator<Item = HedgeNodeBuilder<N>>>(node_iter: I, n_hedges: usize) -> Self {
-        let mut nodes: Vec<BitVec> = vec![];
-        let mut node_data = vec![];
-        let mut hedgedata = vec![None; n_hedges];
+        let mut nodes: NodeVec<BitVec> = NodeVec::new();
+        let mut node_data = NodeVec::new();
+        let mut hedgedata: HedgeVec<_> = vec![None; n_hedges].into();
 
         for (i, n) in node_iter.into_iter().enumerate() {
             for h in &n.hedges {
-                hedgedata[h.0] = Some(NodeIndex(i));
+                hedgedata[*h] = Some(NodeIndex(i));
             }
             nodes.push(n.to_base(n_hedges));
             node_data.push(n.data);
         }
 
-        let hedge_data = hedgedata.into_iter().map(|x| x.unwrap()).collect();
+        let hedge_data = hedgedata.into_iter().map(|(_, x)| x.unwrap()).collect();
 
         NodeStorageVec {
             node_data,
@@ -506,10 +526,9 @@ impl<N> NodeStorageOps for NodeStorageVec<N> {
     ) -> impl Iterator<Item = (NodeIndex, Self::NeighborsIter<'_>, &Self::NodeData)> {
         self.nodes
             .iter()
-            .map(Into::into)
+            .map(|(_, b)| b.into())
             .zip(self.node_data.iter())
-            .zip(self.iter_node_id())
-            .map(|((node, data), id)| (id, node, data))
+            .map(|(node, (id, data))| (id, node, data))
     }
 
     fn iter_nodes_mut(
@@ -517,14 +536,13 @@ impl<N> NodeStorageOps for NodeStorageVec<N> {
     ) -> impl Iterator<Item = (NodeIndex, Self::NeighborsIter<'_>, &mut Self::NodeData)> {
         self.nodes
             .iter()
-            .map(Into::into)
-            .enumerate()
+            .map(|(_, b)| b.into())
             .zip(self.node_data.iter_mut())
-            .map(|((id, node), data)| (NodeIndex(id), node, data))
+            .map(|(node, (id, data))| (id, node, data))
     }
 
     fn node_id_ref(&self, hedge: Hedge) -> NodeIndex {
-        self.hedge_data[hedge.0]
+        self.hedge_data[hedge]
     }
 
     // fn get_node(&self, node_id: NodeIndex) -> Self:: {
@@ -533,17 +551,17 @@ impl<N> NodeStorageOps for NodeStorageVec<N> {
 
     fn get_neighbor_iterator(&self, node_id: NodeIndex) -> Self::NeighborsIter<'_> {
         BitVecNeighborIter {
-            iter_ones: self.nodes[node_id.0].iter_ones(),
+            iter_ones: self.nodes[node_id].iter_ones(),
             len: self.hedge_len(),
         }
     }
 
     fn get_node_data(&self, node_id: NodeIndex) -> &N {
-        &self.node_data[node_id.0]
+        &self.node_data[node_id]
     }
 
     fn get_node_data_mut(&mut self, node_id: NodeIndex) -> &mut Self::NodeData {
-        &mut self.node_data[node_id.0]
+        &mut self.node_data[node_id]
     }
 
     fn hedge_len(&self) -> usize {
@@ -556,14 +574,14 @@ impl<N> NodeStorageOps for NodeStorageVec<N> {
         let mut node_data = self.node_data;
         node_data.extend(other.node_data);
 
-        let nodes: Vec<_> = self
+        let nodes: NodeVec<_> = self
             .nodes
             .into_iter()
-            .map(|mut k| {
+            .map(|(_, mut k)| {
                 k.extend(other_empty_filter.clone());
                 k
             })
-            .chain(other.nodes.into_iter().map(|mut k| {
+            .chain(other.nodes.into_iter().map(|(_, mut k)| {
                 let mut new_hairs = self_empty_filter.clone();
                 new_hairs.extend(k.clone());
                 k = new_hairs;
@@ -588,14 +606,14 @@ impl<N> NodeStorageOps for NodeStorageVec<N> {
         let node_data = &mut self.node_data;
         node_data.extend(other.node_data);
 
-        for n in self.nodes.iter_mut() {
+        for (_, n) in self.nodes.iter_mut() {
             n.extend(other_empty_filter.clone());
         }
 
-        let nodes: Vec<_> = other
+        let nodes: NodeVec<_> = other
             .nodes
             .into_iter()
-            .map(|mut k| {
+            .map(|(_, mut k)| {
                 let mut new_hairs = self_empty_filter.clone();
                 new_hairs.extend(k.clone());
                 k = new_hairs;
@@ -612,12 +630,11 @@ impl<N> NodeStorageOps for NodeStorageVec<N> {
         if self.nodes.len() <= source.0 {
             return Err(HedgeGraphError::NoNode);
         }
-        let nodes: Vec<_> = self
+        let nodes: NodeVec<_> = self
             .nodes
             .into_iter()
-            .enumerate()
             .map(|(i, mut k)| {
-                if NodeIndex(i) == source {
+                if i == source {
                     k.push(true);
                 } else {
                     k.push(false);
@@ -639,16 +656,16 @@ impl<N> NodeStorageOps for NodeStorageVec<N> {
     where
         N: Default,
     {
-        let mut nodes = Vec::new();
-        let mut node_data = Vec::new();
+        let mut nodes = NodeVec::new();
+        let mut node_data: NodeVec<N> = NodeVec::new();
 
-        let mut hedge_data = vec![NodeIndex(0); sources[0].nhedges()];
+        let mut hedge_data: HedgeVec<_> = vec![NodeIndex(0); sources[0].nhedges()].into();
 
         for (nid, n) in sources.iter().enumerate() {
             nodes.push(n.clone());
             node_data.push(N::default());
             for i in n.included_iter() {
-                hedge_data[i.0] = NodeIndex(nid);
+                hedge_data[i] = NodeIndex(nid);
             }
         }
 
@@ -659,7 +676,7 @@ impl<N> NodeStorageOps for NodeStorageVec<N> {
             node_data.push(N::default());
 
             for i in n.included_iter() {
-                hedge_data[i.0] = NodeIndex(nid + len);
+                hedge_data[i] = NodeIndex(nid + len);
             }
         }
 
@@ -672,7 +689,7 @@ impl<N> NodeStorageOps for NodeStorageVec<N> {
 
     fn check_and_set_nodes(&mut self) -> Result<(), HedgeGraphError> {
         let mut cover = BitVec::empty(self.hedge_len());
-        for (i, node) in self.nodes.iter().enumerate() {
+        for (i, node) in self.nodes.iter() {
             for h in node.included_iter() {
                 if cover.includes(&h) {
                     return Err(HedgeGraphError::NodesDoNotPartition(format!(
@@ -680,7 +697,7 @@ impl<N> NodeStorageOps for NodeStorageVec<N> {
                     )));
                 } else {
                     cover.set(h.0, true);
-                    self.hedge_data[h.0] = NodeIndex(i);
+                    self.hedge_data[h] = i;
                 }
             }
         }
@@ -709,7 +726,7 @@ impl<N> NodeStorageOps for NodeStorageVec<N> {
             .node_data
             .iter()
             .zip(self.nodes.iter())
-            .map(|(v, h)| node_map(graph, h.into(), v))
+            .map(|((_, v), (_, h))| node_map(graph, h.into(), v))
             .collect();
 
         NodeStorageVec {
@@ -767,7 +784,7 @@ impl<N> NodeStorageOps for NodeStorageVec<N> {
             .node_data
             .iter_mut()
             .zip(self.nodes.iter())
-            .map(|(v, h)| node_map(h.into(), v))
+            .map(|((_, v), (_, h))| node_map(h.into(), v))
             .collect();
 
         NodeStorageVec {
@@ -786,11 +803,11 @@ impl<N> NodeStorageOps for NodeStorageVec<N> {
             &'a Self::NodeData,
         ) -> Result<V2, Er>,
     ) -> Result<Self::OpStorage<V2>, Er> {
-        let node_data: Result<Vec<_>, Er> = self
+        let node_data: Result<NodeVec<_>, Er> = self
             .node_data
             .iter()
             .zip(self.nodes.iter())
-            .map(|(v, h)| node_map(graph, h.into(), v))
+            .map(|((_, v), (_, h))| node_map(graph, h.into(), v))
             .collect();
 
         Ok(NodeStorageVec {
@@ -808,8 +825,7 @@ impl<N> NodeStorageOps for NodeStorageVec<N> {
         let node_data = self
             .node_data
             .into_iter()
-            .enumerate()
-            .map(|(i, v)| f(involution, NodeIndex(i), v))
+            .map(|(i, v)| f(involution, i, v))
             .collect();
 
         NodeStorageVec {
@@ -817,5 +833,33 @@ impl<N> NodeStorageOps for NodeStorageVec<N> {
             hedge_data: self.hedge_data,
             nodes: self.nodes,
         }
+    }
+
+    fn map_data_graph_result<'a, V2, Err>(
+        self,
+        involution: &'a Involution<EdgeIndex>,
+        mut f: impl FnMut(&'a Involution<EdgeIndex>, NodeIndex, Self::NodeData) -> Result<V2, Err>,
+    ) -> Result<Self::OpStorage<V2>, Err> {
+        let node_data = self
+            .node_data
+            .into_iter()
+            .map(|(i, v)| f(involution, i, v))
+            .collect::<Result<NodeVec<_>, Err>>()?;
+        Ok(NodeStorageVec {
+            node_data,
+            hedge_data: self.hedge_data,
+            nodes: self.nodes,
+        })
+    }
+
+    fn new_nodevec<'a, V2>(
+        &'a self,
+        mut node_map: impl FnMut(NodeIndex, Self::NeighborsIter<'a>, &'a Self::NodeData) -> V2,
+    ) -> NodeVec<V2> {
+        self.node_data
+            .iter()
+            .zip(self.nodes.iter())
+            .map(|((i, v), (_, h))| node_map(i, h.into(), v))
+            .collect()
     }
 }

@@ -1,0 +1,56 @@
+use std::path::Path;
+
+use crate::half_edge::{
+    nodestore::{NodeStorage, NodeStorageOps},
+    HedgeGraph,
+};
+
+use super::{DotEdgeData, DotGraph, DotHedgeData, DotVertexData, GlobalData, HedgeParseError};
+
+pub struct GraphSet<E, V, H, G, S: NodeStorage<NodeData = V>> {
+    pub global_data: Vec<G>,
+    pub set: Vec<HedgeGraph<E, V, H, S>>,
+}
+
+impl<S: NodeStorageOps<NodeData = DotVertexData>>
+    GraphSet<DotEdgeData, DotVertexData, DotHedgeData, GlobalData, S>
+{
+    #[allow(clippy::result_large_err, clippy::type_complexity)]
+    pub fn from_file<'a, P>(p: P) -> Result<Self, HedgeParseError<'a, (), (), (), ()>>
+    where
+        P: AsRef<Path>,
+    {
+        let ast_graphs = dot_parser::ast::Graphs::from_file(p)?;
+        let mut set = Vec::with_capacity(ast_graphs.graphs.len());
+        let mut global_data = Vec::new();
+        for g in ast_graphs.graphs {
+            let can_graph = dot_parser::canonical::Graph::from(g);
+            let graph = DotGraph::from(can_graph);
+
+            set.push(graph.graph);
+            global_data.push(graph.global_data);
+        }
+        Ok(GraphSet { set, global_data })
+    }
+
+    #[allow(clippy::result_large_err, clippy::type_complexity)]
+    pub fn from_string<'a, Str: AsRef<str>>(
+        s: Str,
+    ) -> Result<Self, HedgeParseError<'a, (), (), (), ()>> {
+        let ast_graphs = dot_parser::ast::Graphs::try_from(s.as_ref())?;
+
+        let mut global_data = Vec::new();
+        let mut set = Vec::with_capacity(ast_graphs.graphs.len());
+        for g in ast_graphs.graphs {
+            let can_graph = dot_parser::canonical::Graph::from(
+                g.filter_map(&|a| Some((a.0.to_string(), a.1.to_string()))),
+            );
+
+            let graph = DotGraph::from(can_graph);
+            global_data.push(graph.global_data);
+            set.push(graph.graph);
+        }
+
+        Ok(GraphSet { set, global_data })
+    }
+}

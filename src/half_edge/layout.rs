@@ -14,9 +14,11 @@ use cgmath::{Angle, InnerSpace, Rad, Vector2, Zero};
 use rand::{rngs::SmallRng, Rng, SeedableRng};
 
 // #[cfg(feature = "drawing")]
-use super::drawing::{CetzEdge, CetzString, Decoration, EdgeGeometry};
 use super::{
-    hedgevec::EdgeVec,
+    drawing::{CetzEdge, CetzString, Decoration, EdgeGeometry},
+    involution::EdgeVec,
+};
+use super::{
     involution::{EdgeIndex, HedgePair},
     nodestore::{NodeStorageOps, NodeStorageVec},
     Flow, HedgeGraph, NodeIndex, Orientation,
@@ -261,14 +263,12 @@ impl<E, V, H> PositionalHedgeGraph<E, V, H> {
     pub fn to_fancy(&mut self, settings: &FancySettings) {
         self.edge_store.data.iter_mut().for_each(|(e, p)| match p {
             HedgePair::Paired { source, sink } => {
-                let source_pos =
-                    self.node_store.node_data[self.node_store.hedge_data[source.0].0].pos;
-                let sink_pos = self.node_store.node_data[self.node_store.hedge_data[sink.0].0].pos;
+                let source_pos = self.node_store.node_data[self.node_store.hedge_data[*source]].pos;
+                let sink_pos = self.node_store.node_data[self.node_store.hedge_data[*sink]].pos;
                 e.to_fancy(source_pos, Some(sink_pos), Flow::Source, settings);
             }
             HedgePair::Unpaired { hedge, flow } => {
-                let source_pos =
-                    self.node_store.node_data[self.node_store.hedge_data[hedge.0].0].pos;
+                let source_pos = self.node_store.node_data[self.node_store.hedge_data[*hedge]].pos;
                 e.to_fancy(source_pos, None, *flow, settings);
             }
             _ => {}
@@ -328,7 +328,7 @@ impl<E, V, H> PositionalHedgeGraph<E, V, H> {
             out.push_str(&format!(
                 "let node{}= (pos:{})\n",
                 a,
-                self.node_store.node_data[a].pos.to_cetz()
+                self.node_store.node_data[NodeIndex(a)].pos.to_cetz()
             ));
             out.push_str(&format!("node(node{a}.pos)\n"));
         }
@@ -471,7 +471,7 @@ impl Positions {
             }
         });
 
-        self.edge_positions.0.iter_mut().for_each(|a| {
+        self.edge_positions.iter_mut().for_each(|(_, a)| {
             if let Some(pos) = &mut a.0 {
                 pos.0 /= scale;
                 pos.1 /= scale;
@@ -492,7 +492,7 @@ impl Positions {
             .reduce(f64::max);
 
         let mut max_edges = None;
-        for (a, i, j) in self.edge_positions.0.iter() {
+        for (_, (a, i, j)) in self.edge_positions.iter() {
             let data = if let Some((x, y)) = a {
                 x.abs().max(y.abs())
             } else {
@@ -668,7 +668,7 @@ impl Positions {
         &'a self,
         params: &'a [f64],
     ) -> impl Iterator<Item = (f64, f64)> + 'a {
-        self.edge_positions.0.iter().map(|(p, x, y)| {
+        self.edge_positions.iter().map(|(_, (p, x, y))| {
             if let Some(p) = p {
                 (p.0, p.1)
             } else {
@@ -1049,15 +1049,15 @@ pub mod test {
 
     use crate::{
         dot,
-        dot_parser::{DotEdgeData, DotGraph, DotHedgeData, DotVertexData},
-        half_edge::{drawing::Decoration, HedgeGraph},
+        half_edge::drawing::Decoration,
+        parser::{DotEdgeData, DotHedgeData, DotVertexData},
     };
 
     use super::{LayoutIters, LayoutParams, LayoutSettings, PositionalHedgeGraph};
 
     #[test]
     fn layout_simple() {
-        let boxdiag: DotGraph = dot!(
+        let boxdiag = dot!(
             digraph{
                 a->b->c->d->a
             }
@@ -1073,12 +1073,12 @@ pub mod test {
                 seed: 1,
             },
         );
-        boxdiag.layout(layout_settings);
+        boxdiag.graph.layout(layout_settings);
     }
 
     #[test]
     fn layout_sunshine() {
-        let sunshine: DotGraph = dot!(
+        let sunshine = dot!(
             digraph{
                 0 [flow= source]
                 1 [flow= sink]
@@ -1104,7 +1104,7 @@ pub mod test {
                 seed: 1,
             },
         );
-        let mut layout = sunshine.layout(layout_settings);
+        let mut layout = sunshine.graph.layout(layout_settings);
         layout.to_fancy(&super::FancySettings {
             label_shift: 0.1,
             arrow_angle_percentage: Some(0.6),

@@ -827,7 +827,7 @@ pub struct OwnedTraversalTree<P: ForestNodeStore<NodeData = ()> + Clone + Forest
 // }
 #[cfg(test)]
 pub mod tests {
-    use crate::{dot, dot_parser::DotGraph, half_edge::involution::Orientation};
+    use crate::{dot, half_edge::involution::Orientation, parser::DotGraph};
 
     use super::*;
 

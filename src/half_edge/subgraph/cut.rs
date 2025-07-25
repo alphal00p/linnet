@@ -1,7 +1,6 @@
 use std::ops::{Range, RangeFrom, RangeInclusive, RangeTo, RangeToInclusive};
 
 use super::{Cycle, Inclusion, SubGraph, SubGraphHedgeIter, SubGraphOps};
-use crate::dot_parser::DotEdgeData;
 use crate::half_edge::hedgevec::Accessors;
 use crate::half_edge::involution::{EdgeIndex, HedgePair};
 use crate::half_edge::nodestore::NodeStorageOps;
@@ -15,6 +14,7 @@ use crate::half_edge::{
     layout::{LayoutEdge, LayoutIters, LayoutParams, LayoutSettings, LayoutVertex},
     nodestore::NodeStorageVec,
 };
+use crate::parser::DotEdgeData;
 use bitvec::vec::BitVec;
 use std::cmp::Ordering;
 use std::{
@@ -1014,7 +1014,7 @@ impl<E> PossiblyCutEdge<E> {
 #[cfg(feature = "drawing")]
 pub mod test {
     use super::*;
-    use crate::{dot, dot_parser::DotGraph};
+    use crate::{dot, parser::DotGraph};
     // use similar_asserts::assert_eq;
     //
 

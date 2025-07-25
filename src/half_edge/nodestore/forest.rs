@@ -1,6 +1,6 @@
 use super::{NodeStorage, NodeStorageOps, NodeStorageVec};
 use crate::{
-    half_edge::{involution::Hedge, subgraph::BaseSubgraph, NodeIndex},
+    half_edge::{involution::Hedge, subgraph::BaseSubgraph, swap::Swap, NodeIndex, NodeVec},
     tree::{
         parent_pointer::ParentPointerStore, Forest, ForestNodeStore, ForestNodeStorePreorder,
         RootData, RootId,
@@ -66,6 +66,30 @@ impl From<RootId> for NodeIndex {
     }
 }
 
+impl<V, P: ForestNodeStore> Swap<Hedge> for Forest<V, P> {
+    fn swap(&mut self, a: Hedge, b: Hedge) {
+        if a != b {
+            let a = a.into();
+            let b = b.into();
+            self.nodes.swap(a, b);
+            let rid = self.nodes.root_node(a);
+            let r = self.root(rid);
+            self.roots[r.0].root_id = rid;
+            let rid = self.nodes.root_node(b);
+            let r = self.root(rid);
+            self.roots[r.0].root_id = rid;
+        }
+
+        #[cfg(test)]
+        self.validate_structure().unwrap()
+    }
+}
+impl<V, P: ForestNodeStore> Swap<NodeIndex> for Forest<V, P> {
+    fn swap(&mut self, i: NodeIndex, j: NodeIndex) {
+        todo!()
+    }
+}
+
 impl<V, P: ForestNodeStore + ForestNodeStorePreorder + Clone> NodeStorageOps for Forest<V, P> {
     type Base = BitVec;
     type OpStorage<N> = Forest<N, P>;
@@ -91,23 +115,6 @@ impl<V, P: ForestNodeStore + ForestNodeStorePreorder + Clone> NodeStorageOps for
         .unwrap()
     }
 
-    fn swap(&mut self, a: Hedge, b: Hedge) {
-        if a != b {
-            let a = a.into();
-            let b = b.into();
-            self.nodes.swap(a, b);
-            let rid = self.nodes.root_node(a);
-            let r = self.root(rid);
-            self.roots[r.0].root_id = rid;
-            let rid = self.nodes.root_node(b);
-            let r = self.root(rid);
-            self.roots[r.0].root_id = rid;
-        }
-
-        #[cfg(test)]
-        self.validate_structure().unwrap()
-    }
-
     fn drain(self) -> impl Iterator<Item = (NodeIndex, Self::NodeData)> {
         self.roots
             .into_iter()
@@ -115,7 +122,7 @@ impl<V, P: ForestNodeStore + ForestNodeStorePreorder + Clone> NodeStorageOps for
             .map(|(id, a)| (NodeIndex(id), a.data))
     }
 
-    fn forget_identification_history(&mut self) -> Vec<Self::NodeData> {
+    fn forget_identification_history(&mut self) -> NodeVec<Self::NodeData> {
         let mut active_nodes_upper_bound = NodeIndex(0);
         let mut historical_nodes_lower_bound = NodeIndex(self.node_len());
 
@@ -606,6 +613,34 @@ impl<V, P: ForestNodeStore + ForestNodeStorePreorder + Clone> NodeStorageOps for
         }
     }
 
+    fn map_data_graph_result<'a, V2, Err>(
+        self,
+        involution: &'a crate::half_edge::involution::Involution<
+            crate::half_edge::involution::EdgeIndex,
+        >,
+        mut f: impl FnMut(
+            &'a crate::half_edge::involution::Involution<crate::half_edge::involution::EdgeIndex>,
+            NodeIndex,
+            Self::NodeData,
+        ) -> Result<V2, Err>,
+    ) -> Result<Self::OpStorage<V2>, Err> {
+        Ok(Forest {
+            roots: self
+                .roots
+                .into_iter()
+                .enumerate()
+                .map(|(i, r)| match f(involution, NodeIndex(i), r.data) {
+                    Ok(data) => Ok(RootData {
+                        data,
+                        root_id: r.root_id,
+                    }),
+                    Err(e) => Err(e),
+                })
+                .collect::<Result<_, Err>>()?,
+            nodes: self.nodes,
+        })
+    }
+
     fn map_data_ref_graph<'a, E, V2, H>(
         &'a self,
         graph: &'a crate::half_edge::HedgeGraph<E, Self::NodeData, H, Self>,
@@ -627,6 +662,23 @@ impl<V, P: ForestNodeStore + ForestNodeStorePreorder + Clone> NodeStorageOps for
                 })
                 .collect(),
         }
+    }
+
+    fn new_nodevec<'a, V2>(
+        &'a self,
+        mut node_map: impl FnMut(NodeIndex, Self::NeighborsIter<'a>, &'a Self::NodeData) -> V2,
+    ) -> NodeVec<V2> {
+        self.roots
+            .iter()
+            .enumerate()
+            .map(|(i, r)| {
+                node_map(
+                    NodeIndex(i),
+                    self.get_neighbor_iterator(NodeIndex(i)),
+                    &r.data,
+                )
+            })
+            .collect()
     }
 
     fn map_data_ref_mut_graph<'a, V2>(

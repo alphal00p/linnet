@@ -4,7 +4,8 @@ use super::{
     builder::HedgeNodeBuilder,
     involution::{EdgeIndex, Hedge, Involution},
     subgraph::{BaseSubgraph, SubGraph},
-    HedgeGraph, HedgeGraphError, NodeIndex,
+    swap::Swap,
+    HedgeGraph, HedgeGraphError, NodeIndex, NodeVec,
 };
 
 /// Defines a comprehensive set of operations for a node storage backend within a [`HedgeGraph`].
@@ -13,7 +14,7 @@ use super::{
 /// extending, extracting, deleting, identifying nodes), building it, iterating over nodes,
 /// and mapping node data. It abstracts over the specific data structures used to store
 /// node information and their incident half-edges.
-pub trait NodeStorageOps: NodeStorage {
+pub trait NodeStorageOps: NodeStorage + Swap<Hedge> + Swap<NodeIndex> {
     /// The type of storage returned after mapping operations that might change the node data type.
     type OpStorage<N>: NodeStorageOps<NodeData = N>;
     /// The base type of subgraph used by this node storage (e.g., a `BitVec` to represent a set of hedges).
@@ -21,6 +22,12 @@ pub trait NodeStorageOps: NodeStorage {
     // where
     // Self: 'a;
     fn extend(self, other: Self) -> Self;
+
+    fn new_nodevec<'a, V2>(
+        &'a self,
+        node_map: impl FnMut(NodeIndex, Self::NeighborsIter<'a>, &'a Self::NodeData) -> V2,
+    ) -> NodeVec<V2>;
+
     fn extend_mut(&mut self, other: Self);
     fn extract<S: SubGraph<Base = Self::Base>, V2>(
         &mut self,
@@ -30,7 +37,6 @@ pub trait NodeStorageOps: NodeStorage {
     ) -> Self::OpStorage<V2>;
 
     fn delete<S: SubGraph<Base = Self::Base>>(&mut self, subgraph: &S);
-    fn swap(&mut self, a: Hedge, b: Hedge);
 
     // fn add_node(&mut self, node_data: Self::NodeData) -> NodeIndex;
 
@@ -40,7 +46,7 @@ pub trait NodeStorageOps: NodeStorage {
     fn identify_nodes(&mut self, nodes: &[NodeIndex], node_data_merge: Self::NodeData)
         -> NodeIndex;
 
-    fn forget_identification_history(&mut self) -> Vec<Self::NodeData>;
+    fn forget_identification_history(&mut self) -> NodeVec<Self::NodeData>;
 
     fn to_forest<U, H>(
         &self,
@@ -95,6 +101,12 @@ pub trait NodeStorageOps: NodeStorage {
         involution: &'a Involution<EdgeIndex>,
         f: impl FnMut(&'a Involution<EdgeIndex>, NodeIndex, Self::NodeData) -> V2,
     ) -> Self::OpStorage<V2>;
+
+    fn map_data_graph_result<'a, V2, Err>(
+        self,
+        involution: &'a Involution<EdgeIndex>,
+        f: impl FnMut(&'a Involution<EdgeIndex>, NodeIndex, Self::NodeData) -> Result<V2, Err>,
+    ) -> Result<Self::OpStorage<V2>, Err>;
 
     fn iter_node_id(&self) -> impl Iterator<Item = NodeIndex> {
         (0..self.node_len()).map(NodeIndex)

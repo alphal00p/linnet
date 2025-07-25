@@ -2,7 +2,6 @@ use bitvec::vec::BitVec;
 
 use crate::{
     dot,
-    dot_parser::{DotGraph, DotVertexData},
     half_edge::{
         builder::HedgeGraphBuilder,
         involution::{Flow, Hedge},
@@ -10,17 +9,13 @@ use crate::{
         subgraph::ModifySubgraph,
         HedgeGraph, NodeIndex,
     },
+    parser::{DotGraph, DotVertexData},
     tree::{child_vec::ChildVecStore, Forest},
 };
 
 #[test]
 fn extract_forest() {
-    let mut aligned: HedgeGraph<
-        crate::dot_parser::DotEdgeData,
-        crate::dot_parser::DotVertexData,
-        crate::dot_parser::DotHedgeData,
-        Forest<DotVertexData, ChildVecStore<()>>,
-    > = dot!(
+    let mut aligned: DotGraph<Forest<DotVertexData, ChildVecStore<()>>> = dot!(
     digraph {
       ext4 [flow=sink];
       0 -> 1;

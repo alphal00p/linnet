@@ -8,10 +8,10 @@
 //! parts of a graph, or identify and manage specific nodes within a larger
 //! graph structure.
 
-pub mod dot_parser;
 pub mod drawing;
 pub mod half_edge;
 pub mod num_traits;
+pub mod parser;
 pub mod permutation;
 pub mod tree;
 pub mod union_find;

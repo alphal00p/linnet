@@ -93,28 +93,26 @@ use ahash::{AHashMap, AHashSet};
 use bitvec::prelude::*;
 use bitvec::{slice::IterOnes, vec::BitVec};
 use builder::{HedgeData, HedgeGraphBuilder};
-use derive_more::{From, Into};
-use hedgevec::{Accessors, EdgeVec, SmartEdgeVec};
+use hedgevec::{Accessors, SmartEdgeVec};
 use indexmap::IndexSet;
 use involution::{
-    EdgeData, EdgeIndex, Flow, Hedge, HedgePair, Involution, InvolutionError, InvolutiveMapping,
-    Orientation,
+    EdgeData, EdgeIndex, EdgeVec, Flow, Hedge, HedgePair, HedgeVec, Involution, InvolutionError,
+    InvolutiveMapping, Orientation,
 };
 use itertools::Itertools;
 use nodestore::{NodeStorage, NodeStorageOps, NodeStorageVec};
 use rand::{rngs::SmallRng, Rng, SeedableRng};
 
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, From, Into, PartialOrd, Ord)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
-/// A type-safe wrapper around a `usize` to represent the index of a node
-/// in a graph.
-///
-/// This helps prevent accidental misuse of raw `usize` values where a node
-/// identifier is expected.
-pub struct NodeIndex(
-    /// The underlying `usize` value representing the node's index.
-    pub usize,
+define_indexed_vec!(
+    /// A type-safe wrapper around a `usize` to represent the index of a node
+    /// in a graph.
+    ///
+    /// This helps prevent accidental misuse of raw `usize` values where a node
+    /// identifier is expected.
+    pub struct NodeIndex; // new‑type around usize
+
+    /// Vector whose items are `T`, indexable only by `EntityId`.
+    pub struct NodeVec;
 );
 
 impl NodeIndex {
@@ -208,6 +206,7 @@ impl std::fmt::Display for GVEdgeAttrs {
 pub mod builder;
 pub mod nodestore;
 pub mod subgraph;
+pub mod swap;
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -1288,7 +1287,7 @@ impl<E, V, H, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, H, N> {
     }
 
     ///Permutes nodes not pointing to any root anymore to end of nodestore and then extract it
-    pub fn forget_identification_history(&mut self) -> Vec<V> {
+    pub fn forget_identification_history(&mut self) -> NodeVec<V> {
         self.node_store.forget_identification_history()
     }
 
@@ -1530,6 +1529,26 @@ impl<E, V, H, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, H, N> {
             edge_store,
         }
     }
+    pub fn map_result<E2, V2, H2, Err>(
+        self,
+        f: impl FnMut(&Involution, NodeIndex, V) -> Result<V2, Err>,
+        g: impl FnMut(&Involution, &N, HedgePair, EdgeIndex, EdgeData<E>) -> Result<EdgeData<E2>, Err>,
+        mut h: impl FnMut(Hedge, H) -> Result<H2, Err>,
+    ) -> Result<HedgeGraph<E2, V2, H2, N::OpStorage<V2>>, Err> {
+        let edge_store = self.edge_store.map_data_result(&self.node_store, g)?;
+        Ok(HedgeGraph {
+            hedge_data: self
+                .hedge_data
+                .into_iter()
+                .enumerate()
+                .map(|(heg, i)| h(Hedge(heg), i))
+                .collect::<Result<Vec<_>, Err>>()?,
+            node_store: self
+                .node_store
+                .map_data_graph_result(edge_store.as_ref(), f)?,
+            edge_store,
+        })
+    }
     pub fn new_smart_hedgevec<T>(
         &self,
         f: &impl Fn(HedgePair, EdgeData<&E>) -> EdgeData<T>,
@@ -1538,7 +1557,22 @@ impl<E, V, H, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, H, N> {
     }
 
     pub fn new_edgevec<T>(&self, f: impl FnMut(&E, EdgeIndex, &HedgePair) -> T) -> EdgeVec<T> {
-        self.edge_store.new_hedgevec(f)
+        self.edge_store.new_edgevec(f)
+    }
+
+    pub fn new_nodevec<'a, T>(
+        &'a self,
+        f: impl FnMut(NodeIndex, N::NeighborsIter<'a>, &'a V) -> T,
+    ) -> NodeVec<T> {
+        self.node_store.new_nodevec(f)
+    }
+
+    pub fn new_hedgevec<T>(&self, mut f: impl FnMut(Hedge, &H) -> T) -> HedgeVec<T> {
+        self.hedge_data
+            .iter()
+            .enumerate()
+            .map(|(i, h)| f(Hedge(i), h))
+            .collect()
     }
 
     pub fn new_edgevec_from_iter<T, I: IntoIterator<Item = T>>(
@@ -2586,6 +2620,7 @@ use subgraph::{
 use thiserror::Error;
 use tree::SimpleTraversalTree;
 
+use crate::define_indexed_vec;
 use crate::tree::ForestNodeStore;
 
 #[derive(Error, Debug)]
@@ -2669,6 +2704,7 @@ pub enum HedgeGraphError {
 
 pub mod hedgevec;
 pub mod tree;
+pub mod typed_vec;
 
 #[cfg(feature = "drawing")]
 pub mod drawing;
