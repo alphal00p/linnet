@@ -9,6 +9,8 @@ use std::{
 
 use ahash::AHashSet;
 use bitvec::{bitvec, order::Lsb0, vec::BitVec};
+use indenter::CodeFormatter;
+use std::fmt::Write;
 
 use super::{
     involution::{Flow, HedgePair},
@@ -326,23 +328,26 @@ pub trait SubGraph:
         writer: &mut W,
         graph: &HedgeGraph<E, V, H, N>,
         graph_info: Str,
+        hedge_attr: &impl Fn(&H) -> Option<String>,
         edge_attr: &impl Fn(&E) -> Option<String>,
         node_attr: &impl Fn(&V) -> Option<String>,
     ) -> Result<(), std::fmt::Error> {
         writeln!(writer, "digraph {{")?;
-        writeln!(
+        let mut writer = CodeFormatter::new(writer, "  ");
+        writer.indent(1);
+        write!(
             writer,
-            "  node [shape=circle,height=0.1,label=\"\"];  overlap=\"scale\"; layout=\"neato\";",
+            "\nnode\t [shape=circle,height=0.1,label=\"\"];\noverlap = \"scale\";\nlayout = \"neato\";",
         )?;
-        writeln!(writer, "{}", graph_info.as_ref())?;
+        write!(writer, "\n{}", graph_info.as_ref())?;
 
         for (n, _, v) in graph.iter_nodes_of(self) {
             if let Some(a) = node_attr(v) {
-                writeln!(writer, "  {} [{}];", n.0, a)?;
+                write!(writer, "\n{}\t [{}];", n.0, a)?;
             }
         }
 
-        for (hedge_pair, _, data) in graph.iter_edges() {
+        for (hedge_pair, eid, data) in graph.iter_edges() {
             let subgraph_pair = hedge_pair.with_subgraph(self);
 
             let attr = GVEdgeAttrs {
@@ -350,13 +355,28 @@ pub trait SubGraph:
                 label: None,
                 other: edge_attr(data.data),
             };
-            write!(writer, "  ")?;
             if let Some(p) = subgraph_pair {
                 let attr = p.fill_color(attr);
-                p.dot_fmt(writer, graph, data.orientation, attr)?;
+
+                p.add_data(graph).dot_fmt(
+                    &mut writer,
+                    graph,
+                    eid,
+                    hedge_attr,
+                    data.orientation,
+                    attr,
+                )?;
             } else {
                 let attr = hedge_pair.fill_color(attr);
-                hedge_pair.dot_fmt(writer, graph, data.orientation, attr)?;
+
+                hedge_pair.add_data(graph).dot_fmt(
+                    &mut writer,
+                    graph,
+                    eid,
+                    hedge_attr,
+                    data.orientation,
+                    attr,
+                )?;
             }
         }
         writeln!(writer, "}}")?;
@@ -368,6 +388,7 @@ pub trait SubGraph:
         writer: &mut W,
         graph: &HedgeGraph<E, V, H, N>,
         graph_info: Str,
+        hedge_attr: &impl Fn(&H) -> Option<String>,
         edge_attr: &impl Fn(&E) -> Option<String>,
         node_attr: &impl Fn(&V) -> Option<String>,
     ) -> Result<(), std::io::Error> {
@@ -384,7 +405,7 @@ pub trait SubGraph:
             }
         }
 
-        for (hedge_pair, _, data) in graph.iter_edges() {
+        for (hedge_pair, eid, data) in graph.iter_edges() {
             let subgraph_pair = hedge_pair.with_subgraph(self);
 
             let attr = GVEdgeAttrs {
@@ -395,10 +416,18 @@ pub trait SubGraph:
             write!(writer, "  ")?;
             if let Some(p) = subgraph_pair {
                 let attr = p.fill_color(attr);
-                p.dot_io(writer, graph, data.orientation, attr)?;
+                p.add_data(graph)
+                    .dot_io(writer, graph, eid, hedge_attr, data.orientation, attr)?;
             } else {
                 let attr = hedge_pair.fill_color(attr);
-                hedge_pair.dot_io(writer, graph, data.orientation, attr)?;
+                hedge_pair.add_data(graph).dot_io(
+                    writer,
+                    graph,
+                    eid,
+                    hedge_attr,
+                    data.orientation,
+                    attr,
+                )?;
             }
         }
         writeln!(writer, "}}")?;

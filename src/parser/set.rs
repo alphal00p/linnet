@@ -5,7 +5,10 @@ use crate::half_edge::{
     HedgeGraph,
 };
 
-use super::{DotEdgeData, DotGraph, DotHedgeData, DotVertexData, GlobalData, HedgeParseError};
+use super::{
+    subgraph_free::SubGraphFreeGraph, DotEdgeData, DotGraph, DotHedgeData, DotVertexData,
+    GlobalData, HedgeParseError,
+};
 
 pub struct GraphSet<E, V, H, G, S: NodeStorage<NodeData = V>> {
     pub global_data: Vec<G>,
@@ -24,7 +27,7 @@ impl<S: NodeStorageOps<NodeData = DotVertexData>>
         let mut set = Vec::with_capacity(ast_graphs.graphs.len());
         let mut global_data = Vec::new();
         for g in ast_graphs.graphs {
-            let can_graph = dot_parser::canonical::Graph::from(g);
+            let can_graph = SubGraphFreeGraph::from(g);
             let graph = DotGraph::from(can_graph);
 
             set.push(graph.graph);
@@ -42,7 +45,7 @@ impl<S: NodeStorageOps<NodeData = DotVertexData>>
         let mut global_data = Vec::new();
         let mut set = Vec::with_capacity(ast_graphs.graphs.len());
         for g in ast_graphs.graphs {
-            let can_graph = dot_parser::canonical::Graph::from(
+            let can_graph = SubGraphFreeGraph::from(
                 g.filter_map(&|a| Some((a.0.to_string(), a.1.to_string()))),
             );
 

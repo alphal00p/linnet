@@ -3,19 +3,20 @@ source: src/half_edge/tests.rs
 expression: graph.base_dot()
 ---
 digraph {
-  node [shape=circle,height=0.1,label=""];  overlap="scale"; layout="neato";
-start=2;
-
-  0 -> 1[ dir=none color="red:blue;0.5"];
-  1 -> 2[ dir=none color="red:blue;0.5"];
-  2 -> 3[ dir=none color="red:blue;0.5"];
-  3 -> 0[ dir=none color="red:blue;0.5"];
-  4 -> 5[ dir=none color="red:blue;0.5"];
-  5 -> 6[ dir=none color="red:blue;0.5"];
-  6 -> 7[ dir=none color="red:blue;0.5"];
-  7 -> 4[ dir=none color="red:blue;0.5"];
-  0 -> 4[ dir=none color="red:blue;0.5"];
-  1 -> 5[ dir=none color="red:blue;0.5"];
-  2 -> 6[ dir=none color="red:blue;0.5"];
-  3 -> 7[ dir=none color="red:blue;0.5"];
+  node	 [shape=circle,height=0.1,label=""];
+  overlap = "scale";
+  layout = "neato";
+  start=2;
+  0:0	-> 1:1	 [id=0 dir=none color="red:blue;0.5"];
+  1:2	-> 2:3	 [id=1 dir=none color="red:blue;0.5"];
+  2:4	-> 3:5	 [id=2 dir=none color="red:blue;0.5"];
+  3:6	-> 0:7	 [id=3 dir=none color="red:blue;0.5"];
+  4:8	-> 5:9	 [id=4 dir=none color="red:blue;0.5"];
+  5:10	-> 6:11	 [id=5 dir=none color="red:blue;0.5"];
+  6:12	-> 7:13	 [id=6 dir=none color="red:blue;0.5"];
+  7:14	-> 4:15	 [id=7 dir=none color="red:blue;0.5"];
+  0:16	-> 4:17	 [id=8 dir=none color="red:blue;0.5"];
+  1:18	-> 5:19	 [id=9 dir=none color="red:blue;0.5"];
+  2:20	-> 6:21	 [id=10 dir=none color="red:blue;0.5"];
+  3:22	-> 7:23	 [id=11 dir=none color="red:blue;0.5"];
 }

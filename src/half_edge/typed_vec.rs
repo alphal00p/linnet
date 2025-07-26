@@ -47,6 +47,12 @@ macro_rules! define_indexed_vec {
             #[inline] fn index_mut(&mut self, i: $Idx) -> &mut Self::Output { &mut self.0[i.0] }
         }
 
+        impl<T>  ::std::convert::AsMut<[T]> for $Vec<T>{
+            fn as_mut(&mut self)->&mut [T]{
+                self.0.as_mut()
+            }
+        }
+
         /* --- Delegated Vec<T> API ------------------------------------------------- */
 
         impl<T> $Vec<T> {

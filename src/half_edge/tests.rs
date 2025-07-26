@@ -92,7 +92,7 @@ fn threeloop() {
     builder.add_edge(c, d, (), false);
     builder.add_edge(d, a, (), false);
 
-    let graph: HedgeGraph<(), (), ()> = builder.build();
+    let graph: HedgeGraph<(), ()> = builder.build();
 
     insta::assert_snapshot!("three_loop_dot", graph.base_dot());
     #[cfg(feature = "serde")]
@@ -142,7 +142,7 @@ fn hairythreeloop() {
     builder.add_edge(d, a, (), false);
 
     assert_eq!(builder.involution.len(), 15);
-    let graph: HedgeGraph<(), (), ()> = builder.build();
+    let graph: HedgeGraph<(), ()> = builder.build();
 
     insta::assert_snapshot!("hairy_three_loop_dot", graph.base_dot());
 
@@ -180,12 +180,12 @@ fn banana_cuts() {
     builder.add_edge(a, b, (), false);
     builder.add_edge(a, b, (), false);
 
-    let three_banana: HedgeGraph<(), (), ()> = builder.clone().build();
+    let three_banana: HedgeGraph<(), ()> = builder.clone().build();
 
     assert_eq!(6, three_banana.non_cut_edges().len());
     builder.add_edge(a, b, (), false);
 
-    let four_banana: HedgeGraph<(), (), ()> = builder.build();
+    let four_banana: HedgeGraph<(), ()> = builder.build();
     assert_eq!(14, four_banana.non_cut_edges().len());
 }
 
@@ -204,7 +204,7 @@ fn three_loop_fly() {
     builder.add_edge(c, d, (), false);
     builder.add_edge(d, c, (), false);
 
-    let fly: HedgeGraph<(), (), ()> = builder.clone().build();
+    let fly: HedgeGraph<(), ()> = builder.clone().build();
     assert_eq!(32, fly.non_cut_edges().len());
 }
 
@@ -222,7 +222,7 @@ fn doubletriangle() {
     builder.add_edge(c, d, (), true);
     builder.add_edge(a, c, (), true);
 
-    let fly: HedgeGraph<(), (), ()> = builder.clone().build();
+    let fly: HedgeGraph<(), ()> = builder.clone().build();
 
     for _c in fly.non_cut_edges() {
         // println!("{c:?}");
@@ -268,7 +268,7 @@ fn cube() {
     builder.add_edge(c, g, (), false);
     builder.add_edge(d, h, (), false);
 
-    let graph: HedgeGraph<(), (), ()> = builder.build();
+    let graph: HedgeGraph<(), ()> = builder.build();
 
     insta::assert_snapshot!("cube_dot", graph.base_dot());
 
@@ -372,7 +372,7 @@ fn K33() {
     builder.add_edge(c, e, (), false);
     builder.add_edge(c, f, (), false);
 
-    let graph: HedgeGraph<(), (), ()> = builder.build();
+    let graph: HedgeGraph<(), ()> = builder.build();
     graph.full_node();
     println!("built");
 
@@ -475,7 +475,7 @@ fn petersen() {
 
     builder.add_edge(h, j, (), false);
 
-    let graph: HedgeGraph<(), (), ()> = builder.build();
+    let graph: HedgeGraph<(), ()> = builder.build();
 
     println!("{}", graph.base_dot());
 
@@ -540,7 +540,7 @@ fn wagner_graph() {
 
     builder.add_edge(n8, n1, (), false);
 
-    let graph: HedgeGraph<(), (), ()> = builder.build();
+    let graph: HedgeGraph<(), ()> = builder.build();
 
     println!("{}", graph.base_dot());
 
@@ -639,7 +639,7 @@ fn flower_snark() {
 
     builder.add_edge(n20, n6, (), false); //next
 
-    let graph: HedgeGraph<(), (), ()> = builder.build();
+    let graph: HedgeGraph<(), ()> = builder.build();
 
     println!("{}", graph.base_dot());
 
@@ -868,14 +868,14 @@ fn double_pentagon_all_cuts() {
 fn box_all_cuts_multiple() {
     let graph: DotGraph = dot!(
         digraph G {
-         00->01
-         01->02
-         02->03
-         03->00
-         10->00
-         11->01
-         12->02
-         13->03
+         e00->e01
+         e01->e02
+         e02->e03
+         e03->e00
+         e10->e00
+         e11->e01
+         e12->e02
+         e13->e03
         }
     )
     .unwrap();

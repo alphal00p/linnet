@@ -3,7 +3,7 @@ use super::{
     involution::{Flow, Hedge, Involution, Orientation},
     nodestore::NodeStorageOps,
     subgraph::BaseSubgraph,
-    HedgeGraph, NodeIndex,
+    HedgeGraph, NoData, NodeIndex,
 };
 
 pub struct HedgeData<H> {
@@ -98,7 +98,7 @@ impl<V> HedgeNodeBuilder<V> {
 /// // Assuming a NodeStorage type MyNodeStore is defined and implements NodeStorageOps
 /// // let graph: HedgeGraph<&str, &str, MyNodeStore> = builder.build();
 /// ```
-pub struct HedgeGraphBuilder<E, V, H = ()> {
+pub struct HedgeGraphBuilder<E, V, H = NoData> {
     hedge_data: Vec<H>,
     /// A list of nodes currently being built, stored as [`HedgeNodeBuilder`] instances.
     nodes: Vec<HedgeNodeBuilder<V>>,

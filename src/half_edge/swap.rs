@@ -15,15 +15,20 @@ pub trait Swap<Index> {
     {
         let trans = perm.transpositions();
 
-        for (i, j) in trans {
+        // println!("trans:{trans:?}");
+
+        for (i, j) in trans.into_iter().rev() {
             self.swap(Index::from(i), Index::from(j));
         }
     }
 }
 impl<E, V, H, N: NodeStorageOps<NodeData = V>> Swap<Hedge> for HedgeGraph<E, V, H, N> {
     fn swap(&mut self, i: Hedge, j: Hedge) {
+        // println!("Swapping {i:?} with {j:?}");
         self.hedge_data.swap(i.0, j.0);
+        // println!("nodeswap");
         self.node_store.swap(i, j);
+        // println!("edgeswap");
         self.edge_store.swap(i, j);
     }
 }
@@ -47,24 +52,22 @@ mod test {
     #[test]
     fn swap() {
         let graph: DotGraph = dot!(digraph {
-            edge [
-                label = "test"
-            ]
-            node [
-                label = "test"
-            ]
-            in [flow=source]
-            out [flow=sink]
+            edge [label = "test"]
+            node [label = "test"]
+            in [style=invis]
             A
             B
+            in -> A:3
             in -> A
             in -> A
-            in -> A
+            2->3 [dir=back]
+            3->2
             in -> A [label = "override"]
-            out -> A
+            A -> in
         })
         .unwrap();
 
+        println!("{}", graph.dot_of(&graph.full_filter()));
         println!("{}", graph.debug_dot())
     }
 }

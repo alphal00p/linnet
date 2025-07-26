@@ -384,9 +384,9 @@ dependencies = [
 
 [[package]]
 name = "dot-parser"
-version = "0.4.2"
+version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4f6d24c07743a3ef530749637f2cd177d9fc37f535678e4e443ea729eba64f50"
+checksum = "6cce83b336cd8d9b2718f4e8228a185de6e7a1cfe34f237e8c4acaf1c4141630"
 dependencies = [
  "either",
  "pest",
@@ -548,6 +548,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "indenter"
+version = "0.3.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ce23b50ad8242c51a442f3ff322d56b02f08852c77e4c0b4d3fd684abc89c683"
+
+[[package]]
 name = "indexmap"
 version = "2.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -647,6 +653,7 @@ dependencies = [
  "dot-parser",
  "duplicate",
  "iai-callgrind",
+ "indenter",
  "indexmap",
  "insta",
  "itertools",

@@ -679,6 +679,7 @@ impl<E, V, H, N: NodeStorageOps<NodeData = V>> CutGraph<E, V, H, N> {
         self.dot_impl(
             &self.full_filter(),
             "",
+            &|_| None,
             &|a| Some(format!("label=\"{}\"", a.label())),
             &|_| Some("".to_string()),
         )

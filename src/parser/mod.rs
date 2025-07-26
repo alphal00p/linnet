@@ -77,19 +77,22 @@
 
 use std::{
     collections::BTreeMap,
-    fmt::Debug,
+    fmt::{Debug, Write},
     ops::{Deref, DerefMut},
     path::Path,
 };
 
 use ahash::{HashSet, HashSetExt};
+use indenter::CodeFormatter;
 use itertools::{Either, Itertools};
+use subgraph_free::SubGraphFreeGraph;
 
 use crate::{
     half_edge::{
         builder::HedgeGraphBuilder,
-        involution::{EdgeIndex, Flow, Hedge},
+        involution::{EdgeIndex, Hedge},
         nodestore::{NodeStorage, NodeStorageOps, NodeStorageVec},
+        subgraph::SubGraph,
         swap::Swap,
         GVEdgeAttrs, HedgeGraph, NodeIndex,
     },
@@ -135,59 +138,113 @@ impl<N: NodeStorage<NodeData = DotVertexData>> DerefMut for DotGraph<N> {
 pub enum NodeIdOrDangling {
     Id(NodeIndex),
     Dangling {
-        flow: Flow,
         statements: BTreeMap<String, String>,
     },
 }
 
+mod subgraph_free;
+
 impl<S: NodeStorageOps<NodeData = DotVertexData>> DotGraph<S> {
+    pub fn write_io<W: std::io::Write>(&self, writer: &mut W) -> Result<(), std::io::Error> {
+        writeln!(writer, "digraph {{")?;
+
+        for (n, (_, _, v)) in self.iter_nodes().enumerate() {
+            writeln!(writer, "  {n} [{v}];")?;
+        }
+
+        for (hedge_pair, eid, data) in self.iter_edges() {
+            let attr = GVEdgeAttrs {
+                color: None,
+                label: None,
+                other: Some(data.data.to_string()),
+            };
+
+            write!(writer, "  ")?;
+            hedge_pair.add_data(self).dot_io(
+                writer,
+                self,
+                eid,
+                |h| h.statement.clone(),
+                data.orientation,
+                attr,
+            )?;
+        }
+        writeln!(writer, "}}")?;
+        Ok(())
+    }
+
+    pub fn write_fmt<W: std::fmt::Write>(&self, writer: &mut W) -> Result<(), std::fmt::Error> {
+        writeln!(writer, "digraph {{")?;
+        let mut writer = CodeFormatter::new(writer, "  ");
+        writer.indent(1);
+
+        for (n, (_, _, v)) in self.iter_nodes().enumerate() {
+            write!(writer, "\n{n} [{v}];")?;
+        }
+
+        for (hedge_pair, eid, data) in self.iter_edges() {
+            let attr = GVEdgeAttrs {
+                color: None,
+                label: None,
+                other: Some(data.data.to_string()),
+            };
+
+            hedge_pair.add_data(self).dot_fmt(
+                &mut writer,
+                self,
+                eid,
+                |h| h.statement.clone(),
+                data.orientation,
+                attr,
+            )?;
+        }
+        writeln!(writer, "}}")?;
+        Ok(())
+    }
+
     #[allow(clippy::result_large_err, clippy::type_complexity)]
     pub fn from_file<'a, P>(p: P) -> Result<Self, HedgeParseError<'a, (), (), (), ()>>
     where
         P: AsRef<Path>,
     {
-        let ast_graph = dot_parser::ast::Graph::from_file(p)?;
-        let can_graph = dot_parser::canonical::Graph::from(ast_graph);
+        let ast_graph: SubGraphFreeGraph = dot_parser::ast::Graph::from_file(p)?.into();
 
-        Ok(Self::from(can_graph))
+        Ok(Self::from(ast_graph))
     }
 
     #[allow(clippy::result_large_err, clippy::type_complexity)]
     pub fn from_string<'a, Str: AsRef<str>>(
         s: Str,
     ) -> Result<Self, HedgeParseError<'a, (), (), (), ()>> {
-        let ast_graph = dot_parser::ast::Graph::try_from(s.as_ref())?;
-        let can_graph = dot_parser::canonical::Graph::from(
-            ast_graph.filter_map(&|a| Some((a.0.to_string(), a.1.to_string()))),
-        );
-        Ok(Self::from(can_graph))
+        let ast_graph: SubGraphFreeGraph = dot_parser::ast::Graph::try_from(s.as_ref())?
+            .filter_map(&|(k, v)| Some((k.to_string(), v.to_string())))
+            .into();
+
+        Ok(Self::from(ast_graph))
     }
 
     pub fn back_and_forth_dot(self) -> Self {
-        let mut out = String::new();
-        self.graph
-            .dot_serialize_fmt(
-                &mut out,
-                &DotHedgeData::dot_serialize,
-                &DotEdgeData::to_string,
-                &DotVertexData::to_string,
-            )
-            .unwrap();
-
-        Self::from_string(out).unwrap()
+        Self::from_string(self.debug_dot()).unwrap()
     }
 
     pub fn debug_dot(&self) -> String {
         let mut out = String::new();
-        self.graph
-            .dot_serialize_fmt(
-                &mut out,
-                &DotHedgeData::dot_serialize,
-                &|d| format!("{d}"),
-                &|d| format!("{d}"),
-            )
-            .unwrap();
+        self.write_fmt(&mut out).unwrap();
         out
+    }
+
+    pub fn dot_of<Sub: SubGraph>(&self, subgraph: &Sub) -> String {
+        let mut output = String::new();
+        self.dot_impl_fmt(
+            &mut output,
+            subgraph,
+            self.global_data.to_string(),
+            &|s| s.statement.clone(),
+            &|s| Some(s.to_string()),
+            &|s| Some(s.to_string()),
+        )
+        .unwrap();
+        output
     }
 
     pub fn format_dot(
@@ -198,6 +255,7 @@ impl<S: NodeStorageOps<NodeData = DotVertexData>> DotGraph<S> {
         self.graph.dot_impl(
             &self.graph.full_filter(),
             "",
+            &|_| None,
             &|d| Some(format!("{d}label={}", d.format(&edge_format))),
             &|d| Some(format!("{d}label={}", d.format(&vertex_format))),
         )
@@ -207,35 +265,33 @@ impl<S: NodeStorageOps<NodeData = DotVertexData>> DotGraph<S> {
 pub mod error;
 pub use error::{HedgeParseError, HedgeParseExt};
 
-impl<S: NodeStorageOps<NodeData = DotVertexData>>
-    From<dot_parser::canonical::Graph<(String, String)>> for DotGraph<S>
-{
-    fn from(value: dot_parser::canonical::Graph<(String, String)>) -> Self {
-        let global_data = GlobalData::try_from(&value.attr).unwrap();
+impl<S: NodeStorageOps<NodeData = DotVertexData>> From<SubGraphFreeGraph> for DotGraph<S> {
+    fn from(value: SubGraphFreeGraph) -> Self {
+        let is_digraph = value.is_digraph;
+        let (attrs, _ids, nodes, edges) = value.nodes_and_edges();
+
+        // let can_graph = dot_parser::canonical::Graph::from(ast_graph);
+        let global_data = GlobalData::try_from(attrs).unwrap();
+
         let mut g = HedgeGraphBuilder::new();
         let mut map = BTreeMap::new();
-
-        let nodes = BTreeMap::from_iter(value.nodes.set);
 
         for (id, n) in nodes {
             let idorstatements = match DotVertexData::from_parser(n, &global_data) {
                 Either::Left(d) => NodeIdOrDangling::Id(g.add_node(d)),
-                Either::Right((flow, statements)) => {
-                    NodeIdOrDangling::Dangling { flow, statements }
-                }
+                Either::Right(statements) => NodeIdOrDangling::Dangling { statements },
             };
 
             map.insert(id, idorstatements);
         }
 
-        for e in value
-            .edges
+        for e in edges
             .set
             .into_iter()
             .sorted_by(|a, b| Ord::cmp(&(&a.from, &a.to), &(&b.from, &b.to)))
         {
             let (data, orientation, source, target) =
-                DotEdgeData::from_parser(e, &map, value.is_digraph, &global_data);
+                DotEdgeData::from_parser(e, &map, is_digraph, &global_data);
             match target {
                 Either::Left(a) => {
                     g.add_edge(source, a, data, orientation);
@@ -246,15 +302,21 @@ impl<S: NodeStorageOps<NodeData = DotVertexData>>
             }
         }
 
-        let mut g: HedgeGraph<DotEdgeData, DotVertexData, DotHedgeData, S> = g.build();
+        let mut g: DotGraph<S> = DotGraph {
+            global_data,
+            graph: g.build(),
+        };
 
-        // println!("{}", g.debug_dot());
+        // println!("Built: {}", g.debug_dot());
 
         let mut used_edges = HashSet::new();
         let n_edges = g.n_edges();
         let mut edge_map = g.new_edgevec(|d, e, _| {
             d.edge_id.inspect(|d| {
-                assert!(used_edges.insert(*d), "Duplicate edge ID: {d} for edge {e}");
+                assert!(
+                    used_edges.insert(*d),
+                    "Duplicate edge ID: {d} for edge {e}:{used_edges:?}"
+                );
                 assert!(d.0 < n_edges, "Edge {d} out of bounds (len={n_edges})")
             })
         });
@@ -296,16 +358,13 @@ impl<S: NodeStorageOps<NodeData = DotVertexData>>
         //     "Edge Map: {}",
         //     edge_map.display_string(|i| format!("{i:?}"))
         // );
-
         node_map.fill_in(|id| used_nodes.contains(id));
         edge_map.fill_in(|id| used_edges.contains(id));
-
         hedge_map.fill_in(|id| used_hedges.contains(id));
         // println!(
         //     "Filled Hedge Map: {}",
         //     hedge_map.display_string(|i| format!("{i:?}"))
         // );
-
         // println!(
         //     "Filled Node Map: {}",
         //     node_map.display_string(|i| format!("{i:?}"))
@@ -316,20 +375,18 @@ impl<S: NodeStorageOps<NodeData = DotVertexData>>
         // );
         let edge_perm: Permutation = edge_map.try_into().unwrap();
         let node_perm: Permutation = node_map.try_into().unwrap();
-
         let hedge_perm: Permutation = hedge_map.try_into().unwrap();
-
-        <HedgeGraph<_, _, _, _> as Swap<Hedge>>::permute(&mut g, &hedge_perm);
-
         // println!("Hedge Perm: {hedge_perm}");
         // println!("Edge Perm: {edge_perm}");
         // println!("Node Perm: {node_perm}");
+
+        <HedgeGraph<_, _, _, _> as Swap<Hedge>>::permute(&mut g, &hedge_perm);
+        // println!("Permuted Hedge Graph: {}", g.debug_dot());
         <HedgeGraph<_, _, _, _> as Swap<EdgeIndex>>::permute(&mut g, &edge_perm);
+        // println!("Permuted Edge Graph: {}", g.debug_dot());
         <HedgeGraph<_, _, _, _> as Swap<NodeIndex>>::permute(&mut g, &node_perm);
-        DotGraph {
-            global_data,
-            graph: g,
-        }
+        // println!("Permuted Node Graph:{}", g.debug_dot());
+        g
     }
 }
 
@@ -341,98 +398,93 @@ macro_rules! dot {
 }
 
 impl<E, V, H, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, H, N> {
+    pub fn dot_serialize_of<S: SubGraph>(
+        &self,
+        subgraph: &S,
+        global: impl Into<GlobalData>,
+        hedge_map: &impl Fn(&H) -> DotHedgeData,
+        edge_map: &impl Fn(&E) -> DotEdgeData,
+        node_map: &impl Fn(&V) -> DotVertexData,
+    ) -> String {
+        let global_data = global.into();
+
+        let g = self.map_data_ref(
+            |_, _, v| node_map(v),
+            |_, _, _, d| d.map(edge_map),
+            |_, h| hedge_map(h),
+        );
+
+        let dot_graph = DotGraph {
+            graph: g,
+            global_data,
+        };
+
+        dot_graph.dot_of(subgraph)
+    }
+
     pub fn dot_serialize_io(
         &self,
         writer: &mut impl std::io::Write,
-        hedge_map: &impl Fn(&H) -> Option<String>,
-        edge_map: &impl Fn(&E) -> String,
-        node_map: &impl Fn(&V) -> String,
+        global: impl Into<GlobalData>,
+        hedge_map: &impl Fn(&H) -> DotHedgeData,
+        edge_map: &impl Fn(&E) -> DotEdgeData,
+        node_map: &impl Fn(&V) -> DotVertexData,
     ) -> Result<(), std::io::Error> {
-        writeln!(writer, "digraph {{")?;
+        let global_data = global.into();
 
-        for (n, (_, _, v)) in self.iter_nodes().enumerate() {
-            writeln!(writer, "  {} [{}];", n, node_map(v))?;
-        }
+        let g = self.map_data_ref(
+            |_, _, v| node_map(v),
+            |_, _, _, d| d.map(edge_map),
+            |_, h| hedge_map(h),
+        );
 
-        for (hedge_pair, _, data) in self.iter_edges() {
-            let attr = GVEdgeAttrs {
-                color: None,
-                label: None,
-                other: Some(edge_map(data.data)),
-            };
+        let dot_graph = DotGraph {
+            graph: g,
+            global_data,
+        };
 
-            write!(writer, "  ")?;
-            hedge_pair
-                .add_data(self)
-                .dot_io(writer, self, hedge_map, data.orientation, attr)?;
-        }
-        writeln!(writer, "}}")?;
-        Ok(())
+        dot_graph.write_io(writer)
     }
 
     pub fn dot_serialize_fmt(
         &self,
         writer: &mut impl std::fmt::Write,
-        hedge_map: &impl Fn(&H) -> Option<String>,
-        edge_map: &impl Fn(&E) -> String,
-        node_map: &impl Fn(&V) -> String,
+        global: impl Into<GlobalData>,
+        hedge_map: &impl Fn(&H) -> DotHedgeData,
+        edge_map: &impl Fn(&E) -> DotEdgeData,
+        node_map: &impl Fn(&V) -> DotVertexData,
     ) -> Result<(), std::fmt::Error> {
-        writeln!(writer, "digraph {{")?;
+        let global_data = global.into();
 
-        for (n, (_, _, v)) in self.iter_nodes().enumerate() {
-            writeln!(writer, "  {} [{}];", n, node_map(v))?;
-        }
+        let g = self.map_data_ref(
+            |_, _, v| node_map(v),
+            |_, _, _, d| d.map(edge_map),
+            |_, h| hedge_map(h),
+        );
 
-        for (hedge_pair, _, data) in self.iter_edges() {
-            let attr = GVEdgeAttrs {
-                color: None,
-                label: None,
-                other: Some(edge_map(data.data)),
-            };
+        let dot_graph = DotGraph {
+            graph: g,
+            global_data,
+        };
 
-            write!(writer, "  ")?;
-            hedge_pair
-                .add_data(self)
-                .dot_fmt(writer, self, hedge_map, data.orientation, attr)?;
-        }
-        writeln!(writer, "}}")?;
-        Ok(())
+        dot_graph.write_fmt(writer)
     }
 }
 
 #[cfg(test)]
 pub mod test {
-    use crate::parser::{DotEdgeData, DotGraph, DotHedgeData, DotVertexData};
+    use crate::parser::DotGraph;
 
     #[test]
     fn test_from_string() {
         let s = "digraph G {
-            A      [flow=sink]
+            A      [style=invis]
             A -> B [label=\"Hello\" sink=\"AAA\"];
-            B -> C [label=\"World\"dir=none];
+            B -> C [label=\"World\" dir=none];
         }";
         let graph: DotGraph = DotGraph::from_string(s).unwrap();
-        // println!("{graph:?}");
-        println!(
-            "Graph: {}",
-            graph.dot_impl(
-                &graph.full_filter(),
-                "",
-                &|a| Some(format!("label={}", a.statements["label"])),
-                &|b| Some(format!("label={:?}", b.id))
-            )
-        );
-        let mut out = String::new();
-        graph
-            .dot_serialize_fmt(
-                &mut out,
-                &DotHedgeData::dot_serialize,
-                &DotEdgeData::to_string,
-                &DotVertexData::to_string,
-            )
-            .unwrap();
 
-        println!("{out}");
+        println!("{}", graph.debug_dot());
         assert_eq!(graph.n_nodes(), 2);
         assert_eq!(graph.n_internals(), 1);
         let g = graph.back_and_forth_dot();
@@ -467,33 +519,23 @@ pub mod test {
     #[test]
     fn underlying_alignment() {
         let s = "digraph {
-          0 [id=B,];
-          1 [id=C,];
-          ext0 [flow=source];
-          ext0 -> 0[dir=forward iter=to,];
-          ext1 [flow=sink];
-          ext1 -> 0[dir=forward iter=to,];
-          ext2 [flow=sink];
-          ext2 -> 1[dir=back iter=to,];
-          1 -> 0[ dir=back iter=to,];
-          ext5 [flow=source];
-          ext5 -> 1[dir=forward iter=to,];
+          0 [name=B];
+          1 [name=C];
+          ext0  [style=invis];
+          ext0 -> 0 [dir=forward];
+          ext1  [style=invis];
+          ext1 -> 0 [dir=forward];
+          ext2  [style=invis];
+          ext2 -> 1 [dir=back];
+          1 -> 0    [dir=back];
+          ext5 [style=invis];
+          ext5 -> 1 [dir=forward];
         }";
         let graph: DotGraph = DotGraph::from_string(s).unwrap();
 
-        let mut serialized = String::new();
-        graph
-            .dot_serialize_fmt(
-                &mut serialized,
-                &DotHedgeData::dot_serialize,
-                &|e| format!("{e}"),
-                &|v| format!("{v}"),
-            )
-            .unwrap();
+        let serialized = graph.debug_dot();
 
-        let colored = graph.dot_impl(&graph.full_filter(), "", &|e| Some(format!("{e}")), &|v| {
-            Some(format!("{v}"))
-        });
+        let colored = graph.dot_of(&graph.full_filter());
 
         // println!(
         //     "{}",
@@ -505,71 +547,48 @@ pub mod test {
 
         let mut graph2: DotGraph = DotGraph::from_string(serialized.clone()).unwrap();
 
-        let mut serialized2 = String::new();
-        graph2
-            .dot_serialize_fmt(
-                &mut serialized2,
-                &DotHedgeData::dot_serialize,
-                &|e| format!("{e}"),
-                &|v| format!("{v}"),
-            )
-            .unwrap();
+        let serialized2 = graph.debug_dot();
 
-        let colored2 =
-            graph2.dot_impl(&graph2.full_filter(), "", &|e| Some(format!("{e}")), &|v| {
-                Some(format!("{v}"))
-            });
+        let colored2 = graph2.dot_of(&graph2.full_filter());
 
         assert_eq!(
             serialized, serialized2,
             "{serialized}//not equal to \n{serialized2}",
         );
-        assert_eq!(colored, colored2);
+        assert_eq!(colored, colored2, "{colored}\nnot equal to\n{colored2}");
 
         println!(
             "{}",
-            graph2.dot_impl(&graph.full_filter(), "", &|_| None, &|b| Some(format!(
-                "label={:?}",
-                b.id
-            )))
+            graph2.dot_impl(&graph.full_filter(), "", &|_| None, &|_| None, &|b| Some(
+                format!("label={:?}", b.name)
+            ))
         );
         // println!("{}",graph.ed)
         graph2.align_underlying_to_superficial();
         println!(
             "{}",
-            graph2.dot_impl(&graph.full_filter(), "", &|_| None, &|b| Some(format!(
-                "label={:?}",
-                b.id
-            )))
+            graph2.dot_impl(&graph.full_filter(), "", &|_| None, &|_| None, &|b| Some(
+                format!("label={:?}", b.name)
+            ))
         );
 
-        let mut serialized2 = String::new();
-        graph2
-            .dot_serialize_fmt(
-                &mut serialized2,
-                &DotHedgeData::dot_serialize,
-                &|e| format!("{e}"),
-                &|v| format!("{v}"),
-            )
-            .unwrap();
+        let serialized2 = graph2.debug_dot();
 
         println!("{serialized2}");
 
         let aligned: DotGraph = dot!(
         digraph {
-          node [shape=circle,height=0.1,label=""];  overlap="scale"; layout="neato";
-        start=2;
-          0 -> 1[ dir=forward];
-          ext2 [flow=source];
-          ext2 -> 0[dir=forward];
-          ext5 -> 1[dir=forward];
-          ext4 [flow=sink];
-          1 [id=C,];
-          ext3 [flow=source];
-          ext3 -> 0[dir=forward];
-          ext4 -> 1[dir=back];
-          0 [id=B,];
-          ext5 [flow=source];
+          1 [name=C];
+          0:1	-> 1:0	 [id=0 ];
+          ext1	 [style=invis];
+          1:4	-> ext3	 [id=3 ];
+          ext3	 [style=invis];
+          ext2	 [style=invis];
+          ext4	 [style=invis];
+          0 [name=B];
+          ext4	-> 1:5	 [id=4 ];
+          ext1	-> 0:2	 [id=1 ];
+          ext2	-> 0:3	 [id=2 ];
         })
         .unwrap();
 

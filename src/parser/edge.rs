@@ -4,33 +4,23 @@ use itertools::Either;
 
 use crate::half_edge::{
     builder::HedgeData,
-    involution::{EdgeIndex, Flow, Hedge, Orientation},
+    involution::{EdgeIndex, Flow, Orientation},
 };
 
-use super::{DotHedgeData, GlobalData, NodeIdOrDangling};
+use super::{subgraph_free::Edge, DotHedgeData, GlobalData, NodeIdOrDangling};
 
-pub struct ParsingEdge {
-    edge: DotEdgeData,
-    source_id: Option<Hedge>,
-    sink_id: Option<Hedge>,
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DotEdgeData {
+    pub statements: BTreeMap<String, String>,
+    pub edge_id: Option<EdgeIndex>,
 }
 
-impl FromIterator<(String, String)> for ParsingEdge {
+impl FromIterator<(String, String)> for DotEdgeData {
     fn from_iter<T: IntoIterator<Item = (String, String)>>(iter: T) -> Self {
-        let mut source_id = None;
-        let mut sink_id = None;
         let mut edge_id = None;
         let statements = iter
             .into_iter()
             .filter_map(|(k, v)| match k.as_str() {
-                "sink_id" => {
-                    sink_id = Some(Hedge(v.parse::<usize>().unwrap()));
-                    None
-                }
-                "source_id" => {
-                    source_id = Some(Hedge(v.parse::<usize>().unwrap()));
-                    None
-                }
                 "id" => {
                     edge_id = Some(EdgeIndex::from(v.parse::<usize>().unwrap()));
                     None
@@ -39,28 +29,28 @@ impl FromIterator<(String, String)> for ParsingEdge {
             })
             .collect();
 
-        ParsingEdge {
-            edge: DotEdgeData {
-                statements,
-                edge_id,
-            },
-            source_id,
-            sink_id,
+        DotEdgeData {
+            statements,
+            edge_id,
         }
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DotEdgeData {
-    pub statements: BTreeMap<String, String>,
-    pub edge_id: Option<EdgeIndex>,
-}
-
 impl Display for DotEdgeData {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut first = true;
         for (key, value) in &self.statements {
-            write!(f, "{key}={value},")?;
+            if !first {
+                write!(f, " ")?;
+            }
+            write!(f, "{key}={value}")?;
+            first = false;
         }
+
+        // if let Some(id) = self.edge_id {
+        //     write!(f, " id={}", id.0)?;
+        // }
+
         Ok(())
     }
 }
@@ -110,7 +100,7 @@ impl DotEdgeData {
     }
 
     pub fn from_parser(
-        edge: dot_parser::canonical::Edge<(String, String)>,
+        edge: Edge,
         map: &BTreeMap<String, NodeIdOrDangling>,
         orientation: impl Into<Orientation>,
         global_data: &GlobalData,
@@ -124,6 +114,8 @@ impl DotEdgeData {
         let mut source_h_data = None;
         let mut sink_h_data = None;
 
+        let sink_id = edge.sink_id();
+        let source_id = edge.source_id();
         let mut statements = global_data.edge_statements.clone();
         statements.extend(edge.attr.into_iter().filter_map(|(key, value)| {
             match key.as_str() {
@@ -146,113 +138,78 @@ impl DotEdgeData {
             None
         }));
 
-        let source = map[&edge.from].clone();
-        let target = map[&edge.to].clone();
+        let source = map[&edge.from.id].clone();
+        let target = map[&edge.to.id].clone();
 
         let (edge, source, target) = match (source, target) {
             (NodeIdOrDangling::Id(source), NodeIdOrDangling::Id(target)) => {
                 //Full edge
 
-                let edge: ParsingEdge = statements.into_iter().collect();
+                let dot_edge: DotEdgeData = statements.into_iter().collect();
 
                 let mut source_data: DotHedgeData = source_h_data.into();
                 let mut sink_data: DotHedgeData = sink_h_data.into();
 
-                if let Some(sink) = edge.sink_id {
+                if let Some(sink) = sink_id {
                     sink_data = sink_data.with_id(sink)
                 }
-                if let Some(source) = edge.source_id {
+                if let Some(source) = source_id {
                     source_data = source_data.with_id(source)
                 }
                 (
-                    edge.edge,
+                    dot_edge,
                     source.add_data(source_data),
                     Either::Left(target.add_data(sink_data)),
                 )
             }
-            (
-                NodeIdOrDangling::Id(source),
-                NodeIdOrDangling::Dangling {
-                    flow,
-                    statements: states,
-                },
-            ) => {
+            (NodeIdOrDangling::Id(source), NodeIdOrDangling::Dangling { statements: states }) => {
                 statements.extend(
                     states
                         .into_iter()
                         .filter(|(a, _)| !(a.as_str() == "shape" || a.as_str() == "label")),
                 );
-                let edge: ParsingEdge = statements.into_iter().collect();
+                let dot_edge = statements.into_iter().collect();
 
-                orientation = orientation.relative_to(-flow);
-                let source = match flow {
-                    Flow::Sink => {
-                        let mut sink_data: DotHedgeData = sink_h_data.into();
+                orientation = orientation.relative_to(Flow::Sink);
 
-                        if let Some(sink) = edge.sink_id {
-                            sink_data = sink_data.with_id(sink)
-                        }
+                let mut sink_data: DotHedgeData = sink_h_data.into();
 
-                        if edge.source_id.is_some() {
-                            panic!("Sink edge cannot have a source id");
-                        }
-                        source.add_data(sink_data)
-                    }
-                    Flow::Source => {
-                        let mut source_data: DotHedgeData = source_h_data.into();
+                if let Some(sink) = source_id {
+                    sink_data = sink_data.with_id(sink)
+                }
 
-                        if let Some(source) = edge.source_id {
-                            source_data = source_data.with_id(source)
-                        }
-
-                        if edge.sink_id.is_some() {
-                            panic!("Source edge cannot have a sink id");
-                        }
-                        source.add_data(source_data)
-                    }
-                };
-                (edge.edge, source, Either::Right(-flow))
+                if sink_id.is_some() {
+                    panic!("Sink edge cannot have a source id");
+                }
+                (
+                    dot_edge,
+                    source.add_data(sink_data),
+                    Either::Right(Flow::Source),
+                )
             }
-            (
-                NodeIdOrDangling::Dangling {
-                    flow,
-                    statements: states,
-                },
-                NodeIdOrDangling::Id(source),
-            ) => {
+            (NodeIdOrDangling::Dangling { statements: states }, NodeIdOrDangling::Id(source)) => {
                 statements.extend(
                     states
                         .into_iter()
                         .filter(|(a, _)| !(a.as_str() == "shape" || a.as_str() == "label")),
                 );
-                let edge: ParsingEdge = statements.into_iter().collect();
+                let dot_edge = statements.into_iter().collect();
 
-                orientation = orientation.relative_to(flow);
-                let source = match flow {
-                    Flow::Sink => {
-                        let mut sink_data: DotHedgeData = sink_h_data.into();
+                orientation = orientation.relative_to(Flow::Source);
 
-                        if let Some(sink) = edge.sink_id {
-                            sink_data = sink_data.with_id(sink)
-                        }
-                        if edge.source_id.is_some() {
-                            panic!("Sink edge cannot have a source id");
-                        }
-                        source.add_data(sink_data)
-                    }
-                    Flow::Source => {
-                        let mut source_data: DotHedgeData = source_h_data.into();
+                let mut source_data: DotHedgeData = source_h_data.into();
 
-                        if let Some(source) = edge.source_id {
-                            source_data = source_data.with_id(source)
-                        }
-                        if edge.sink_id.is_some() {
-                            panic!("Source edge cannot have a sink id");
-                        }
-                        source.add_data(source_data)
-                    }
-                };
-                (edge.edge, source, Either::Right(-flow))
+                if let Some(source) = sink_id {
+                    source_data = source_data.with_id(source)
+                }
+                if source_id.is_some() {
+                    panic!("Source edge cannot have a sink id");
+                }
+                (
+                    dot_edge,
+                    source.add_data(source_data),
+                    Either::Right(Flow::Sink),
+                )
             }
             _ => panic!("Cannot connect an edge to two external nodes"),
         };

@@ -1,6 +1,8 @@
 use std::{
     fmt::Display,
+    num::ParseIntError,
     ops::{Index, IndexMut, Mul, Neg},
+    str::FromStr,
 };
 
 use crate::{define_indexed_vec, num_traits::RefZero};
@@ -72,6 +74,13 @@ impl Hedge {
     }
 }
 
+impl FromStr for Hedge {
+    type Err = ParseIntError;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        s.parse::<usize>().map(Hedge)
+    }
+}
+
 pub enum HedgePairWithData<H> {
     Unpaired {
         hedge: Hedge,
@@ -93,10 +102,12 @@ pub enum HedgePairWithData<H> {
     },
 }
 
+#[allow(clippy::too_many_arguments)]
 impl<H> HedgePairWithData<H> {
     pub fn identity_dot_io<W: std::io::Write>(
         writer: &mut W,
-        edge_id: Hedge,
+        edge_id: EdgeIndex,
+        hedge: Hedge,
         hedge_label: Option<String>,
         source: NodeIndex,
         attr: Option<&GVEdgeAttrs>,
@@ -106,40 +117,30 @@ impl<H> HedgePairWithData<H> {
         //we interpret this node as the hidden one. so the flow is reversed.
         match flow {
             Flow::Sink => {
-                writeln!(writer, "ext{edge_id} [shape=none, label=\"\" flow=source];",)?;
+                writeln!(writer, "ext{edge_id}\t [style=invis];",)?;
+                write!(writer, "  ext{edge_id}\t-> {source}:{hedge}\t [")?;
             }
             Flow::Source => {
-                writeln!(writer, "ext{edge_id} [shape=none, label=\"\" flow=sink];")?;
+                writeln!(writer, "ext{edge_id}\t [style=invis];")?;
+                write!(writer, "  {source}:{hedge}\t-> ext{edge_id}\t [")?;
             }
         }
 
-        write!(writer, "  ext{edge_id} -> {source}[")?;
-        match (orientation, flow) {
-            (Orientation::Default, Flow::Source) => {
-                write!(writer, "dir=back ")?;
-            }
-            (Orientation::Default, Flow::Sink) => {
-                write!(writer, "dir=forward ")?;
-            }
-            (Orientation::Reversed, Flow::Sink) => {
-                write!(writer, "dir=back ")?;
-            }
-            (Orientation::Reversed, Flow::Source) => {
-                write!(writer, "dir=forward ")?;
-            }
-            (Orientation::Undirected, _) => {
-                write!(writer, "dir=none ")?;
-            }
+        write!(writer, "id={}", edge_id.0)?;
+
+        match orientation {
+            Orientation::Reversed => write!(writer, " dir=back")?,
+            Orientation::Undirected => write!(writer, " dir=none")?,
+            _ => {}
         }
         if let Some(hedge_label) = hedge_label {
             match flow {
-                Flow::Sink => write!(writer, "sink=\"{hedge_label}\" ")?,
-                Flow::Source => write!(writer, "source=\"{hedge_label}\" ")?,
+                Flow::Sink => write!(writer, " source={hedge_label}")?,
+                Flow::Source => write!(writer, " sink={hedge_label}")?,
             }
         }
-
         if let Some(attr) = attr {
-            write!(writer, "{attr}")?;
+            write!(writer, " {attr}")?;
         }
         writeln!(writer, "];")?;
         Ok(())
@@ -147,7 +148,8 @@ impl<H> HedgePairWithData<H> {
 
     pub fn identity_dot_fmt<W: std::fmt::Write>(
         writer: &mut W,
-        edge_id: Hedge,
+        edge_id: EdgeIndex,
+        hedge: Hedge,
         hedge_label: Option<String>,
         source: NodeIndex,
         attr: Option<&GVEdgeAttrs>,
@@ -155,111 +157,122 @@ impl<H> HedgePairWithData<H> {
         flow: Flow,
     ) -> Result<(), std::fmt::Error> {
         //we interpret this node as the hidden one. so the flow is reversed.
-        match flow {
+        let estr = match flow {
             Flow::Sink => {
-                writeln!(writer, "ext{edge_id} [shape=none, label=\"\" flow=source];",)?;
+                write!(writer, "\next{}\t [style=invis];", edge_id.0)?;
+                format!("ext{}\t-> {source}:{hedge}", edge_id.0)
             }
             Flow::Source => {
-                writeln!(writer, "ext{edge_id} [shape=none, label=\"\" flow=sink];")?;
+                write!(writer, "\next{}\t [style=invis];", edge_id.0)?;
+                format!("{source}:{hedge}\t-> ext{}", edge_id.0)
             }
-        }
+        };
 
-        write!(writer, "  ext{edge_id} -> {source}[")?;
-        match (orientation, flow) {
-            (Orientation::Default, Flow::Source) => {
-                write!(writer, "dir=back ")?;
+        write!(
+            writer,
+            "\n{estr}\t [id={}{}{}{}];",
+            edge_id.0,
+            match orientation {
+                Orientation::Reversed => " dir=back",
+                Orientation::Undirected => " dir=none",
+                _ => "",
+            },
+            if let Some(hedge_label) = hedge_label {
+                match flow {
+                    Flow::Sink => format!(" source={hedge_label}"),
+                    Flow::Source => format!(" sink={hedge_label}"),
+                }
+            } else {
+                "".to_string()
+            },
+            if let Some(attr) = attr {
+                format!(" {attr}")
+            } else {
+                "".to_string()
             }
-            (Orientation::Default, Flow::Sink) => {
-                write!(writer, "dir=forward ")?;
-            }
-            (Orientation::Reversed, Flow::Sink) => {
-                write!(writer, "dir=back ")?;
-            }
-            (Orientation::Reversed, Flow::Source) => {
-                write!(writer, "dir=forward ")?;
-            }
-            (Orientation::Undirected, _) => {
-                write!(writer, "dir=none ")?;
-            }
-        }
-        if let Some(hedge_label) = hedge_label {
-            match flow {
-                Flow::Sink => write!(writer, "source={hedge_label} ")?,
-                Flow::Source => write!(writer, "sink={hedge_label} ")?,
-            }
-        }
-        if let Some(attr) = attr {
-            write!(writer, "{attr}")?;
-        }
-        writeln!(writer, "];")?;
-        Ok(())
+        )
     }
 
     pub fn pair_dot_fmt<W: std::fmt::Write>(
         writer: &mut W,
-        source: HedgeData<Option<String>>,
-        sink: HedgeData<Option<String>>,
+        eid: EdgeIndex,
+        source: Hedge,
+        sink: Hedge,
+        source_data: HedgeData<Option<String>>,
+        sink_data: HedgeData<Option<String>>,
         attr: Option<&GVEdgeAttrs>,
         orientation: Orientation,
     ) -> Result<(), std::fmt::Error> {
-        write!(writer, "{} -> {}[", source.node, sink.node)?;
-        match orientation {
-            Orientation::Default => {
-                write!(writer, " dir=forward ")?;
+        write!(
+            writer,
+            "\n{}:{}\t-> {}:{}\t [id={}{}{}{} {}];",
+            source_data.node,
+            source,
+            sink_data.node,
+            sink,
+            eid.0,
+            match orientation {
+                Orientation::Reversed => " dir=back",
+                Orientation::Undirected => " dir=none",
+                _ => "",
+            },
+            if let Some(source_label) = source_data.data {
+                format!(" source={source_label}")
+            } else {
+                "".to_string()
+            },
+            if let Some(sink_label) = sink_data.data {
+                format!(" sink={sink_label}")
+            } else {
+                "".to_string()
+            },
+            if let Some(attr) = attr {
+                attr.to_string()
+            } else {
+                "color=\"red:blue;0.5\"".to_string()
             }
-            Orientation::Reversed => {
-                write!(writer, " dir=back ")?;
-            }
-            Orientation::Undirected => {
-                write!(writer, " dir=none ")?;
-            }
-        }
-        if let Some(source_label) = source.data {
-            write!(writer, " source={source_label} ")?;
-        }
-        if let Some(sink_label) = sink.data {
-            write!(writer, " sink={sink_label} ")?;
-        }
-
-        if let Some(attr) = attr {
-            writeln!(writer, "{attr}];")?;
-        } else {
-            writeln!(writer, " color=\"red:blue;0.5 \" ];")?;
-        }
-        Ok(())
+        )
     }
 
     pub fn pair_dot_io<W: std::io::Write>(
         writer: &mut W,
-        source: HedgeData<Option<String>>,
-        sink: HedgeData<Option<String>>,
+        eid: EdgeIndex,
+        source: Hedge,
+        sink: Hedge,
+        source_data: HedgeData<Option<String>>,
+        sink_data: HedgeData<Option<String>>,
         attr: Option<&GVEdgeAttrs>,
         orientation: Orientation,
     ) -> Result<(), std::io::Error> {
-        write!(writer, "{} -> {}[", source.node, sink.node)?;
-        match orientation {
-            Orientation::Default => {
-                write!(writer, " dir=forward ")?;
+        write!(
+            writer,
+            "\n{}:{}\t-> {}:{}\t [id={}{}{}{} {}];",
+            source_data.node,
+            source,
+            sink_data.node,
+            sink,
+            eid.0,
+            match orientation {
+                Orientation::Reversed => " dir=back",
+                Orientation::Undirected => " dir=none",
+                _ => "",
+            },
+            if let Some(source_label) = source_data.data {
+                format!(" source={source_label}")
+            } else {
+                "".to_string()
+            },
+            if let Some(sink_label) = sink_data.data {
+                format!(" sink={sink_label}")
+            } else {
+                "".to_string()
+            },
+            if let Some(attr) = attr {
+                attr.to_string()
+            } else {
+                " color=\"red:blue;0.5\"".to_string()
             }
-            Orientation::Reversed => {
-                write!(writer, " dir=back ")?;
-            }
-            Orientation::Undirected => {
-                write!(writer, " dir=none ")?;
-            }
-        }
-        if let Some(source_label) = source.data {
-            write!(writer, " source=\"{source_label}\" ")?;
-        }
-        if let Some(sink_label) = sink.data {
-            write!(writer, " sink=\"{sink_label}\" ")?;
-        }
-        if let Some(attr) = attr {
-            writeln!(writer, "{attr}];")?;
-        } else {
-            writeln!(writer, " color=\"red:blue;0.5 \" ];")?;
-        }
-        Ok(())
+        )
     }
 }
 impl<H> HedgePairWithData<&H> {
@@ -267,6 +280,7 @@ impl<H> HedgePairWithData<&H> {
         &self,
         writer: &mut W,
         graph: &HedgeGraph<E, V, H, N>,
+        eid: EdgeIndex,
         labeler: impl Fn(&H) -> Option<String>,
         orientation: Orientation,
         attr: GVEdgeAttrs,
@@ -274,6 +288,7 @@ impl<H> HedgePairWithData<&H> {
         match self {
             HedgePairWithData::Unpaired { hedge, flow, data } => Self::identity_dot_fmt(
                 writer,
+                eid,
                 *hedge,
                 labeler(data),
                 graph.node_id(*hedge),
@@ -288,6 +303,9 @@ impl<H> HedgePairWithData<&H> {
                 source_data,
             } => Self::pair_dot_fmt(
                 writer,
+                eid,
+                *source,
+                *sink,
                 graph.node_id(*source).add_data(labeler(source_data)),
                 graph.node_id(*sink).add_data(labeler(sink_data)),
                 Some(&attr),
@@ -301,6 +319,9 @@ impl<H> HedgePairWithData<&H> {
                 ..
             } => Self::pair_dot_fmt(
                 writer,
+                eid,
+                *source,
+                *sink,
                 graph.node_id(*source).add_data(labeler(source_data)),
                 graph.node_id(*sink).add_data(labeler(sink_data)),
                 Some(&attr),
@@ -313,6 +334,7 @@ impl<H> HedgePairWithData<&H> {
         &self,
         writer: &mut W,
         graph: &HedgeGraph<E, V, H, N>,
+        eid: EdgeIndex,
         labeler: impl Fn(&H) -> Option<String>,
         orientation: Orientation,
         attr: GVEdgeAttrs,
@@ -320,6 +342,7 @@ impl<H> HedgePairWithData<&H> {
         match self {
             HedgePairWithData::Unpaired { hedge, flow, data } => Self::identity_dot_io(
                 writer,
+                eid,
                 *hedge,
                 labeler(data),
                 graph.node_id(*hedge),
@@ -334,6 +357,9 @@ impl<H> HedgePairWithData<&H> {
                 source_data,
             } => Self::pair_dot_io(
                 writer,
+                eid,
+                *source,
+                *sink,
                 graph.node_id(*source).add_data(labeler(source_data)),
                 graph.node_id(*sink).add_data(labeler(sink_data)),
                 Some(&attr),
@@ -347,6 +373,9 @@ impl<H> HedgePairWithData<&H> {
                 ..
             } => Self::pair_dot_io(
                 writer,
+                eid,
+                *source,
+                *sink,
                 graph.node_id(*source).add_data(labeler(source_data)),
                 graph.node_id(*sink).add_data(labeler(sink_data)),
                 Some(&attr),
@@ -1820,11 +1849,16 @@ impl<E> Involution<E> {
 
     ///Invalidates Subgraphs
     pub fn swap(&mut self, a: Hedge, b: Hedge) {
-        if !self.is_identity(a) {
-            self.set_inv(self.inv(a), b).unwrap();
+        // Determine if the pointer to them needs to be modified
+        // Need to do this before set inv otherwise you get into an invalid state
+        let inva = self.inv(a);
+        let invb = self.inv(b);
+
+        if inva != a {
+            self.set_inv(inva, b).unwrap();
         }
-        if !self.is_identity(b) {
-            self.set_inv(self.inv(b), a).unwrap();
+        if invb != b {
+            self.set_inv(invb, a).unwrap();
         }
         self.inv.swap(a.0, b.0);
     }

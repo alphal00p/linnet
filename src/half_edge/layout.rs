@@ -261,18 +261,23 @@ impl FancySettings {
 
 impl<E, V, H> PositionalHedgeGraph<E, V, H> {
     pub fn to_fancy(&mut self, settings: &FancySettings) {
-        self.edge_store.data.iter_mut().for_each(|(e, p)| match p {
-            HedgePair::Paired { source, sink } => {
-                let source_pos = self.node_store.node_data[self.node_store.hedge_data[*source]].pos;
-                let sink_pos = self.node_store.node_data[self.node_store.hedge_data[*sink]].pos;
-                e.to_fancy(source_pos, Some(sink_pos), Flow::Source, settings);
-            }
-            HedgePair::Unpaired { hedge, flow } => {
-                let source_pos = self.node_store.node_data[self.node_store.hedge_data[*hedge]].pos;
-                e.to_fancy(source_pos, None, *flow, settings);
-            }
-            _ => {}
-        });
+        self.edge_store
+            .data
+            .iter_mut()
+            .for_each(|(_, (e, p))| match p {
+                HedgePair::Paired { source, sink } => {
+                    let source_pos =
+                        self.node_store.node_data[self.node_store.hedge_data[*source]].pos;
+                    let sink_pos = self.node_store.node_data[self.node_store.hedge_data[*sink]].pos;
+                    e.to_fancy(source_pos, Some(sink_pos), Flow::Source, settings);
+                }
+                HedgePair::Unpaired { hedge, flow } => {
+                    let source_pos =
+                        self.node_store.node_data[self.node_store.hedge_data[*hedge]].pos;
+                    e.to_fancy(source_pos, None, *flow, settings);
+                }
+                _ => {}
+            });
     }
 
     fn cetz_preamble() -> String {

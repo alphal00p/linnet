@@ -47,11 +47,12 @@ thiserror = "2.0.11"
 derive_more = "0.99.17"
 proptest = "1.6.0"
 # hibit_tree = "0.1.0-alpha.3"
-dot-parser = "0.4.2"
+dot-parser = "0.5.1"
 similar-asserts = "1.7.0"
 kurbo = "0.11.1"
 piet = "0.7.0"
 bincode-trait-derive = "0.1.1"
+indenter = { version = "0.3.3", features = ["std"] }
 
 [features]
 serde = ["dep:serde", "bitvec/serde"]

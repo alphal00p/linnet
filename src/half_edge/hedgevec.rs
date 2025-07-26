@@ -1,6 +1,6 @@
 use std::ops::{Index, IndexMut, Neg};
 
-use bitvec::{ptr::Mut, vec::BitVec};
+use bitvec::vec::BitVec;
 
 use crate::permutation::Permutation;
 
@@ -11,7 +11,7 @@ use super::{
     },
     subgraph::SubGraph,
     swap::Swap,
-    HedgeGraph, HedgeGraphError, NodeIndex, NodeStorage,
+    HedgeGraph, HedgeGraphError, NodeStorage,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -35,7 +35,7 @@ pub struct SmartEdgeVec<T> {
     /// and the [`HedgePair`] that describes the topological state of the edge
     /// (e.g., paired, unpaired, split). The index into this vector serves as
     /// an `EdgeIndex`.
-    pub(super) data: Vec<(T, HedgePair)>,
+    pub(super) data: EdgeVec<(T, HedgePair)>,
     /// The [`Involution`] structure that manages the topological relationships of half-edges.
     /// In this context, the `Involution` stores `EdgeIndex` as its data, pointing back
     /// to the `data` vector of this `SmartHedgeVec`.
@@ -156,7 +156,7 @@ impl<T> Accessors<HedgePair> for SmartEdgeVec<T> {
 
 impl<T> SmartEdgeVec<T> {
     pub fn new(involution: Involution<T>) -> Self {
-        let mut data = Vec::new();
+        let mut data = EdgeVec::new();
 
         let involution = involution.map_full(|a, d| {
             let new_data = d;
@@ -167,11 +167,15 @@ impl<T> SmartEdgeVec<T> {
         SmartEdgeVec { data, involution }
     }
 
-    pub(crate) fn fix_hedge_pairs(&mut self) {
+    pub(crate) fn fix_hedge_pairs(&mut self) -> bool {
+        let mut had_to_fix = false;
         for (i, d) in self.involution.iter_edge_data() {
             let hedge_pair = self.involution.hedge_pair(i);
-            self.data[d.data.0].1 = hedge_pair;
+            had_to_fix |= hedge_pair != self.data[d.data].1;
+
+            self.data[d.data].1 = hedge_pair;
         }
+        had_to_fix
     }
 
     pub fn n_dangling(&self) -> usize {
@@ -186,9 +190,9 @@ impl<T> SmartEdgeVec<T> {
         &self,
         f: &F,
     ) -> SmartEdgeVec<T2> {
-        let mut data = Vec::new();
+        let mut data = EdgeVec::new();
         let involution = self.involution.clone().map_full(|a, d| {
-            let d = d.map(|i| &self.data[i.0].0);
+            let d = d.map(|i| &self.data[i].0);
             let new_data = f(a, d);
             let edgeid = EdgeIndex(data.len());
             data.push((new_data.data, a));
@@ -204,8 +208,7 @@ impl<T> SmartEdgeVec<T> {
     ) -> EdgeVec<T2> {
         self.data
             .iter()
-            .enumerate()
-            .map(|(i, (e, pair))| f(e, EdgeIndex(i), pair))
+            .map(|(i, (e, pair))| f(e, i, pair))
             .collect()
     }
 
@@ -237,13 +240,12 @@ impl<T> SmartEdgeVec<T> {
             data: self
                 .data
                 .into_iter()
-                .enumerate()
                 .map(|(i, (e, h))| {
                     let new_data = edge_map(
                         &involution,
                         node_store,
                         h,
-                        EdgeIndex::from(i),
+                        i,
                         EdgeData::new(e, involution.orientation(h.any_hedge())),
                     );
 
@@ -270,13 +272,12 @@ impl<T> SmartEdgeVec<T> {
             data: self
                 .data
                 .into_iter()
-                .enumerate()
                 .map(|(i, (e, h))| {
                     let new_data = edge_map(
                         &involution,
                         node_store,
                         h,
-                        EdgeIndex::from(i),
+                        i,
                         EdgeData::new(e, involution.orientation(h.any_hedge())),
                     );
 
@@ -289,7 +290,7 @@ impl<T> SmartEdgeVec<T> {
                         Err(e) => Err(e),
                     }
                 })
-                .collect::<Result<Vec<_>, Err>>()?,
+                .collect::<Result<EdgeVec<_>, Err>>()?,
             involution,
         })
     }
@@ -309,11 +310,10 @@ impl<T> SmartEdgeVec<T> {
             data: self
                 .data
                 .iter()
-                .enumerate()
                 .map(|(i, (e, h))| {
                     let new_edgedata = edge_map(
                         graph,
-                        EdgeIndex(i),
+                        i,
                         *h,
                         EdgeData::new(e, self.orientation(h.any_hedge())),
                     );
@@ -335,10 +335,9 @@ impl<T> SmartEdgeVec<T> {
             data: self
                 .data
                 .iter_mut()
-                .enumerate()
                 .map(|(i, (e, h))| {
                     let new_edgedata = edge_map(
-                        EdgeIndex(i),
+                        i,
                         *h,
                         EdgeData::new(e, self.involution.orientation(h.any_hedge())),
                     );
@@ -362,14 +361,13 @@ impl<T> SmartEdgeVec<T> {
         ) -> Result<EdgeData<T2>, Er>,
     ) -> Result<SmartEdgeVec<T2>, Er> {
         let mut involution = self.involution.clone();
-        let data: Result<Vec<_>, Er> = self
+        let data: Result<EdgeVec<_>, Er> = self
             .data
             .iter()
-            .enumerate()
             .map(|(i, (e, h))| {
                 let new_edgedata = edge_map(
                     graph,
-                    EdgeIndex(i),
+                    i,
                     *h,
                     EdgeData::new(e, self.orientation(h.any_hedge())),
                 );
@@ -449,30 +447,30 @@ impl<T> SmartEdgeVec<T> {
         let g = self;
         let source_edge_id = g.involution[source];
         let sink_edge_id = g.involution[sink];
-        let last = g.data.len().checked_sub(1).unwrap();
-        let second_last = g.data.len().checked_sub(2).unwrap();
+        let last = EdgeIndex(g.data.len().checked_sub(1).unwrap());
+        let second_last = EdgeIndex(g.data.len().checked_sub(2).unwrap());
 
         let mut remaps: [Option<(EdgeIndex, EdgeIndex)>; 2] = [None, None];
 
         // If sink_edge_id.0 is already the last, swap it to second-last first.
-        if sink_edge_id.0 == last {
-            g.data.swap(sink_edge_id.0, second_last); // swap last and second last
+        if sink_edge_id == last {
+            g.data.swap(sink_edge_id, second_last); // swap last and second last
 
-            if source_edge_id.0 != second_last {
-                g.data.swap(source_edge_id.0, last);
+            if source_edge_id != second_last {
+                g.data.swap(source_edge_id, last);
 
                 // now we need to remap any pointers to second_last, to source_edge_id
-                remaps[0] = Some((EdgeIndex(second_last), source_edge_id));
+                remaps[0] = Some((second_last, source_edge_id));
             }
         } else {
-            g.data.swap(source_edge_id.0, last);
-            g.data.swap(sink_edge_id.0, second_last);
+            g.data.swap(source_edge_id, last);
+            g.data.swap(sink_edge_id, second_last);
 
-            if source_edge_id.0 == second_last {
-                remaps[0] = Some((EdgeIndex(last), sink_edge_id));
+            if source_edge_id == second_last {
+                remaps[0] = Some((last, sink_edge_id));
             } else {
-                remaps[0] = Some((EdgeIndex(last), source_edge_id));
-                remaps[1] = Some((EdgeIndex(second_last), sink_edge_id));
+                remaps[0] = Some((last, source_edge_id));
+                remaps[1] = Some((second_last, sink_edge_id));
             }
         }
 
@@ -557,9 +555,9 @@ impl<T> SmartEdgeVec<T> {
                         {
                             if matching_fn(
                                 *underlyings,
-                                datas.as_ref().map(|a| &g.data[a.0].0),
+                                datas.as_ref().map(|a| &g.data[*a].0),
                                 *underlying,
-                                data.as_ref().map(|a| &g.data[a.0].0),
+                                data.as_ref().map(|a| &g.data[*a].0),
                             ) {
                                 matching_ids = Some((i, j));
                                 break;
@@ -606,7 +604,7 @@ impl<T> SmartEdgeVec<T> {
                 };
 
                 // println!("Split:{i}");
-                self.data[self.involution[Hedge(i)].0].1 = HedgePair::Unpaired {
+                self.data[self.involution[Hedge(i)]].1 = HedgePair::Unpaired {
                     hedge: Hedge(i),
                     flow,
                 };
@@ -620,24 +618,24 @@ impl<T> SmartEdgeVec<T> {
 
         // The self involution is good and valid, but we now need to split the data carrying vec.
 
-        let mut split_at = 0;
+        let mut split_at = EdgeIndex(0);
 
-        let mut extracted = self.edge_len();
+        let mut extracted = EdgeIndex(self.edge_len());
 
         while split_at < extracted {
             if self.data[split_at].1.any_hedge() < left {
                 //left is in the right place
-                split_at += 1;
+                split_at.0 += 1;
             } else {
                 //left needs to be swapped
-                extracted -= 1;
+                extracted.0 -= 1;
                 if self.data[extracted].1.any_hedge() < left {
                     // println!("{extracted}<=>{split_at}");
                     //only with an extracted that is in the wrong spot
-                    self.swap(EdgeIndex(split_at), EdgeIndex(extracted));
+                    self.swap(split_at, extracted);
                     // println!("{}", self.involution.display());
 
-                    split_at += 1;
+                    split_at.0 += 1;
                 }
             }
         }
@@ -655,12 +653,12 @@ impl<T> SmartEdgeVec<T> {
         mut split_edge_fn: impl FnMut(EdgeData<&T>) -> EdgeData<O>,
         mut internal_data: impl FnMut(EdgeData<T>) -> EdgeData<O>,
     ) -> SmartEdgeVec<O> {
-        let mut new_id_data = vec![];
+        let mut new_id_data: EdgeVec<_> = vec![].into();
         let mut extracted = self.involution.extract(
             graph,
             |a| {
                 let new_id = -(1 + new_id_data.len() as i64);
-                let new_data = split_edge_fn(EdgeData::new(&self.data[a.data.0].0, a.orientation));
+                let new_data = split_edge_fn(EdgeData::new(&self.data[*a.data].0, a.orientation));
                 new_id_data.push((
                     new_data.data,
                     HedgePair::Unpaired {
@@ -675,15 +673,15 @@ impl<T> SmartEdgeVec<T> {
 
         // The self involution is good and valid, but we now need to split the data carrying vec.
 
-        let mut split_at = 0;
+        let mut split_at = EdgeIndex(0);
         let mut other_len = 0;
         let data_pos: Vec<_> = self
             .involution
             .iter_edge_data_mut()
             .map(|data| {
                 let old_data = data.data.0;
-                data.data.0 = split_at;
-                split_at += 1;
+                data.data = split_at;
+                split_at.0 += 1;
                 old_data
             })
             .chain(extracted.iter_edge_data_mut().filter_map(|i| {
@@ -704,10 +702,10 @@ impl<T> SmartEdgeVec<T> {
             .data
             .split_off(split_at)
             .into_iter()
-            .map(|(d, _)| Some(d))
+            .map(|(_, (d, _))| Some(d))
             .collect();
         let shift = new_data.len();
-        let mut new_data_mapped = vec![];
+        let mut new_data_mapped: EdgeVec<(O, HedgePair)> = vec![].into();
 
         extracted.iter_edge_data_mut().for_each(|d| {
             if d.data >= 0 {
@@ -734,7 +732,7 @@ impl<T> SmartEdgeVec<T> {
         for (i, d) in new_inv.iter_edge_data() {
             let hedge_pair = new_inv.hedge_pair(i);
             // println!("{}", d.data.0);
-            new_data_mapped[d.data.0].1 = hedge_pair;
+            new_data_mapped[d.data].1 = hedge_pair;
         }
         self.fix_hedge_pairs();
         SmartEdgeVec {
@@ -796,9 +794,9 @@ impl<T> SmartEdgeVec<T> {
                         {
                             if matching_fn(
                                 *underlyings,
-                                datas.as_ref().map(|a| &self.data[a.0].0),
+                                datas.as_ref().map(|a| &self.data[*a].0),
                                 *underlying,
-                                data.as_ref().map(|a| &self.data[a.0].0),
+                                data.as_ref().map(|a| &self.data[*a].0),
                             ) {
                                 matching_ids = Some((i, j));
                                 break;
@@ -890,9 +888,9 @@ impl<T> SmartEdgeVec<T> {
                         {
                             if matching_fn(
                                 *underlyings,
-                                datas.as_ref().map(|a| &g.data[a.0].0),
+                                datas.as_ref().map(|a| &g.data[*a].0),
                                 *underlying,
-                                data.as_ref().map(|a| &g.data[a.0].0),
+                                data.as_ref().map(|a| &g.data[*a].0),
                             ) {
                                 matching_ids = Some((i, j));
                                 break;
@@ -1029,7 +1027,7 @@ impl<T> SmartEdgeVec<T> {
         involution: &Involution<E>,
         f: &impl Fn(HedgePair, EdgeData<&E>) -> EdgeData<T>,
     ) -> Self {
-        let mut data = Vec::new();
+        let mut data = EdgeVec::new();
 
         let involution = involution.as_ref().map_full(|a, d| {
             let new_data = f(a, d);
@@ -1044,28 +1042,28 @@ impl<T> SmartEdgeVec<T> {
 impl<T> IntoIterator for SmartEdgeVec<T> {
     type Item = (EdgeIndex, T, HedgePair);
     type IntoIter = std::iter::Map<
-        std::iter::Enumerate<std::vec::IntoIter<(T, HedgePair)>>,
-        fn((usize, (T, HedgePair))) -> (EdgeIndex, T, HedgePair),
+        std::iter::Map<
+            std::iter::Enumerate<std::vec::IntoIter<(T, HedgePair)>>,
+            fn((usize, (T, HedgePair))) -> (EdgeIndex, (T, HedgePair)),
+        >,
+        fn((EdgeIndex, (T, HedgePair))) -> (EdgeIndex, T, HedgePair),
     >;
     fn into_iter(self) -> Self::IntoIter {
-        self.data
-            .into_iter()
-            .enumerate()
-            .map(|(u, t)| (EdgeIndex(u), t.0, t.1))
+        self.data.into_iter().map(|(u, t)| (u, t.0, t.1))
     }
 }
 
 impl<'a, T> IntoIterator for &'a SmartEdgeVec<T> {
     type Item = (EdgeIndex, &'a T, HedgePair);
     type IntoIter = std::iter::Map<
-        std::iter::Enumerate<std::slice::Iter<'a, (T, HedgePair)>>,
-        fn((usize, &(T, HedgePair))) -> (EdgeIndex, &T, HedgePair),
+        std::iter::Map<
+            std::iter::Enumerate<std::slice::Iter<'a, (T, HedgePair)>>,
+            fn((usize, &'a (T, HedgePair))) -> (EdgeIndex, &'a (T, HedgePair)),
+        >,
+        fn((EdgeIndex, &'a (T, HedgePair))) -> (EdgeIndex, &'a T, HedgePair),
     >;
     fn into_iter(self) -> Self::IntoIter {
-        self.data
-            .iter()
-            .enumerate()
-            .map(|(u, t)| (EdgeIndex(u), &t.0, t.1))
+        self.data.iter().map(|(u, t)| (u, &t.0, t.1))
     }
 }
 
@@ -1077,26 +1075,26 @@ impl<'a, T> IntoIterator for &'a SmartEdgeVec<T> {
 
 impl<T> IndexMut<EdgeIndex> for SmartEdgeVec<T> {
     fn index_mut(&mut self, index: EdgeIndex) -> &mut Self::Output {
-        &mut self.data[index.0].0
+        &mut self.data[index].0
     }
 }
 impl<T> Index<EdgeIndex> for SmartEdgeVec<T> {
     type Output = T;
     fn index(&self, index: EdgeIndex) -> &Self::Output {
-        &self.data[index.0].0
+        &self.data[index].0
     }
 }
 
 impl<T> Index<&EdgeIndex> for SmartEdgeVec<T> {
     type Output = (T, HedgePair);
     fn index(&self, index: &EdgeIndex) -> &Self::Output {
-        &self.data[index.0]
+        &self.data[*index]
     }
 }
 
 impl<T> IndexMut<&EdgeIndex> for SmartEdgeVec<T> {
     fn index_mut(&mut self, index: &EdgeIndex) -> &mut Self::Output {
-        &mut self.data[index.0]
+        &mut self.data[*index]
     }
 }
 
@@ -1125,63 +1123,57 @@ impl<T> Index<&Hedge> for SmartEdgeVec<T> {
 impl<T> Swap<Hedge> for SmartEdgeVec<T> {
     fn swap(&mut self, e1: Hedge, e2: Hedge) {
         if e1 != e2 {
-            if e1 == self.inv(e1) {
-                match &mut self.data[self.involution[e1].0].1 {
-                    HedgePair::Paired { source, sink } => {
+            if e2 == self.inv(e1) {
+                //Swaping along the same edge
+                debug_assert_eq!(self.involution[e1], self.involution[e2]);
+                match &mut self.data[self.involution[e1]].1 {
+                    HedgePair::Paired { source, sink } | HedgePair::Split { source, sink, .. } => {
                         std::mem::swap(source, sink);
                     }
-                    HedgePair::Split { source, sink, .. } => {
-                        std::mem::swap(source, sink);
-                    }
-                    _ => {}
+                    _ => panic!("Should not be dangling"),
                 };
             } else {
-                match &mut self.data[self.involution[e1].0].1 {
+                // println!("swapping different hedges");
+                match &mut self.data[self.involution[e1]].1 {
                     HedgePair::Split { source, sink, .. } | HedgePair::Paired { source, sink } => {
+                        // println!("paired e1");
                         if *source == e1 {
-                            *source = e1;
-                        } else if *source == e2 {
                             *source = e2;
                         }
                         if *sink == e1 {
-                            *sink = e1;
-                        } else if *sink == e2 {
                             *sink = e2;
                         }
                     }
                     HedgePair::Unpaired { hedge, .. } => {
+                        // println!("dangling e1");
                         if *hedge == e1 {
-                            *hedge = e1;
-                        } else if *hedge == e2 {
                             *hedge = e2;
+                        } else {
+                            panic!("Involution and edge set not in sink for {e1}")
                         }
                     }
                 };
 
-                match &mut self.data[self.involution[e2].0].1 {
+                match &mut self.data[self.involution[e2]].1 {
                     HedgePair::Split { source, sink, .. } | HedgePair::Paired { source, sink } => {
-                        if *source == e1 {
+                        if *source == e2 {
                             *source = e1;
-                        } else if *source == e2 {
-                            *source = e2;
                         }
-                        if *sink == e1 {
+                        if *sink == e2 {
                             *sink = e1;
-                        } else if *sink == e2 {
-                            *sink = e2;
                         }
                     }
                     HedgePair::Unpaired { hedge, .. } => {
-                        if *hedge == e1 {
+                        if *hedge == e2 {
                             *hedge = e1;
-                        } else if *hedge == e2 {
-                            *hedge = e2;
+                        } else {
+                            panic!("Involution and edge set not in sink for {e2}")
                         }
                     }
                 };
             }
             self.involution.swap(e1, e2);
-            self.fix_hedge_pairs();
+            // debug_assert!(self.fix_hedge_pairs());
         }
     }
 }
@@ -1191,17 +1183,18 @@ impl<T> Swap<EdgeIndex> for SmartEdgeVec<T> {
         if e1 != e2 {
             let a = &mut self
                 .involution
-                .edge_data_mut(self.data[e1.0].1.any_hedge())
+                .edge_data_mut(self.data[e1].1.any_hedge())
                 .data;
 
             // println!("{a}{e1}");
-            *a = e1;
+            *a = e2;
 
             // = e1;
             self.involution
-                .edge_data_mut(self.data[e2.0].1.any_hedge())
+                .edge_data_mut(self.data[e2].1.any_hedge())
                 .data = e1;
-            self.data.swap(e1.0, e2.0);
+
+            self.data.swap(e1, e2);
         }
     }
 }

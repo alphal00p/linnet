@@ -3,19 +3,20 @@ source: src/half_edge/tests.rs
 expression: graph.base_dot()
 ---
 digraph {
-  node [shape=circle,height=0.1,label=""];  overlap="scale"; layout="neato";
-start=2;
-
-  0 -> 1[ dir=none color="red:blue;0.5"];
-  1 -> 0[ dir=none color="red:blue;0.5"];
-  0 -> 1[ dir=none color="red:blue;0.5"];
-  ext6 [shape=none, label="" flow=source];
-  ext6 -> 0[dir=none color="blue"];
-  ext7 [shape=none, label="" flow=source];
-  ext7 -> 1[dir=none color="blue"];
-  ext8 [shape=none, label="" flow=source];
-  ext8 -> 1[dir=none color="blue"];
-  1 -> 2[ dir=none color="red:blue;0.5"];
-  2 -> 3[ dir=none color="red:blue;0.5"];
-  3 -> 0[ dir=none color="red:blue;0.5"];
+  node	 [shape=circle,height=0.1,label=""];
+  overlap = "scale";
+  layout = "neato";
+  start=2;
+  0:0	-> 1:1	 [id=0 dir=none color="red:blue;0.5"];
+  1:2	-> 0:3	 [id=1 dir=none color="red:blue;0.5"];
+  0:4	-> 1:5	 [id=2 dir=none color="red:blue;0.5"];
+  ext3	 [style=invis];
+  ext3	-> 0:6	 [id=3 dir=none color="blue"];
+  ext4	 [style=invis];
+  ext4	-> 1:7	 [id=4 dir=none color="blue"];
+  ext5	 [style=invis];
+  ext5	-> 1:8	 [id=5 dir=none color="blue"];
+  1:9	-> 2:10	 [id=6 dir=none color="red:blue;0.5"];
+  2:11	-> 3:12	 [id=7 dir=none color="red:blue;0.5"];
+  3:13	-> 0:14	 [id=8 dir=none color="red:blue;0.5"];
 }

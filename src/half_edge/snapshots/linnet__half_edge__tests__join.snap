@@ -3,17 +3,18 @@ source: src/half_edge/tests.rs
 expression: c.dot_display(&c.full_filter())
 ---
 digraph {
-  node [shape=circle,height=0.1,label=""];  overlap="scale"; layout="neato";
-start=2;
-
-  0 [a];
-  1 [a];
-  2 [b];
-  3 [b];
-  0 -> 1[ dir=forward color="red:blue;0.5",ie];
-  1 -> 0[ dir=forward color="red:blue;0.5",ie];
-  1 -> 2[ dir=forward color="red:blue;0.5",esource];
-  2 -> 3[ dir=forward color="red:blue;0.5",if];
-  3 -> 2[ dir=forward color="red:blue;0.5",if];
-  3 -> 0[ dir=forward color="red:blue;0.5",esink];
+  node	 [shape=circle,height=0.1,label=""];
+  overlap = "scale";
+  layout = "neato";
+  start=2;
+  0	 [a];
+  1	 [a];
+  2	 [b];
+  3	 [b];
+  0:0	-> 1:1	 [id=0 source= sink= color="red:blue;0.5" ie];
+  1:2	-> 0:3	 [id=1 source= sink= color="red:blue;0.5" ie];
+  1:5	-> 2:10	 [id=2 source= sink= color="red:blue;0.5" esource];
+  2:6	-> 3:7	 [id=4 source= sink= color="red:blue;0.5" if];
+  3:8	-> 2:9	 [id=3 source= sink= color="red:blue;0.5" if];
+  3:11	-> 0:4	 [id=5 source= sink= color="red:blue;0.5" esink];
 }

@@ -125,7 +125,7 @@ impl<V> NodeStorageOps for UnionFindNodeStore<V> {
 
     fn new_nodevec<'a, V2>(
         &'a self,
-        node_map: impl FnMut(NodeIndex, Self::NeighborsIter<'a>, &'a Self::NodeData) -> V2,
+        _node_map: impl FnMut(NodeIndex, Self::NeighborsIter<'a>, &'a Self::NodeData) -> V2,
     ) -> NodeVec<V2> {
         todo!()
     }

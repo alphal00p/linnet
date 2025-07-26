@@ -85,7 +85,7 @@ impl<V, P: ForestNodeStore> Swap<Hedge> for Forest<V, P> {
     }
 }
 impl<V, P: ForestNodeStore> Swap<NodeIndex> for Forest<V, P> {
-    fn swap(&mut self, i: NodeIndex, j: NodeIndex) {
+    fn swap(&mut self, _i: NodeIndex, _j: NodeIndex) {
         todo!()
     }
 }
