@@ -358,7 +358,7 @@ pub trait SubGraph:
             if let Some(p) = subgraph_pair {
                 let attr = p.fill_color(attr);
 
-                p.add_data(graph).dot_fmt(
+                p.add_data_of(graph, self).dot_fmt(
                     &mut writer,
                     graph,
                     eid,
@@ -369,7 +369,7 @@ pub trait SubGraph:
             } else {
                 let attr = hedge_pair.fill_color(attr);
 
-                hedge_pair.add_data(graph).dot_fmt(
+                hedge_pair.add_data_of(graph, self).dot_fmt(
                     &mut writer,
                     graph,
                     eid,
@@ -416,11 +416,18 @@ pub trait SubGraph:
             write!(writer, "  ")?;
             if let Some(p) = subgraph_pair {
                 let attr = p.fill_color(attr);
-                p.add_data(graph)
-                    .dot_io(writer, graph, eid, hedge_attr, data.orientation, attr)?;
+
+                p.add_data_of(graph, self).dot_io(
+                    writer,
+                    graph,
+                    eid,
+                    hedge_attr,
+                    data.orientation,
+                    attr,
+                )?;
             } else {
                 let attr = hedge_pair.fill_color(attr);
-                hedge_pair.add_data(graph).dot_io(
+                hedge_pair.add_data_of(graph, self).dot_io(
                     writer,
                     graph,
                     eid,

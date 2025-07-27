@@ -9,6 +9,16 @@ pub struct GlobalData {
     pub node_statements: BTreeMap<String, String>,
 }
 
+impl From<()> for GlobalData {
+    fn from(_: ()) -> Self {
+        GlobalData {
+            statements: BTreeMap::new(),
+            edge_statements: BTreeMap::new(),
+            node_statements: BTreeMap::new(),
+        }
+    }
+}
+
 impl Display for GlobalData {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if !self.statements.is_empty() {

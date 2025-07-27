@@ -64,14 +64,14 @@ pub struct BitVecNeighborIter<'a> {
     /// The underlying iterator over set bits in the `BitVec`.
     iter_ones: IterOnes<'a, usize, Lsb0>,
     /// The total number of possible hedges (size of the `BitVec`), used for `ExactSizeIterator`.
-    len: usize,
+    len: Hedge,
 }
 
 impl<'a> From<&'a BitVec> for BitVecNeighborIter<'a> {
     fn from(value: &'a BitVec) -> Self {
         Self {
             iter_ones: value.iter_ones(),
-            len: value.len(),
+            len: Hedge(value.len()),
         }
     }
 }
@@ -79,14 +79,14 @@ impl<'a> From<&'a BitVec> for BitVecNeighborIter<'a> {
 impl<'a> From<BitVecNeighborIter<'a>> for BitVec {
     fn from(value: BitVecNeighborIter<'a>) -> Self {
         let len = value.len;
-        BitVec::from_hedge_iter(value, len)
+        BitVec::from_hedge_iter(value, len.0)
     }
 }
 
 impl<'a> From<BitVecNeighborIter<'a>> for HedgeNode {
     fn from(value: BitVecNeighborIter<'a>) -> Self {
         HedgeNode {
-            internal_graph: InternalSubGraph::empty(value.len),
+            internal_graph: InternalSubGraph::empty(value.len.0),
             hairs: value.into(),
         }
     }
@@ -101,7 +101,7 @@ impl Iterator for BitVecNeighborIter<'_> {
 
 impl ExactSizeIterator for BitVecNeighborIter<'_> {
     fn len(&self) -> usize {
-        self.len
+        self.len.0
     }
 }
 
@@ -116,18 +116,18 @@ impl<N> NodeStorage for NodeStorageVec<N> {
 }
 
 impl<N> NodeStorageVec<N> {
-    fn swap_nodes(&mut self, a: NodeIndex, b: NodeIndex) {
-        if a != b {
-            for i in self.nodes[a].included_iter() {
-                self.hedge_data[i] = b;
-            }
-            for i in self.nodes[b].included_iter() {
-                self.hedge_data[i] = a;
-            }
-            self.node_data.swap(a, b);
-            self.nodes.swap(a, b);
-        }
-    }
+    // fn swap_nodes(&mut self, a: NodeIndex, b: NodeIndex) {
+    //     if a != b {
+    //         for i in self.nodes[a].included_iter() {
+    //             self.hedge_data[i] = b;
+    //         }
+    //         for i in self.nodes[b].included_iter() {
+    //             self.hedge_data[i] = a;
+    //         }
+    //         self.node_data.swap(a, b);
+    //         self.nodes.swap(a, b);
+    //     }
+    // }
 
     fn from_hairs_and_data(
         node_data: impl Into<NodeVec<N>>,
@@ -156,6 +156,10 @@ impl<N> NodeStorageVec<N> {
 }
 
 impl<N> Swap<Hedge> for NodeStorageVec<N> {
+    fn len(&self) -> Hedge {
+        self.hedge_data.len()
+    }
+
     fn swap(&mut self, a: Hedge, b: Hedge) {
         if a != b {
             let node_a = self.hedge_data[a];
@@ -172,6 +176,10 @@ impl<N> Swap<Hedge> for NodeStorageVec<N> {
 }
 
 impl<N> Swap<NodeIndex> for NodeStorageVec<N> {
+    fn len(&self) -> NodeIndex {
+        self.nodes.len()
+    }
+
     fn swap(&mut self, a: NodeIndex, b: NodeIndex) {
         if a != b {
             for i in self.nodes[a].included_iter() {
@@ -190,13 +198,9 @@ impl<N> NodeStorageOps for NodeStorageVec<N> {
     type OpStorage<A> = Self::Storage<A>;
     type Base = BitVec;
 
-    fn node_len(&self) -> usize {
-        self.nodes.len()
-    }
-
     fn delete<S: SubGraph<Base = Self::Base>>(&mut self, subgraph: &S) {
         let mut left = Hedge(0);
-        let mut extracted = Hedge(self.hedge_data.len());
+        let mut extracted = self.len();
         while left < extracted {
             if !subgraph.includes(&left) {
                 //left is in the right place
@@ -215,7 +219,7 @@ impl<N> NodeStorageOps for NodeStorageVec<N> {
         // println!("left{}", left);
 
         let mut left_nodes = NodeIndex(0);
-        let mut extracted_nodes = NodeIndex(self.node_data.len());
+        let mut extracted_nodes = self.len();
         while left_nodes < extracted_nodes {
             if !self.nodes[left_nodes].has_greater(left) {
                 //left is in the right place
@@ -225,14 +229,14 @@ impl<N> NodeStorageOps for NodeStorageVec<N> {
                 extracted_nodes.0 -= 1;
                 if !self.nodes[extracted_nodes].has_greater(left) {
                     //only with an extracted that is in the wrong spot
-                    self.swap_nodes(left_nodes, extracted_nodes);
+                    self.swap(left_nodes, extracted_nodes);
                     left_nodes.0 += 1;
                 }
             }
         }
 
         let mut overlapping_nodes = left_nodes;
-        let mut non_overlapping_extracted = NodeIndex(self.node_len());
+        let mut non_overlapping_extracted = self.len();
 
         while overlapping_nodes < non_overlapping_extracted {
             if self.nodes[overlapping_nodes].intersects(&(..left)) {
@@ -243,7 +247,7 @@ impl<N> NodeStorageOps for NodeStorageVec<N> {
                 non_overlapping_extracted.0 -= 1;
                 if self.nodes[non_overlapping_extracted].intersects(&(..left)) {
                     //only with an extracted that is in the wrong spot
-                    self.swap_nodes(overlapping_nodes, non_overlapping_extracted);
+                    self.swap(overlapping_nodes, non_overlapping_extracted);
                     overlapping_nodes.0 += 1;
                 }
             }
@@ -271,7 +275,7 @@ impl<N> NodeStorageOps for NodeStorageVec<N> {
         mut owned_node: impl FnMut(Self::NodeData) -> V2,
     ) -> Self::OpStorage<V2> {
         let mut left = Hedge(0);
-        let mut extracted = Hedge(self.hedge_data.len());
+        let mut extracted = self.len();
         while left < extracted {
             if !subgraph.includes(&left) {
                 //left is in the right place
@@ -290,7 +294,7 @@ impl<N> NodeStorageOps for NodeStorageVec<N> {
         // println!("left{}", left);
 
         let mut left_nodes = NodeIndex(0);
-        let mut extracted_nodes = NodeIndex(self.node_data.len());
+        let mut extracted_nodes = self.len();
         while left_nodes < extracted_nodes {
             if !self.nodes[left_nodes].has_greater(left) {
                 //left is in the right place
@@ -300,14 +304,14 @@ impl<N> NodeStorageOps for NodeStorageVec<N> {
                 extracted_nodes.0 -= 1;
                 if !self.nodes[extracted_nodes].has_greater(left) {
                     //only with an extracted that is in the wrong spot
-                    self.swap_nodes(left_nodes, extracted_nodes);
+                    self.swap(left_nodes, extracted_nodes);
                     left_nodes.0 += 1;
                 }
             }
         }
 
         let mut overlapping_nodes = left_nodes;
-        let mut non_overlapping_extracted = NodeIndex(self.node_len());
+        let mut non_overlapping_extracted = self.len();
 
         while overlapping_nodes < non_overlapping_extracted {
             if self.nodes[overlapping_nodes].intersects(&(..left)) {
@@ -318,7 +322,7 @@ impl<N> NodeStorageOps for NodeStorageVec<N> {
                 non_overlapping_extracted.0 -= 1;
                 if self.nodes[non_overlapping_extracted].intersects(&(..left)) {
                     //only with an extracted that is in the wrong spot
-                    self.swap_nodes(overlapping_nodes, non_overlapping_extracted);
+                    self.swap(overlapping_nodes, non_overlapping_extracted);
                     overlapping_nodes.0 += 1;
                 }
             }
@@ -378,8 +382,10 @@ impl<N> NodeStorageOps for NodeStorageVec<N> {
         nodes: &[NodeIndex],
         node_data_merge: Self::NodeData,
     ) -> NodeIndex {
-        let mut removed = BitVec::empty(self.nodes.len());
-        let mut full_node = BitVec::empty(self.hedge_len());
+        let n_nodes: NodeIndex = self.len();
+        let n_hedgs: Hedge = self.len();
+        let mut removed = BitVec::empty(n_nodes.0);
+        let mut full_node = BitVec::empty(n_hedgs.0);
 
         for n in nodes {
             removed.set(n.0, true);
@@ -424,18 +430,20 @@ impl<N> NodeStorageOps for NodeStorageVec<N> {
     }
 
     fn forget_identification_history(&mut self) -> NodeVec<Self::NodeData> {
-        let mut to_keep = BitVec::empty(self.nodes.len());
+        let n_nodes: NodeIndex = self.len();
+        let mut to_keep = BitVec::empty(n_nodes.0);
 
         for (_, h) in &self.hedge_data {
             to_keep.add(Hedge(h.0));
         }
 
         for n in to_keep.iter_zeros() {
-            self.nodes[NodeIndex(n)] = BitVec::empty(self.hedge_len());
+            let n_hedges: Hedge = self.len();
+            self.nodes[NodeIndex(n)] = BitVec::empty(n_hedges.0);
         }
 
         let mut left_nodes = NodeIndex(0);
-        let mut extracted_nodes = NodeIndex(self.node_data.len());
+        let mut extracted_nodes = n_nodes;
         while left_nodes < extracted_nodes {
             if to_keep[left_nodes.0] {
                 //left is in the right place
@@ -445,7 +453,7 @@ impl<N> NodeStorageOps for NodeStorageVec<N> {
                 extracted_nodes.0 -= 1;
                 if to_keep[extracted_nodes.0] {
                     //only with an extracted that is in the wrong spot
-                    self.swap_nodes(left_nodes, extracted_nodes);
+                    self.swap(left_nodes, extracted_nodes);
                     // self.nodes.swap(left_nodes.0, extracted_nodes.0);
                     left_nodes.0 += 1;
                 }
@@ -460,9 +468,8 @@ impl<N> NodeStorageOps for NodeStorageVec<N> {
         &self,
         map_data: impl Fn(&Self::NodeData) -> U,
     ) -> Forest<U, ParentPointerStore<H>> {
-        let mut nodes: Vec<_> = std::iter::repeat_with(|| None)
-            .take(self.hedge_len())
-            .collect();
+        let n_hedges: Hedge = self.len();
+        let mut nodes: Vec<_> = std::iter::repeat_with(|| None).take(n_hedges.0).collect();
 
         let mut roots = vec![];
 
@@ -552,7 +559,7 @@ impl<N> NodeStorageOps for NodeStorageVec<N> {
     fn get_neighbor_iterator(&self, node_id: NodeIndex) -> Self::NeighborsIter<'_> {
         BitVecNeighborIter {
             iter_ones: self.nodes[node_id].iter_ones(),
-            len: self.hedge_len(),
+            len: self.len(),
         }
     }
 
@@ -564,13 +571,11 @@ impl<N> NodeStorageOps for NodeStorageVec<N> {
         &mut self.node_data[node_id]
     }
 
-    fn hedge_len(&self) -> usize {
-        self.hedge_data.len()
-    }
-
     fn extend(self, other: Self) -> Self {
-        let self_empty_filter = BitVec::empty(self.hedge_data.len());
-        let other_empty_filter = BitVec::empty(other.hedge_data.len());
+        let self_n_h: Hedge = self.len();
+        let other_n_h: Hedge = other.len();
+        let self_empty_filter = BitVec::empty(self_n_h.0);
+        let other_empty_filter = BitVec::empty(other_n_h.0);
         let mut node_data = self.node_data;
         node_data.extend(other.node_data);
 
@@ -601,8 +606,10 @@ impl<N> NodeStorageOps for NodeStorageVec<N> {
     }
 
     fn extend_mut(&mut self, other: Self) {
-        let self_empty_filter = BitVec::empty(self.hedge_data.len());
-        let other_empty_filter = BitVec::empty(other.hedge_data.len());
+        let self_n_h: Hedge = self.len();
+        let other_n_h: Hedge = other.len();
+        let self_empty_filter = BitVec::empty(self_n_h.0);
+        let other_empty_filter = BitVec::empty(other_n_h.0);
         let node_data = &mut self.node_data;
         node_data.extend(other.node_data);
 
@@ -627,7 +634,7 @@ impl<N> NodeStorageOps for NodeStorageVec<N> {
         self.hedge_data.extend(other.hedge_data);
     }
     fn add_dangling_edge(self, source: NodeIndex) -> Result<Self, HedgeGraphError> {
-        if self.nodes.len() <= source.0 {
+        if self.nodes.len() <= source {
             return Err(HedgeGraphError::NoNode);
         }
         let nodes: NodeVec<_> = self
@@ -676,7 +683,7 @@ impl<N> NodeStorageOps for NodeStorageVec<N> {
             node_data.push(N::default());
 
             for i in n.included_iter() {
-                hedge_data[i] = NodeIndex(nid + len);
+                hedge_data[i] = NodeIndex(nid) + len;
             }
         }
 
@@ -688,7 +695,8 @@ impl<N> NodeStorageOps for NodeStorageVec<N> {
     }
 
     fn check_and_set_nodes(&mut self) -> Result<(), HedgeGraphError> {
-        let mut cover = BitVec::empty(self.hedge_len());
+        let self_n_h: Hedge = self.len();
+        let mut cover = BitVec::empty(self_n_h.0);
         for (i, node) in self.nodes.iter() {
             for h in node.included_iter() {
                 if cover.includes(&h) {
@@ -702,7 +710,7 @@ impl<N> NodeStorageOps for NodeStorageVec<N> {
             }
         }
 
-        let full = !BitVec::empty(self.hedge_len());
+        let full = !BitVec::empty(self_n_h.0);
 
         if cover.sym_diff(&full).count_ones() > 0 {
             return Err(HedgeGraphError::NodesDoNotPartition(format!(

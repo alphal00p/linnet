@@ -437,6 +437,19 @@ impl Edge {
         })
     }
 
+    pub fn source_in_subgraph(&self) -> bool {
+        self.from.port.as_ref().is_some_and(|a| match a {
+            Port::Compass(_) => true,
+            Port::ID(_, c) => c.is_some(),
+        })
+    }
+    pub fn sink_in_subgraph(&self) -> bool {
+        self.to.port.as_ref().is_some_and(|a| match a {
+            Port::Compass(_) => true,
+            Port::ID(_, c) => c.is_some(),
+        })
+    }
+
     pub fn sink_id(&self) -> Option<Hedge> {
         self.to.port.as_ref().and_then(|p| match p {
             Port::ID(id, _) => id.parse().ok(),

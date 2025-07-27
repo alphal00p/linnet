@@ -113,6 +113,8 @@ impl DotEdgeData {
         let mut orientation = orientation.into();
         let mut source_h_data = None;
         let mut sink_h_data = None;
+        let sink_in_subgraph = edge.sink_in_subgraph();
+        let source_in_subgraph = edge.source_in_subgraph();
 
         let sink_id = edge.sink_id();
         let source_id = edge.source_id();
@@ -150,12 +152,14 @@ impl DotEdgeData {
                 let mut source_data: DotHedgeData = source_h_data.into();
                 let mut sink_data: DotHedgeData = sink_h_data.into();
 
+                sink_data.in_subgraph = sink_in_subgraph;
                 if let Some(sink) = sink_id {
                     sink_data = sink_data.with_id(sink)
                 }
                 if let Some(source) = source_id {
                     source_data = source_data.with_id(source)
                 }
+                source_data.in_subgraph = source_in_subgraph;
                 (
                     dot_edge,
                     source.add_data(source_data),
@@ -174,6 +178,7 @@ impl DotEdgeData {
 
                 let mut sink_data: DotHedgeData = sink_h_data.into();
 
+                sink_data.in_subgraph = source_in_subgraph;
                 if let Some(sink) = source_id {
                     sink_data = sink_data.with_id(sink)
                 }
@@ -199,6 +204,7 @@ impl DotEdgeData {
 
                 let mut source_data: DotHedgeData = source_h_data.into();
 
+                source_data.in_subgraph = sink_in_subgraph;
                 if let Some(source) = sink_id {
                     source_data = source_data.with_id(source)
                 }

@@ -21,11 +21,41 @@ macro_rules! define_indexed_vec {
             }
         }
 
+        impl ::std::ops::Add<$Idx> for $Idx {
+            type Output = $Idx;
+
+            fn add(self, other: $Idx) -> Self::Output {
+                $Idx(self.0 + other.0)
+            }
+        }
+
+        impl ::std::ops::Sub<$Idx> for $Idx {
+            type Output = $Idx;
+
+            fn sub(self, other: $Idx) -> Self::Output {
+                $Idx(self.0 - other.0)
+            }
+        }
+
+        impl ::std::ops::AddAssign<$Idx> for $Idx {
+            fn add_assign(&mut self, other: $Idx) {
+                self.0 += other.0;
+            }
+        }
+
+        impl ::std::ops::SubAssign<$Idx> for $Idx {
+            fn sub_assign(&mut self, other: $Idx) {
+                self.0 -= other.0;
+            }
+        }
+
         impl ::std::convert::From<$Idx> for usize {
             fn from(value: $Idx) -> Self {
                 value.0
             }
         }
+
+
 
 
 
@@ -53,7 +83,95 @@ macro_rules! define_indexed_vec {
             }
         }
 
+        impl<T> $crate::half_edge::swap::Swap<$Idx> for $Vec<T>{
+            fn swap(&mut self, a: $Idx, b: $Idx) {
+                self.0.swap(a.0, b.0);
+            }
+
+            fn len(&self) -> $Idx {
+                $Idx(self.0.len())
+            }
+        }
+
         /* --- Delegated Vec<T> API ------------------------------------------------- */
+
+        ::paste::paste! {
+                    #[derive(Clone)]
+                    $vec_vis struct [<$Vec Iter>]<'a, T>(std::iter::Map<
+                        std::iter::Enumerate<std::slice::Iter<'a, T>>,
+                        fn((usize, &T)) -> ($Idx, &T),
+                    >);
+                    impl<'a, T> ::std::iter::Iterator for [<$Vec Iter>]<'a, T> {
+                        type Item = ($Idx, &'a T);
+                        #[inline] fn next(&mut self) -> Option<Self::Item> { self.0.next() }
+                        #[inline] fn size_hint(&self) -> (usize, Option<usize>) { self.0.size_hint() }
+                    }
+                    impl<'a, T> ::std::iter::DoubleEndedIterator for [<$Vec Iter>]<'a, T> {
+                        #[inline] fn next_back(&mut self) -> Option<Self::Item> { self.0.next_back() }
+                    }
+                    impl<'a, T> ::std::iter::ExactSizeIterator for [<$Vec Iter>]<'a, T> {}
+                    impl<'a, T> ::std::iter::FusedIterator     for [<$Vec Iter>]<'a, T> {}
+
+
+                    impl<'a, T> ::std::iter::IntoIterator for &'a $Vec<T> {
+                        type Item = ($Idx, &'a T);
+                        type IntoIter = [<$Vec Iter>]<'a, T>;
+                        fn into_iter(self) -> Self::IntoIter {
+                            [<$Vec Iter>](self.0.iter().enumerate().map(|(u, t)| ($Idx(u), t)))
+                        }
+                    }
+
+                    $vec_vis struct [<$Vec IterMut>]<'a, T>(::std::iter::Map<
+                        std::iter::Enumerate<std::slice::IterMut<'a, T>>,
+                        fn((usize, &mut T)) -> ($Idx, &mut T),
+                    >);
+                    impl<'a, T> ::std::iter::Iterator for [<$Vec IterMut>]<'a, T> {
+                        type Item = ($Idx, &'a mut T);
+                        #[inline] fn next(&mut self) -> Option<Self::Item> { self.0.next() }
+                        #[inline] fn size_hint(&self) -> (usize, Option<usize>) { self.0.size_hint() }
+                    }
+                    impl<'a, T> ::std::iter::DoubleEndedIterator for [<$Vec IterMut>]<'a, T> {
+                        #[inline] fn next_back(&mut self) -> Option<Self::Item> { self.0.next_back() }
+                    }
+                    impl<'a, T> ::std::iter::ExactSizeIterator for [<$Vec IterMut>]<'a, T> {}
+                    impl<'a, T> ::std::iter::FusedIterator     for [<$Vec IterMut>]<'a, T> {}
+
+                    impl<'a, T> ::std::iter::IntoIterator for &'a mut $Vec<T> {
+                        type Item = ($Idx, &'a mut T);
+                        type IntoIter = [<$Vec IterMut>]<'a, T>;
+                        fn into_iter(self) -> Self::IntoIter {
+                            [<$Vec IterMut>](self.0.iter_mut().enumerate().map(|(u, t)| ($Idx(u), t)))
+                        }
+                    }
+
+
+
+                    $vec_vis struct [<$Vec IntoIter>]<T>(::std::iter::Map<std::iter::Enumerate<std::vec::IntoIter<T>>, fn((usize, T)) -> ($Idx, T)>);
+                    impl<T> ::std::iter::Iterator for [<$Vec IntoIter>]<T> {
+                        type Item = ($Idx,T);
+                        #[inline] fn next(&mut self) -> Option<Self::Item> { self.0.next() }
+                        #[inline] fn size_hint(&self) -> (usize, Option<usize>) { self.0.size_hint() }
+                    }
+                    impl<T> ::std::iter::DoubleEndedIterator for [<$Vec IntoIter>]<T> {
+                        #[inline] fn next_back(&mut self) -> Option<Self::Item> { self.0.next_back() }
+                    }
+                    impl<T> ::std::iter::ExactSizeIterator for [<$Vec IntoIter>]<T> {}
+                    impl<T> ::std::iter::FusedIterator     for [<$Vec IntoIter>]<T> {}
+
+                    impl<T> ::std::iter::IntoIterator for $Vec<T> {
+                        type Item = ($Idx,T);
+                        type IntoIter =  [<$Vec IntoIter>]<T>;
+                        #[inline] fn into_iter(self) -> Self::IntoIter { [<$Vec IntoIter>](self.0.into_iter().enumerate().map(|(u, t)| ($Idx(u), t))) }
+                    }
+
+
+                    impl<T> $Vec<T>{
+                        #[inline] pub fn iter<'a>(&'a self) -> [<$Vec Iter>]<'a, T> { self.into_iter() }
+                        #[inline] pub fn iter_mut<'a>(&'a mut self) -> [<$Vec IterMut>]<'a, T> { self.into_iter() }
+
+                    }
+
+        }
 
         impl<T> $Vec<T> {
 
@@ -77,12 +195,13 @@ macro_rules! define_indexed_vec {
             }
 
 
+
             /* construction */
             #[inline] pub fn new() -> Self { Self(::std::vec::Vec::new()) }
             #[inline] pub fn with_capacity(c: usize) -> Self { Self(::std::vec::Vec::with_capacity(c)) }
 
             /* capacity */
-            #[inline] pub fn len(&self) -> usize { self.0.len() }
+            // #[inline] pub fn len(&self) -> usize { self.0.len() }
             #[inline] pub fn is_empty(&self) -> bool { self.0.is_empty() }
             #[inline] pub fn capacity(&self) -> usize { self.0.capacity() }
             #[inline] pub fn reserve(&mut self, n: usize) { self.0.reserve(n) }
@@ -112,11 +231,6 @@ macro_rules! define_indexed_vec {
             #[inline] pub fn get_mut(&mut self, idx: $Idx) -> Option<&mut T> { self.0.get_mut(idx.0) }
 
             /* iteration */
-            #[inline] pub fn iter<'a>(&'a self) -> ::std::iter::Map<std::iter::Enumerate<std::slice::Iter<'a, T>>, fn((usize, &T)) -> ($Idx, &T)> { self.0.iter().enumerate().map(|(u, t)| ($Idx(u), t)) }
-            #[inline] pub fn iter_mut<'a>(&'a mut self) -> ::std::iter::Map<
-                std::iter::Enumerate<std::slice::IterMut<'a, T>>,
-                fn((usize, &mut T)) -> ($Idx, &mut T),
-            > { self.0.iter_mut().enumerate().map(|(u, t)| ($Idx(u), t)) }
 
             /* miscellaneous */
             #[inline] pub fn clear(&mut self) { self.0.clear() }
@@ -128,7 +242,11 @@ macro_rules! define_indexed_vec {
 
         /* --- standard trait impls ------------------------------------------------- */
 
-        impl<T> ::std::iter::FromIterator<T> for $Vec<T> {
+        impl<T> ::std::iter::FromIterator<($Idx,T)> for $Vec<T> {
+            #[inline] fn from_iter<I: ::std::iter::IntoIterator<Item = ($Idx,T)>>(it: I) -> Self {
+                Self(::std::vec::Vec::from_iter(it.into_iter().map(|(_, val)|  val)))
+            }
+        }impl<T> ::std::iter::FromIterator<T> for $Vec<T> {
             #[inline] fn from_iter<I: ::std::iter::IntoIterator<Item = T>>(it: I) -> Self {
                 Self(::std::vec::Vec::from_iter(it))
             }
@@ -145,31 +263,7 @@ macro_rules! define_indexed_vec {
         impl<T> ::std::convert::From<::std::vec::Vec<T>> for $Vec<T> {
             #[inline] fn from(v: ::std::vec::Vec<T>) -> Self { Self(v) }
         }
-        impl<T> ::std::iter::IntoIterator for $Vec<T> {
-            type Item = ($Idx,T);
-            type IntoIter =  ::std::iter::Map<std::iter::Enumerate<std::vec::IntoIter<T>>, fn((usize, T)) -> ($Idx, T)>;
-            #[inline] fn into_iter(self) -> Self::IntoIter { self.0.into_iter().enumerate().map(|(u, t)| ($Idx(u), t)) }
-        }
-        impl<'a, T> ::std::iter::IntoIterator for &'a $Vec<T> {
-            type Item = ($Idx, &'a T);
-            type IntoIter = std::iter::Map<
-                std::iter::Enumerate<std::slice::Iter<'a, T>>,
-                fn((usize, &T)) -> ($Idx, &T),
-            >;
-            fn into_iter(self) -> Self::IntoIter {
-                self.0.iter().enumerate().map(|(u, t)| ($Idx(u), t))
-            }
-        }
-        impl<'a, T> ::std::iter::IntoIterator for &'a mut $Vec<T> {
-            type Item = ($Idx, &'a mut T);
-            type IntoIter = std::iter::Map<
-                std::iter::Enumerate<std::slice::IterMut<'a, T>>,
-                fn((usize, &mut T)) -> ($Idx, &mut T),
-            >;
-            fn into_iter(self) -> Self::IntoIter {
-                self.0.iter_mut().enumerate().map(|(u, t)| ($Idx(u), t))
-            }
-        }
+
 
 
 
@@ -194,14 +288,14 @@ macro_rules! define_indexed_vec {
         impl ::std::convert::TryFrom<$Vec<Option<$Idx>>> for $Vec<$Idx>{
             type Error = ();
             fn try_from(vec: $Vec<Option<$Idx>>) -> Result<Self, Self::Error> {
-                vec.into_iter().map(|(_,e)| e.ok_or(())).collect()
+                vec.into_iter().map(|(i,e)| e.ok_or(()).map(|e|(i,e))).collect()
             }
         }
 
         impl ::std::convert::TryFrom<$Vec<Option<$Idx>>> for $crate::permutation::Permutation{
             type Error = ();
             fn try_from(vec: $Vec<Option<$Idx>>) -> Result<Self, Self::Error> {
-                let new_vec:Vec<usize> = vec.into_iter().map(|(_,e)| e.ok_or(())).collect::<Result<$Vec<$Idx>, ()>>()?.into_iter().map(|(_,x)| usize::from(x)).collect();
+                let new_vec:Vec<usize> = vec.into_iter().map(|(i,e)| e.ok_or(()).map(|e|(i,e))).collect::<Result<$Vec<$Idx>, ()>>()?.into_iter().map(|(_,x)| usize::from(x)).collect();
 
                 Ok($crate::permutation::Permutation::from_map(new_vec))
             }

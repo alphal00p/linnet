@@ -6,8 +6,8 @@ use crate::permutation::Permutation;
 
 use super::{
     involution::{
-        EdgeData, EdgeIndex, EdgeVec, Flow, Hedge, HedgePair, Involution, InvolutionError,
-        InvolutiveMapping, Orientation,
+        EdgeData, EdgeIndex, EdgeVec, EdgeVecIntoIter, EdgeVecIter, Flow, Hedge, HedgePair,
+        Involution, InvolutionError, InvolutiveMapping, Orientation,
     },
     subgraph::SubGraph,
     swap::Swap,
@@ -160,7 +160,7 @@ impl<T> SmartEdgeVec<T> {
 
         let involution = involution.map_full(|a, d| {
             let new_data = d;
-            let edgeid = EdgeIndex(data.len());
+            let edgeid = data.len();
             data.push((new_data.data, a));
             EdgeData::new(edgeid, new_data.orientation)
         });
@@ -182,7 +182,7 @@ impl<T> SmartEdgeVec<T> {
         self.involution
             .inv
             .iter()
-            .filter(|e| e.is_identity())
+            .filter(|(_, e)| e.is_identity())
             .count()
     }
 
@@ -194,7 +194,7 @@ impl<T> SmartEdgeVec<T> {
         let involution = self.involution.clone().map_full(|a, d| {
             let d = d.map(|i| &self.data[i].0);
             let new_data = f(a, d);
-            let edgeid = EdgeIndex(data.len());
+            let edgeid = data.len();
             data.push((new_data.data, a));
             EdgeData::new(edgeid, new_data.orientation)
         });
@@ -208,7 +208,7 @@ impl<T> SmartEdgeVec<T> {
     ) -> EdgeVec<T2> {
         self.data
             .iter()
-            .map(|(i, (e, pair))| f(e, i, pair))
+            .map(|(i, (e, pair))| (i, f(e, i, pair)))
             .collect()
     }
 
@@ -389,7 +389,10 @@ impl<T> SmartEdgeVec<T> {
     }
 
     pub fn n_paired(&self) -> usize {
-        self.involution.inv.iter().filter(|e| e.is_source()).count()
+        self.involution
+            .iter()
+            .filter(|(_, e)| e.is_source())
+            .count()
     }
 
     pub(crate) fn add_dangling_edge(
@@ -402,7 +405,7 @@ impl<T> SmartEdgeVec<T> {
         let o = orientation.into();
 
         let mut edge_data = self.data;
-        let edge_index = EdgeIndex(edge_data.len());
+        let edge_index = edge_data.len();
         let hedge = involution.add_identity(edge_index, o, flow);
         edge_data.push((data, HedgePair::Unpaired { hedge, flow }));
 
@@ -424,7 +427,7 @@ impl<T> SmartEdgeVec<T> {
         let o = orientation.into();
 
         let mut edge_data = self.data;
-        let edge_index = EdgeIndex(edge_data.len());
+        let edge_index = edge_data.len();
         let (source, sink) = involution.add_pair(edge_index, o);
         edge_data.push((data, HedgePair::Paired { source, sink }));
 
@@ -447,8 +450,8 @@ impl<T> SmartEdgeVec<T> {
         let g = self;
         let source_edge_id = g.involution[source];
         let sink_edge_id = g.involution[sink];
-        let last = EdgeIndex(g.data.len().checked_sub(1).unwrap());
-        let second_last = EdgeIndex(g.data.len().checked_sub(2).unwrap());
+        let last = EdgeIndex(g.data.len().0.checked_sub(1).unwrap());
+        let second_last = EdgeIndex(g.data.len().0.checked_sub(2).unwrap());
 
         let mut remaps: [Option<(EdgeIndex, EdgeIndex)>; 2] = [None, None];
 
@@ -484,7 +487,7 @@ impl<T> SmartEdgeVec<T> {
             sink_data,
         );
 
-        let new_edge_data = EdgeData::new(EdgeIndex(g.data.len()), merge_data.orientation);
+        let new_edge_data = EdgeData::new(g.data.len(), merge_data.orientation);
         let pair = match merge_flow {
             Flow::Sink => HedgePair::Paired {
                 source: sink,
@@ -534,7 +537,7 @@ impl<T> SmartEdgeVec<T> {
         matching_fn: impl Fn(Flow, EdgeData<&T>, Flow, EdgeData<&T>) -> bool,
         merge_fn: impl Fn(Flow, EdgeData<T>, Flow, EdgeData<T>) -> (Flow, EdgeData<T>),
     ) -> Result<(), HedgeGraphError> {
-        let nhedges = self.hedge_len();
+        let nhedges: Hedge = self.len();
 
         let g = self;
 
@@ -543,15 +546,15 @@ impl<T> SmartEdgeVec<T> {
         while found_match {
             let mut matching_ids = None;
 
-            for i in (0..nhedges).map(Hedge) {
+            for i in (0..nhedges.0).map(Hedge) {
                 if let InvolutiveMapping::Identity {
                     data: datas,
                     underlying: underlyings,
                 } = g.involution.hedge_data(i)
                 {
-                    for j in ((i.0 + 1)..nhedges).map(Hedge) {
+                    for j in ((i.0 + 1)..nhedges.0).map(Hedge) {
                         if let InvolutiveMapping::Identity { data, underlying } =
-                            &g.involution.inv[j.0]
+                            &g.involution.inv[j]
                         {
                             if matching_fn(
                                 *underlyings,
@@ -578,7 +581,8 @@ impl<T> SmartEdgeVec<T> {
 
     pub fn delete<S: SubGraph>(&mut self, graph: &S) {
         let mut left = Hedge(0);
-        let mut extracted = Hedge(self.involution.len());
+        let mut extracted = self.involution.len();
+
         while left < extracted {
             if !graph.includes(&left) {
                 //left is in the right place
@@ -620,7 +624,7 @@ impl<T> SmartEdgeVec<T> {
 
         let mut split_at = EdgeIndex(0);
 
-        let mut extracted = EdgeIndex(self.edge_len());
+        let mut extracted: EdgeIndex = self.len();
 
         while split_at < extracted {
             if self.data[split_at].1.any_hedge() < left {
@@ -642,7 +646,7 @@ impl<T> SmartEdgeVec<T> {
 
         // println!("{}", self.involution.display());
 
-        let _ = self.involution.inv.split_off(left.0);
+        let _ = self.involution.inv.split_off(left);
         let _ = self.data.split_off(split_at);
         // self.fix_hedge_pairs();
     }
@@ -657,7 +661,7 @@ impl<T> SmartEdgeVec<T> {
         let mut extracted = self.involution.extract(
             graph,
             |a| {
-                let new_id = -(1 + new_id_data.len() as i64);
+                let new_id = -(1 + new_id_data.len().0 as i64);
                 let new_data = split_edge_fn(EdgeData::new(&self.data[*a.data].0, a.orientation));
                 new_id_data.push((
                     new_data.data,
@@ -747,32 +751,42 @@ impl<T> SmartEdgeVec<T> {
         matching_fn: impl Fn(Flow, EdgeData<&T>, Flow, EdgeData<&T>) -> bool,
         merge_fn: impl Fn(Flow, EdgeData<T>, Flow, EdgeData<T>) -> (Flow, EdgeData<T>),
     ) -> Result<(), HedgeGraphError> {
-        let self_empty_filter = BitVec::empty(self.hedge_len());
+        let self_n_h: Hedge = self.len();
+        let self_empty_filter = BitVec::empty(self_n_h.0);
         let mut full_self = !self_empty_filter.clone();
-        let other_empty_filter = BitVec::empty(other.hedge_len());
+
+        let other_n_h: Hedge = other.len();
+        let other_empty_filter = BitVec::empty(other_n_h.0);
         let mut full_other = self_empty_filter.clone();
         full_self.extend(other_empty_filter.clone());
         full_other.extend(!other_empty_filter.clone());
 
-        let self_inv_shift = self.hedge_len();
+        let self_inv_shift: Hedge = self.len();
         let edge_data = &mut self.data;
         let edge_data_shift = edge_data.len();
         edge_data.extend(other.data);
 
         self.involution
             .inv
-            .extend(other.involution.into_iter().map(|(_, m)| match m {
-                InvolutiveMapping::Sink { source_idx } => InvolutiveMapping::Sink {
-                    source_idx: Hedge(source_idx.0 + self_inv_shift),
-                },
-                InvolutiveMapping::Source { data, sink_idx } => InvolutiveMapping::Source {
-                    data: data.map(|e| EdgeIndex(e.0 + edge_data_shift)),
-                    sink_idx: Hedge(sink_idx.0 + self_inv_shift),
-                },
-                InvolutiveMapping::Identity { data, underlying } => InvolutiveMapping::Identity {
-                    data: data.map(|e| EdgeIndex(e.0 + edge_data_shift)),
-                    underlying,
-                },
+            .extend(other.involution.into_iter().map(|(i, m)| {
+                (
+                    i,
+                    match m {
+                        InvolutiveMapping::Sink { source_idx } => InvolutiveMapping::Sink {
+                            source_idx: source_idx + self_inv_shift,
+                        },
+                        InvolutiveMapping::Source { data, sink_idx } => InvolutiveMapping::Source {
+                            data: data.map(|e| e + edge_data_shift),
+                            sink_idx: sink_idx + self_inv_shift,
+                        },
+                        InvolutiveMapping::Identity { data, underlying } => {
+                            InvolutiveMapping::Identity {
+                                data: data.map(|e| e + edge_data_shift),
+                                underlying,
+                            }
+                        }
+                    },
+                )
             }));
 
         let mut found_match = true;
@@ -790,7 +804,7 @@ impl<T> SmartEdgeVec<T> {
                 {
                     for j in full_other.included_iter() {
                         if let InvolutiveMapping::Identity { data, underlying } =
-                            &self.involution.inv[j.0]
+                            &self.involution.inv[j]
                         {
                             if matching_fn(
                                 *underlyings,
@@ -822,14 +836,16 @@ impl<T> SmartEdgeVec<T> {
         matching_fn: impl Fn(Flow, EdgeData<&T>, Flow, EdgeData<&T>) -> bool,
         merge_fn: impl Fn(Flow, EdgeData<T>, Flow, EdgeData<T>) -> (Flow, EdgeData<T>),
     ) -> Result<Self, HedgeGraphError> {
-        let self_empty_filter = BitVec::empty(self.hedge_len());
+        let self_n_h: Hedge = self.len();
+        let self_empty_filter = BitVec::empty(self_n_h.0);
         let mut full_self = !self_empty_filter.clone();
-        let other_empty_filter = BitVec::empty(other.hedge_len());
+        let other_n_h: Hedge = other.len();
+        let other_empty_filter = BitVec::empty(other_n_h.0);
         let mut full_other = self_empty_filter.clone();
         full_self.extend(other_empty_filter.clone());
         full_other.extend(!other_empty_filter.clone());
 
-        let self_inv_shift = self.hedge_len();
+        let self_inv_shift: Hedge = self.len();
         let mut edge_data = self.data;
         let edge_data_shift = edge_data.len();
         edge_data.extend(other.data);
@@ -843,17 +859,17 @@ impl<T> SmartEdgeVec<T> {
                         i,
                         match m {
                             InvolutiveMapping::Sink { source_idx } => InvolutiveMapping::Sink {
-                                source_idx: Hedge(source_idx.0 + self_inv_shift),
+                                source_idx: source_idx + self_inv_shift,
                             },
                             InvolutiveMapping::Source { data, sink_idx } => {
                                 InvolutiveMapping::Source {
-                                    data: data.map(|e| EdgeIndex(e.0 + edge_data_shift)),
-                                    sink_idx: Hedge(sink_idx.0 + self_inv_shift),
+                                    data: data.map(|e| e + edge_data_shift),
+                                    sink_idx: sink_idx + self_inv_shift,
                                 }
                             }
                             InvolutiveMapping::Identity { data, underlying } => {
                                 InvolutiveMapping::Identity {
-                                    data: data.map(|e| EdgeIndex(e.0 + edge_data_shift)),
+                                    data: data.map(|e| e + edge_data_shift),
                                     underlying,
                                 }
                             }
@@ -884,7 +900,7 @@ impl<T> SmartEdgeVec<T> {
                 {
                     for j in full_other.included_iter() {
                         if let InvolutiveMapping::Identity { data, underlying } =
-                            &g.involution.inv[j.0]
+                            &g.involution.inv[j]
                         {
                             if matching_fn(
                                 *underlyings,
@@ -915,7 +931,7 @@ impl<T> SmartEdgeVec<T> {
         hedge: Hedge,
         data: EdgeData<T>,
     ) -> Result<(), InvolutionError> {
-        let new_data = EdgeData::new(EdgeIndex(self.edge_len()), data.orientation);
+        let new_data: EdgeData<EdgeIndex> = EdgeData::new(self.len(), data.orientation);
 
         let invh = self.inv(hedge);
         let flow = self.flow(hedge);
@@ -979,10 +995,6 @@ impl<T> SmartEdgeVec<T> {
         self.involution.hedge_data(hedge)
     }
 
-    pub fn edge_len(&self) -> usize {
-        self.data.len()
-    }
-
     pub fn iter_edges<'a, S: SubGraph>(
         &'a self,
         subgraph: &'a S,
@@ -1008,10 +1020,6 @@ impl<T> SmartEdgeVec<T> {
         self.involution.n_internals(subgraph)
     }
 
-    pub fn hedge_len(&self) -> usize {
-        self.involution.len()
-    }
-
     pub fn align_underlying_to_superficial(&mut self) {
         for i in self.involution.iter_idx() {
             let orientation = self.involution.edge_data(i).orientation;
@@ -1031,7 +1039,7 @@ impl<T> SmartEdgeVec<T> {
 
         let involution = involution.as_ref().map_full(|a, d| {
             let new_data = f(a, d);
-            let edgeid = EdgeIndex(data.len());
+            let edgeid = data.len();
             data.push((new_data.data, a));
             EdgeData::new(edgeid, new_data.orientation)
         });
@@ -1042,10 +1050,7 @@ impl<T> SmartEdgeVec<T> {
 impl<T> IntoIterator for SmartEdgeVec<T> {
     type Item = (EdgeIndex, T, HedgePair);
     type IntoIter = std::iter::Map<
-        std::iter::Map<
-            std::iter::Enumerate<std::vec::IntoIter<(T, HedgePair)>>,
-            fn((usize, (T, HedgePair))) -> (EdgeIndex, (T, HedgePair)),
-        >,
+        EdgeVecIntoIter<(T, HedgePair)>,
         fn((EdgeIndex, (T, HedgePair))) -> (EdgeIndex, T, HedgePair),
     >;
     fn into_iter(self) -> Self::IntoIter {
@@ -1056,10 +1061,7 @@ impl<T> IntoIterator for SmartEdgeVec<T> {
 impl<'a, T> IntoIterator for &'a SmartEdgeVec<T> {
     type Item = (EdgeIndex, &'a T, HedgePair);
     type IntoIter = std::iter::Map<
-        std::iter::Map<
-            std::iter::Enumerate<std::slice::Iter<'a, (T, HedgePair)>>,
-            fn((usize, &'a (T, HedgePair))) -> (EdgeIndex, &'a (T, HedgePair)),
-        >,
+        EdgeVecIter<'a, (T, HedgePair)>,
         fn((EdgeIndex, &'a (T, HedgePair))) -> (EdgeIndex, &'a T, HedgePair),
     >;
     fn into_iter(self) -> Self::IntoIter {
@@ -1121,6 +1123,10 @@ impl<T> Index<&Hedge> for SmartEdgeVec<T> {
 }
 
 impl<T> Swap<Hedge> for SmartEdgeVec<T> {
+    fn len(&self) -> Hedge {
+        self.involution.len()
+    }
+
     fn swap(&mut self, e1: Hedge, e2: Hedge) {
         if e1 != e2 {
             if e2 == self.inv(e1) {
@@ -1179,6 +1185,10 @@ impl<T> Swap<Hedge> for SmartEdgeVec<T> {
 }
 
 impl<T> Swap<EdgeIndex> for SmartEdgeVec<T> {
+    fn len(&self) -> EdgeIndex {
+        self.data.len()
+    }
+
     fn swap(&mut self, e1: EdgeIndex, e2: EdgeIndex) {
         if e1 != e2 {
             let a = &mut self

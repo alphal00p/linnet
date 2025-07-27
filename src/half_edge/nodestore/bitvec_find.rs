@@ -98,11 +98,17 @@ impl<V> UnionFindNodeStore<V> {
 }
 
 impl<V> Swap<Hedge> for UnionFindNodeStore<V> {
+    fn len(&self) -> Hedge {
+        todo!()
+    }
     fn swap(&mut self, _i: Hedge, _j: Hedge) {
         todo!()
     }
 }
 impl<V> Swap<NodeIndex> for UnionFindNodeStore<V> {
+    fn len(&self) -> NodeIndex {
+        todo!()
+    }
     fn swap(&mut self, _i: NodeIndex, _j: NodeIndex) {
         todo!()
     }
@@ -141,10 +147,6 @@ impl<V> NodeStorageOps for UnionFindNodeStore<V> {
 
     fn get_neighbor_iterator(&self, node_id: NodeIndex) -> Self::NeighborsIter<'_> {
         (&self.nodes[SetIndex(node_id.0)].node).into()
-    }
-
-    fn hedge_len(&self) -> usize {
-        self.nodes.n_elements()
     }
 
     fn identify_nodes(
@@ -201,10 +203,6 @@ impl<V> NodeStorageOps for UnionFindNodeStore<V> {
                 })
                 .collect(),
         }
-    }
-
-    fn node_len(&self) -> usize {
-        self.nodes.n_sets()
     }
 
     fn check_and_set_nodes(&mut self) -> Result<(), crate::half_edge::HedgeGraphError> {

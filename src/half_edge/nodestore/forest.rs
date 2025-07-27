@@ -67,6 +67,10 @@ impl From<RootId> for NodeIndex {
 }
 
 impl<V, P: ForestNodeStore> Swap<Hedge> for Forest<V, P> {
+    fn len(&self) -> Hedge {
+        Hedge(self.nodes.n_nodes())
+    }
+
     fn swap(&mut self, a: Hedge, b: Hedge) {
         if a != b {
             let a = a.into();
@@ -85,6 +89,9 @@ impl<V, P: ForestNodeStore> Swap<Hedge> for Forest<V, P> {
     }
 }
 impl<V, P: ForestNodeStore> Swap<NodeIndex> for Forest<V, P> {
+    fn len(&self) -> NodeIndex {
+        NodeIndex(self.roots.len())
+    }
     fn swap(&mut self, _i: NodeIndex, _j: NodeIndex) {
         todo!()
     }
@@ -124,7 +131,7 @@ impl<V, P: ForestNodeStore + ForestNodeStorePreorder + Clone> NodeStorageOps for
 
     fn forget_identification_history(&mut self) -> NodeVec<Self::NodeData> {
         let mut active_nodes_upper_bound = NodeIndex(0);
-        let mut historical_nodes_lower_bound = NodeIndex(self.node_len());
+        let mut historical_nodes_lower_bound = self.len();
 
         // first we swap to the front all nodes that have correct pointers.
         while active_nodes_upper_bound < historical_nodes_lower_bound {
@@ -161,10 +168,10 @@ impl<V, P: ForestNodeStore + ForestNodeStorePreorder + Clone> NodeStorageOps for
     }
 
     fn extend_mut(&mut self, other: Self) {
-        let nodeshift = other.node_len();
+        let nodeshift: NodeIndex = other.len();
         let shift_roots_by = RootId(self.roots.len());
         self.roots.extend(other.roots.into_iter().map(|mut a| {
-            a.root_id.0 += nodeshift;
+            a.root_id.0 += nodeshift.0;
             a
         }));
 
@@ -191,7 +198,7 @@ impl<V, P: ForestNodeStore + ForestNodeStorePreorder + Clone> NodeStorageOps for
 
     fn delete<S: crate::half_edge::subgraph::SubGraph<Base = Self::Base>>(&mut self, subgraph: &S) {
         let mut left = Hedge(0);
-        let mut extracted = Hedge(self.hedge_len());
+        let mut extracted = self.len();
         // println!("{}", self.nodes.debug_draw(|_| None));
         // Do the same swapping as for the edge store, so that they line up
         while left < extracted {
@@ -217,7 +224,7 @@ impl<V, P: ForestNodeStore + ForestNodeStorePreorder + Clone> NodeStorageOps for
         // - left_nodes..overlapping_nodes are all nodes who have incident half-edges inside the subgraph, but not all of them. These ones need to be split
         // - overlapping_nodes..len are the nodes containing only half-edges in the subgraph
         let mut left_nodes = NodeIndex(0);
-        let mut extracted_nodes = NodeIndex(self.node_len());
+        let mut extracted_nodes = self.len();
 
         // first we swap to the front all nodes that contain no edges from subgraph. Since we have swapped all edges in the subgraph to be after left, in the above, now we check if the neighbor iter contains no hedge>=left
         while left_nodes < extracted_nodes {
@@ -240,7 +247,7 @@ impl<V, P: ForestNodeStore + ForestNodeStorePreorder + Clone> NodeStorageOps for
         }
 
         let mut overlapping_nodes = left_nodes;
-        let mut non_overlapping_extracted = NodeIndex(self.node_len());
+        let mut non_overlapping_extracted = self.len();
 
         // println!(
         //     "RootsplitnonOverlapping:{}",
@@ -305,7 +312,7 @@ impl<V, P: ForestNodeStore + ForestNodeStorePreorder + Clone> NodeStorageOps for
         mut owned_node: impl FnMut(Self::NodeData) -> V2,
     ) -> Self::OpStorage<V2> {
         let mut left = Hedge(0);
-        let mut extracted = Hedge(self.hedge_len());
+        let mut extracted = self.len();
         // println!("{}", self.nodes.debug_draw(|_| None));
         // Do the same swapping as for the edge store, so that they line up
         while left < extracted {
@@ -331,7 +338,7 @@ impl<V, P: ForestNodeStore + ForestNodeStorePreorder + Clone> NodeStorageOps for
         // - left_nodes..overlapping_nodes are all nodes who have incident half-edges inside the subgraph, but not all of them. These ones need to be split
         // - overlapping_nodes..len are the nodes containing only half-edges in the subgraph
         let mut left_nodes = NodeIndex(0);
-        let mut extracted_nodes = NodeIndex(self.node_len());
+        let mut extracted_nodes = self.len();
 
         // first we swap to the front all nodes that contain no edges from subgraph. Since we have swapped all edges in the subgraph to be after left, in the above, now we check if the neighbor iter contains no hedge>=left
         while left_nodes < extracted_nodes {
@@ -354,7 +361,7 @@ impl<V, P: ForestNodeStore + ForestNodeStorePreorder + Clone> NodeStorageOps for
         }
 
         let mut overlapping_nodes = left_nodes;
-        let mut non_overlapping_extracted = NodeIndex(self.node_len());
+        let mut non_overlapping_extracted = self.len();
 
         // println!(
         //     "RootsplitnonOverlapping:{}",
@@ -454,14 +461,6 @@ impl<V, P: ForestNodeStore + ForestNodeStorePreorder + Clone> NodeStorageOps for
             nodes: extracted_nodes,
             roots: overlapping_roots,
         }
-    }
-
-    fn node_len(&self) -> usize {
-        self.roots.len()
-    }
-
-    fn hedge_len(&self) -> usize {
-        self.nodes.n_nodes()
     }
 
     fn to_forest<U, H>(

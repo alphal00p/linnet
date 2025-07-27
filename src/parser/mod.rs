@@ -92,7 +92,7 @@ use crate::{
         builder::HedgeGraphBuilder,
         involution::{EdgeIndex, Hedge},
         nodestore::{NodeStorage, NodeStorageOps, NodeStorageVec},
-        subgraph::SubGraph,
+        subgraph::{ModifySubgraph, SubGraph},
         swap::Swap,
         GVEdgeAttrs, HedgeGraph, NodeIndex,
     },
@@ -145,6 +145,28 @@ pub enum NodeIdOrDangling {
 mod subgraph_free;
 
 impl<S: NodeStorageOps<NodeData = DotVertexData>> DotGraph<S> {
+    pub fn subgraph<Sub: ModifySubgraph<Hedge> + SubGraph>(&self) -> Sub {
+        let mut a: Sub = self.empty_subgraph();
+
+        for (h, d) in self.graph.iter_hedges() {
+            if d.in_subgraph {
+                a.add(h);
+            }
+        }
+        a
+    }
+
+    pub fn subgraph_inv<Sub: ModifySubgraph<Hedge> + SubGraph>(&self) -> Sub {
+        let mut a: Sub = self.empty_subgraph();
+
+        for (h, d) in self.graph.iter_hedges() {
+            if !d.in_subgraph {
+                a.add(h);
+            }
+        }
+        a
+    }
+
     pub fn write_io<W: std::io::Write>(&self, writer: &mut W) -> Result<(), std::io::Error> {
         writeln!(writer, "digraph {{")?;
 
@@ -311,6 +333,7 @@ impl<S: NodeStorageOps<NodeData = DotVertexData>> From<SubGraphFreeGraph> for Do
 
         let mut used_edges = HashSet::new();
         let n_edges = g.n_edges();
+
         let mut edge_map = g.new_edgevec(|d, e, _| {
             d.edge_id.inspect(|d| {
                 assert!(
@@ -473,6 +496,8 @@ impl<E, V, H, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, H, N> {
 
 #[cfg(test)]
 pub mod test {
+    use bitvec::vec::BitVec;
+
     use crate::parser::DotGraph;
 
     #[test]
@@ -603,5 +628,28 @@ pub mod test {
         );
         // assert_eq!(graph.n_nodes(), 2);
         // assert_eq!(graph.n_internals(), 1);
+    }
+
+    #[test]
+    fn subgraph() {
+        let aligned: DotGraph = dot!(
+        digraph {
+          1 [name=C];
+          0:1:s	-> 1:0	 [id=0 ];
+          ext1	 [style=invis];
+          1:4	-> ext3	 [id=3 ];
+          ext3	 [style=invis];
+          ext2	 [style=invis];
+          ext4	 [style=invis];
+          0 [name=B];
+          ext4	-> 1:5	 [id=4 ];
+          ext1	-> 0:2:s	 [id=1 ];
+          ext2	-> 0:3:s	 [id=2 ];
+        })
+        .unwrap();
+
+        let sub: BitVec = aligned.subgraph();
+
+        println!("{}", aligned.dot_of(&sub));
     }
 }

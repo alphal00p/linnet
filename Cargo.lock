@@ -658,6 +658,7 @@ dependencies = [
  "insta",
  "itertools",
  "kurbo",
+ "paste",
  "piet",
  "proptest",
  "rand 0.8.5",

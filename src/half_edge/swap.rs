@@ -1,3 +1,5 @@
+use std::ops::{AddAssign, SubAssign};
+
 use crate::permutation::Permutation;
 
 use super::{
@@ -8,6 +10,8 @@ use super::{
 
 pub trait Swap<Index> {
     fn swap(&mut self, i: Index, j: Index);
+
+    fn len(&self) -> Index;
 
     fn permute(&mut self, perm: &Permutation)
     where
@@ -21,11 +25,41 @@ pub trait Swap<Index> {
             self.swap(Index::from(i), Index::from(j));
         }
     }
+
+    fn partition(&mut self, filter: impl Fn(&Index) -> bool) -> Index
+    where
+        Index: From<usize> + AddAssign + PartialOrd + SubAssign + Copy,
+    {
+        let mut left = Index::from(0);
+        let one = Index::from(1);
+        let mut extracted = self.len();
+
+        while left < extracted {
+            if filter(&left) {
+                //left is in the right place
+                left += one;
+            } else {
+                //left needs to be swapped
+                extracted -= one;
+                if filter(&extracted) {
+                    // println!("{extracted}<=>{left}");
+                    //only with an extracted that is in the wrong spot
+                    self.swap(left, extracted);
+                    left += one;
+                }
+            }
+        }
+        left
+    }
 }
 impl<E, V, H, N: NodeStorageOps<NodeData = V>> Swap<Hedge> for HedgeGraph<E, V, H, N> {
+    fn len(&self) -> Hedge {
+        self.hedge_data.len()
+    }
+
     fn swap(&mut self, i: Hedge, j: Hedge) {
         // println!("Swapping {i:?} with {j:?}");
-        self.hedge_data.swap(i.0, j.0);
+        self.hedge_data.swap(i, j);
         // println!("nodeswap");
         self.node_store.swap(i, j);
         // println!("edgeswap");
@@ -37,11 +71,19 @@ impl<E, V, H, N: NodeStorageOps<NodeData = V>> Swap<EdgeIndex> for HedgeGraph<E,
     fn swap(&mut self, i: EdgeIndex, j: EdgeIndex) {
         self.edge_store.swap(i, j);
     }
+
+    fn len(&self) -> EdgeIndex {
+        self.edge_store.len()
+    }
 }
 
 impl<E, V, H, N: NodeStorageOps<NodeData = V>> Swap<NodeIndex> for HedgeGraph<E, V, H, N> {
     fn swap(&mut self, i: NodeIndex, j: NodeIndex) {
         self.node_store.swap(i, j);
+    }
+
+    fn len(&self) -> NodeIndex {
+        self.node_store.len()
     }
 }
 

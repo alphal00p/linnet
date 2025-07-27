@@ -64,8 +64,6 @@ pub trait NodeStorageOps: NodeStorage + Swap<Hedge> + Swap<NodeIndex> {
     where
         Self::NodeData: Default;
 
-    fn hedge_len(&self) -> usize;
-    fn node_len(&self) -> usize;
     fn drain(self) -> impl Iterator<Item = (NodeIndex, Self::NodeData)>;
     fn iter(&self) -> impl Iterator<Item = (NodeIndex, &Self::NodeData)>;
 
@@ -109,7 +107,7 @@ pub trait NodeStorageOps: NodeStorage + Swap<Hedge> + Swap<NodeIndex> {
     ) -> Result<Self::OpStorage<V2>, Err>;
 
     fn iter_node_id(&self) -> impl Iterator<Item = NodeIndex> {
-        (0..self.node_len()).map(NodeIndex)
+        (0..<Self as Swap<NodeIndex>>::len(self).0).map(NodeIndex)
     }
     fn iter_nodes(
         &self,

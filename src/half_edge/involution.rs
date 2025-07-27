@@ -13,6 +13,7 @@ use super::{
     builder::HedgeData,
     nodestore::{NodeStorage, NodeStorageOps},
     subgraph::SubGraph,
+    swap::Swap,
     GVEdgeAttrs, HedgeGraph, NodeIndex,
 };
 
@@ -86,12 +87,14 @@ pub enum HedgePairWithData<H> {
         hedge: Hedge,
         flow: Flow,
         data: H,
+        is_in_subgraph: bool,
     },
     Paired {
         source: Hedge,
         source_data: H,
         sink: Hedge,
         sink_data: H,
+        is_in_subgraph: bool,
     },
     Split {
         source: Hedge,
@@ -102,15 +105,24 @@ pub enum HedgePairWithData<H> {
     },
 }
 
+impl HedgeData<(Hedge, Option<String>)> {
+    pub fn dot_node(&self) -> String {
+        format!(
+            "{}:{}{}",
+            self.node,
+            self.data.0,
+            if self.is_in_subgraph { ":s" } else { "" },
+        )
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 impl<H> HedgePairWithData<H> {
     pub fn identity_dot_io<W: std::io::Write>(
         writer: &mut W,
         edge_id: EdgeIndex,
-        hedge: Hedge,
-        hedge_label: Option<String>,
-        source: NodeIndex,
-        attr: Option<&GVEdgeAttrs>,
+        hedge: HedgeData<(Hedge, Option<String>)>,
+        attr: &GVEdgeAttrs,
         orientation: Orientation,
         flow: Flow,
     ) -> Result<(), std::io::Error> {
@@ -118,11 +130,11 @@ impl<H> HedgePairWithData<H> {
         match flow {
             Flow::Sink => {
                 writeln!(writer, "ext{edge_id}\t [style=invis];",)?;
-                write!(writer, "  ext{edge_id}\t-> {source}:{hedge}\t [")?;
+                write!(writer, "  ext{edge_id}\t-> {}\t [", hedge.dot_node())?;
             }
             Flow::Source => {
                 writeln!(writer, "ext{edge_id}\t [style=invis];")?;
-                write!(writer, "  {source}:{hedge}\t-> ext{edge_id}\t [")?;
+                write!(writer, "  {}\t-> ext{edge_id}\t [", hedge.dot_node())?;
             }
         }
 
@@ -133,15 +145,14 @@ impl<H> HedgePairWithData<H> {
             Orientation::Undirected => write!(writer, " dir=none")?,
             _ => {}
         }
-        if let Some(hedge_label) = hedge_label {
+        if let Some(hedge_label) = hedge.data.1 {
             match flow {
                 Flow::Sink => write!(writer, " source={hedge_label}")?,
                 Flow::Source => write!(writer, " sink={hedge_label}")?,
             }
         }
-        if let Some(attr) = attr {
-            write!(writer, " {attr}")?;
-        }
+        write!(writer, " {attr}")?;
+
         writeln!(writer, "];")?;
         Ok(())
     }
@@ -149,10 +160,8 @@ impl<H> HedgePairWithData<H> {
     pub fn identity_dot_fmt<W: std::fmt::Write>(
         writer: &mut W,
         edge_id: EdgeIndex,
-        hedge: Hedge,
-        hedge_label: Option<String>,
-        source: NodeIndex,
-        attr: Option<&GVEdgeAttrs>,
+        hedge: HedgeData<(Hedge, Option<String>)>,
+        attr: &GVEdgeAttrs,
         orientation: Orientation,
         flow: Flow,
     ) -> Result<(), std::fmt::Error> {
@@ -160,11 +169,11 @@ impl<H> HedgePairWithData<H> {
         let estr = match flow {
             Flow::Sink => {
                 write!(writer, "\next{}\t [style=invis];", edge_id.0)?;
-                format!("ext{}\t-> {source}:{hedge}", edge_id.0)
+                format!("ext{}\t-> {}", edge_id.0, hedge.dot_node())
             }
             Flow::Source => {
                 write!(writer, "\next{}\t [style=invis];", edge_id.0)?;
-                format!("{source}:{hedge}\t-> ext{}", edge_id.0)
+                format!("{}\t-> ext{}", hedge.dot_node(), edge_id.0,)
             }
         };
 
@@ -177,7 +186,7 @@ impl<H> HedgePairWithData<H> {
                 Orientation::Undirected => " dir=none",
                 _ => "",
             },
-            if let Some(hedge_label) = hedge_label {
+            if let Some(hedge_label) = hedge.data.1 {
                 match flow {
                     Flow::Sink => format!(" source={hedge_label}"),
                     Flow::Source => format!(" sink={hedge_label}"),
@@ -185,93 +194,73 @@ impl<H> HedgePairWithData<H> {
             } else {
                 "".to_string()
             },
-            if let Some(attr) = attr {
-                format!(" {attr}")
-            } else {
-                "".to_string()
-            }
+            attr
         )
     }
 
     pub fn pair_dot_fmt<W: std::fmt::Write>(
         writer: &mut W,
         eid: EdgeIndex,
-        source: Hedge,
-        sink: Hedge,
-        source_data: HedgeData<Option<String>>,
-        sink_data: HedgeData<Option<String>>,
-        attr: Option<&GVEdgeAttrs>,
+        source_data: HedgeData<(Hedge, Option<String>)>,
+        sink_data: HedgeData<(Hedge, Option<String>)>,
+        attr: &GVEdgeAttrs,
         orientation: Orientation,
     ) -> Result<(), std::fmt::Error> {
         write!(
             writer,
-            "\n{}:{}\t-> {}:{}\t [id={}{}{}{} {}];",
-            source_data.node,
-            source,
-            sink_data.node,
-            sink,
+            "\n{}\t-> {}\t [id={}{}{}{} {}];",
+            source_data.dot_node(),
+            sink_data.dot_node(),
             eid.0,
             match orientation {
                 Orientation::Reversed => " dir=back",
                 Orientation::Undirected => " dir=none",
                 _ => "",
             },
-            if let Some(source_label) = source_data.data {
+            if let Some(source_label) = source_data.data.1 {
                 format!(" source={source_label}")
             } else {
                 "".to_string()
             },
-            if let Some(sink_label) = sink_data.data {
+            if let Some(sink_label) = sink_data.data.1 {
                 format!(" sink={sink_label}")
             } else {
                 "".to_string()
             },
-            if let Some(attr) = attr {
-                attr.to_string()
-            } else {
-                "color=\"red:blue;0.5\"".to_string()
-            }
+            attr
         )
     }
 
     pub fn pair_dot_io<W: std::io::Write>(
         writer: &mut W,
         eid: EdgeIndex,
-        source: Hedge,
-        sink: Hedge,
-        source_data: HedgeData<Option<String>>,
-        sink_data: HedgeData<Option<String>>,
-        attr: Option<&GVEdgeAttrs>,
+        source_data: HedgeData<(Hedge, Option<String>)>,
+        sink_data: HedgeData<(Hedge, Option<String>)>,
+        attr: &GVEdgeAttrs,
         orientation: Orientation,
     ) -> Result<(), std::io::Error> {
         write!(
             writer,
-            "\n{}:{}\t-> {}:{}\t [id={}{}{}{} {}];",
-            source_data.node,
-            source,
-            sink_data.node,
-            sink,
+            "\n{}\t-> {}\t [id={}{}{}{} {}];",
+            source_data.dot_node(),
+            sink_data.dot_node(),
             eid.0,
             match orientation {
                 Orientation::Reversed => " dir=back",
                 Orientation::Undirected => " dir=none",
                 _ => "",
             },
-            if let Some(source_label) = source_data.data {
+            if let Some(source_label) = source_data.data.1 {
                 format!(" source={source_label}")
             } else {
                 "".to_string()
             },
-            if let Some(sink_label) = sink_data.data {
+            if let Some(sink_label) = sink_data.data.1 {
                 format!(" sink={sink_label}")
             } else {
                 "".to_string()
             },
-            if let Some(attr) = attr {
-                attr.to_string()
-            } else {
-                " color=\"red:blue;0.5\"".to_string()
-            }
+            attr
         )
     }
 }
@@ -286,13 +275,19 @@ impl<H> HedgePairWithData<&H> {
         attr: GVEdgeAttrs,
     ) -> Result<(), std::fmt::Error> {
         match self {
-            HedgePairWithData::Unpaired { hedge, flow, data } => Self::identity_dot_fmt(
+            HedgePairWithData::Unpaired {
+                hedge,
+                flow,
+                data,
+                is_in_subgraph,
+            } => Self::identity_dot_fmt(
                 writer,
                 eid,
-                *hedge,
-                labeler(data),
-                graph.node_id(*hedge),
-                Some(&attr),
+                graph
+                    .node_id(*hedge)
+                    .add_data((*hedge, labeler(data)))
+                    .set_in_subgraph(*is_in_subgraph),
+                &attr,
                 orientation,
                 *flow,
             ),
@@ -301,14 +296,19 @@ impl<H> HedgePairWithData<&H> {
                 sink,
                 sink_data,
                 source_data,
+                is_in_subgraph,
             } => Self::pair_dot_fmt(
                 writer,
                 eid,
-                *source,
-                *sink,
-                graph.node_id(*source).add_data(labeler(source_data)),
-                graph.node_id(*sink).add_data(labeler(sink_data)),
-                Some(&attr),
+                graph
+                    .node_id(*source)
+                    .add_data((*source, labeler(source_data)))
+                    .set_in_subgraph(*is_in_subgraph),
+                graph
+                    .node_id(*sink)
+                    .add_data((*sink, labeler(sink_data)))
+                    .set_in_subgraph(*is_in_subgraph),
+                &attr,
                 orientation,
             ),
             HedgePairWithData::Split {
@@ -316,15 +316,19 @@ impl<H> HedgePairWithData<&H> {
                 sink,
                 sink_data,
                 source_data,
-                ..
+                split,
             } => Self::pair_dot_fmt(
                 writer,
                 eid,
-                *source,
-                *sink,
-                graph.node_id(*source).add_data(labeler(source_data)),
-                graph.node_id(*sink).add_data(labeler(sink_data)),
-                Some(&attr),
+                graph
+                    .node_id(*source)
+                    .add_data((*source, labeler(source_data)))
+                    .set_in_subgraph(*split == Flow::Source),
+                graph
+                    .node_id(*sink)
+                    .add_data((*sink, labeler(sink_data)))
+                    .set_in_subgraph(*split == Flow::Sink),
+                &attr,
                 orientation,
             ),
         }
@@ -340,13 +344,19 @@ impl<H> HedgePairWithData<&H> {
         attr: GVEdgeAttrs,
     ) -> Result<(), std::io::Error> {
         match self {
-            HedgePairWithData::Unpaired { hedge, flow, data } => Self::identity_dot_io(
+            HedgePairWithData::Unpaired {
+                hedge,
+                flow,
+                data,
+                is_in_subgraph,
+            } => Self::identity_dot_io(
                 writer,
                 eid,
-                *hedge,
-                labeler(data),
-                graph.node_id(*hedge),
-                Some(&attr),
+                graph
+                    .node_id(*hedge)
+                    .add_data((*hedge, labeler(data)))
+                    .set_in_subgraph(*is_in_subgraph),
+                &attr,
                 orientation,
                 *flow,
             ),
@@ -355,14 +365,19 @@ impl<H> HedgePairWithData<&H> {
                 sink,
                 sink_data,
                 source_data,
+                is_in_subgraph,
             } => Self::pair_dot_io(
                 writer,
                 eid,
-                *source,
-                *sink,
-                graph.node_id(*source).add_data(labeler(source_data)),
-                graph.node_id(*sink).add_data(labeler(sink_data)),
-                Some(&attr),
+                graph
+                    .node_id(*source)
+                    .add_data((*source, labeler(source_data)))
+                    .set_in_subgraph(*is_in_subgraph),
+                graph
+                    .node_id(*sink)
+                    .add_data((*sink, labeler(sink_data)))
+                    .set_in_subgraph(*is_in_subgraph),
+                &attr,
                 orientation,
             ),
             HedgePairWithData::Split {
@@ -370,15 +385,19 @@ impl<H> HedgePairWithData<&H> {
                 sink,
                 sink_data,
                 source_data,
-                ..
+                split,
             } => Self::pair_dot_io(
                 writer,
                 eid,
-                *source,
-                *sink,
-                graph.node_id(*source).add_data(labeler(source_data)),
-                graph.node_id(*sink).add_data(labeler(sink_data)),
-                Some(&attr),
+                graph
+                    .node_id(*source)
+                    .add_data((*source, labeler(source_data)))
+                    .set_in_subgraph(*split == Flow::Source),
+                graph
+                    .node_id(*sink)
+                    .add_data((*sink, labeler(sink_data)))
+                    .set_in_subgraph(*split == Flow::Source),
+                &attr,
                 orientation,
             ),
         }
@@ -424,14 +443,16 @@ pub enum HedgePair {
 }
 
 impl HedgePair {
-    pub fn add_data<V, E, H, N: NodeStorage<NodeData = V>>(
+    pub fn add_data_of<'a, S: SubGraph, V, E, H, N: NodeStorage<NodeData = V>>(
         self,
-        graph: &HedgeGraph<E, V, H, N>,
-    ) -> HedgePairWithData<&H> {
+        graph: &'a HedgeGraph<E, V, H, N>,
+        subgraph: &S,
+    ) -> HedgePairWithData<&'a H> {
         match self {
             HedgePair::Paired { source, sink } => HedgePairWithData::Paired {
                 source,
                 source_data: &graph[source],
+                is_in_subgraph: subgraph.includes(&source) && subgraph.includes(&sink),
                 sink,
                 sink_data: &graph[sink],
             },
@@ -451,6 +472,40 @@ impl HedgePair {
                 hedge,
                 flow,
                 data: &graph[hedge],
+                is_in_subgraph: subgraph.includes(&hedge),
+            },
+        }
+    }
+
+    pub fn add_data<V, E, H, N: NodeStorage<NodeData = V>>(
+        self,
+        graph: &HedgeGraph<E, V, H, N>,
+    ) -> HedgePairWithData<&H> {
+        match self {
+            HedgePair::Paired { source, sink } => HedgePairWithData::Paired {
+                source,
+                source_data: &graph[source],
+                is_in_subgraph: false,
+                sink,
+                sink_data: &graph[sink],
+            },
+
+            HedgePair::Split {
+                source,
+                sink,
+                split,
+            } => HedgePairWithData::Split {
+                source,
+                source_data: &graph[source],
+                sink,
+                sink_data: &graph[sink],
+                split,
+            },
+            HedgePair::Unpaired { hedge, flow } => HedgePairWithData::Unpaired {
+                hedge,
+                flow,
+                data: &graph[hedge],
+                is_in_subgraph: false,
             },
         }
     }
@@ -618,212 +673,6 @@ impl HedgePair {
                     other: attr.other,
                 }
             }
-        }
-    }
-
-    pub fn identity_dot_io<W: std::io::Write>(
-        writer: &mut W,
-        edge_id: Hedge,
-        source: NodeIndex,
-        attr: Option<&GVEdgeAttrs>,
-        orientation: Orientation,
-        flow: Flow,
-    ) -> Result<(), std::io::Error> {
-        //we interpret this node as the hidden one. so the flow is reversed.
-        match flow {
-            Flow::Sink => {
-                writeln!(writer, "ext{edge_id} [shape=none, label=\"\" flow=source];")?;
-            }
-            Flow::Source => {
-                writeln!(writer, "ext{edge_id} [shape=none, label=\"\" flow=sink];")?;
-            }
-        }
-
-        write!(writer, "  ext{edge_id} -> {source}[")?;
-        match (orientation, flow) {
-            (Orientation::Default, Flow::Source) => {
-                write!(writer, "dir=back ")?;
-            }
-            (Orientation::Default, Flow::Sink) => {
-                write!(writer, "dir=forward ")?;
-            }
-            (Orientation::Reversed, Flow::Sink) => {
-                write!(writer, "dir=back ")?;
-            }
-            (Orientation::Reversed, Flow::Source) => {
-                write!(writer, "dir=forward ")?;
-            }
-            (Orientation::Undirected, _) => {
-                write!(writer, "dir=none ")?;
-            }
-        }
-        if let Some(attr) = attr {
-            write!(writer, "{attr}")?;
-        }
-        writeln!(writer, "];")?;
-        Ok(())
-    }
-
-    pub fn identity_dot_fmt<W: std::fmt::Write>(
-        writer: &mut W,
-        edge_id: Hedge,
-        source: NodeIndex,
-        attr: Option<&GVEdgeAttrs>,
-        orientation: Orientation,
-        flow: Flow,
-    ) -> Result<(), std::fmt::Error> {
-        //we interpret this node as the hidden one. so the flow is reversed.
-        match flow {
-            Flow::Sink => {
-                writeln!(writer, "ext{edge_id} [shape=none, label=\"\" flow=source];",)?;
-            }
-            Flow::Source => {
-                writeln!(writer, "ext{edge_id} [shape=none, label=\"\" flow=sink];")?;
-            }
-        }
-
-        write!(writer, "  ext{edge_id} -> {source}[")?;
-        match (orientation, flow) {
-            (Orientation::Default, Flow::Source) => {
-                write!(writer, "dir=back ")?;
-            }
-            (Orientation::Default, Flow::Sink) => {
-                write!(writer, "dir=forward ")?;
-            }
-            (Orientation::Reversed, Flow::Sink) => {
-                write!(writer, "dir=back ")?;
-            }
-            (Orientation::Reversed, Flow::Source) => {
-                write!(writer, "dir=forward ")?;
-            }
-            (Orientation::Undirected, _) => {
-                write!(writer, "dir=none ")?;
-            }
-        }
-        if let Some(attr) = attr {
-            write!(writer, "{attr}")?;
-        }
-        writeln!(writer, "];")?;
-        Ok(())
-    }
-
-    pub fn pair_dot_fmt<W: std::fmt::Write>(
-        writer: &mut W,
-        source: NodeIndex,
-        sink: NodeIndex,
-        attr: Option<&GVEdgeAttrs>,
-        orientation: Orientation,
-    ) -> Result<(), std::fmt::Error> {
-        write!(writer, "{source} -> {sink}[")?;
-        match orientation {
-            Orientation::Default => {
-                write!(writer, " dir=forward ")?;
-            }
-            Orientation::Reversed => {
-                write!(writer, " dir=back ")?;
-            }
-            Orientation::Undirected => {
-                write!(writer, " dir=none ")?;
-            }
-        }
-        if let Some(attr) = attr {
-            writeln!(writer, "{attr}];")?;
-        } else {
-            writeln!(writer, " color=\"red:blue;0.5 \" ];")?;
-        }
-        Ok(())
-    }
-
-    pub fn pair_dot_io<W: std::io::Write>(
-        writer: &mut W,
-        source: NodeIndex,
-        sink: NodeIndex,
-        attr: Option<&GVEdgeAttrs>,
-        orientation: Orientation,
-    ) -> Result<(), std::io::Error> {
-        write!(writer, "{source} -> {sink}[")?;
-        match orientation {
-            Orientation::Default => {
-                write!(writer, " dir=forward ")?;
-            }
-            Orientation::Reversed => {
-                write!(writer, " dir=back ")?;
-            }
-            Orientation::Undirected => {
-                write!(writer, " dir=none ")?;
-            }
-        }
-        if let Some(attr) = attr {
-            writeln!(writer, "{attr}];")?;
-        } else {
-            writeln!(writer, " color=\"red:blue;0.5 \" ];")?;
-        }
-        Ok(())
-    }
-
-    pub fn dot_fmt<W: std::fmt::Write, E, V, H, N: NodeStorageOps<NodeData = V>>(
-        &self,
-        writer: &mut W,
-        graph: &HedgeGraph<E, V, H, N>,
-        orientation: Orientation,
-        attr: GVEdgeAttrs,
-    ) -> Result<(), std::fmt::Error> {
-        match self {
-            HedgePair::Unpaired { hedge, flow } => Self::identity_dot_fmt(
-                writer,
-                *hedge,
-                graph.node_id(*hedge),
-                Some(&attr),
-                orientation,
-                *flow,
-            ),
-            HedgePair::Paired { source, sink } => Self::pair_dot_fmt(
-                writer,
-                graph.node_id(*source),
-                graph.node_id(*sink),
-                Some(&attr),
-                orientation,
-            ),
-            HedgePair::Split { source, sink, .. } => Self::pair_dot_fmt(
-                writer,
-                graph.node_id(*source),
-                graph.node_id(*sink),
-                Some(&attr),
-                orientation,
-            ),
-        }
-    }
-
-    pub fn dot_io<W: std::io::Write, E, V, H, N: NodeStorageOps<NodeData = V>>(
-        &self,
-        writer: &mut W,
-        graph: &HedgeGraph<E, V, H, N>,
-        orientation: Orientation,
-        attr: GVEdgeAttrs,
-    ) -> Result<(), std::io::Error> {
-        match self {
-            HedgePair::Unpaired { hedge, flow } => Self::identity_dot_io(
-                writer,
-                *hedge,
-                graph.node_id(*hedge),
-                Some(&attr),
-                orientation,
-                *flow,
-            ),
-            HedgePair::Paired { source, sink } => Self::pair_dot_io(
-                writer,
-                graph.node_id(*source),
-                graph.node_id(*sink),
-                Some(&attr),
-                orientation,
-            ),
-            HedgePair::Split { source, sink, .. } => Self::pair_dot_io(
-                writer,
-                graph.node_id(*source),
-                graph.node_id(*sink),
-                Some(&attr),
-                orientation,
-            ),
         }
     }
 
@@ -1588,7 +1437,7 @@ pub struct Involution<E = EdgeIndex> {
     /// The core data storage: a vector where each element describes the mapping
     /// and data for a specific half-edge. The index in this vector corresponds
     /// to a `Hedge`'s underlying `usize` value.
-    pub(super) inv: Vec<InvolutiveMapping<E>>,
+    pub(super) inv: HedgeVec<InvolutiveMapping<E>>,
 }
 
 impl<E> AsRef<Involution<E>> for Involution<E> {
@@ -1609,7 +1458,7 @@ impl<E> Involution<E> {
         E: Display,
     {
         let mut out = "".to_string();
-        for (i, e) in self.inv.iter().enumerate() {
+        for (i, e) in self.inv.iter() {
             match e {
                 InvolutiveMapping::Identity { underlying, data } => match underlying {
                     Flow::Sink => out.push_str(&format!("{i}<< :{data}\n")),
@@ -1638,16 +1487,18 @@ impl<E> Involution<E> {
         }
     }
 
-    pub fn len(&self) -> usize {
-        self.inv.len()
-    }
+    // pub fn len(&self) -> usize {
+    //     self.inv.len()
+    // }
 
     pub fn is_empty(&self) -> bool {
         self.inv.is_empty()
     }
 
     pub fn new() -> Self {
-        Involution { inv: Vec::new() }
+        Involution {
+            inv: HedgeVec::new(),
+        }
     }
 
     /// add a new dangling edge to the involution
@@ -1664,12 +1515,12 @@ impl<E> Involution<E> {
             orientation,
             underlying,
         ));
-        Hedge(index)
+        index
     }
 
     /// adds a new hedge that connects to an identity hedge
     pub fn connect_to_identity(&mut self, connect: Hedge) -> Result<Hedge, InvolutionError> {
-        let sink = Hedge(self.inv.len());
+        let sink = self.inv.len();
         if !self.is_identity(connect) {
             return Err(InvolutionError::NotIdentity);
         }
@@ -1718,7 +1569,7 @@ impl<E> Involution<E> {
     }
 
     pub fn last(&self) -> Option<Hedge> {
-        self.len().checked_sub(1).map(Hedge)
+        self.len().0.checked_sub(1).map(Hedge)
     }
 
     fn _validate(&self) -> bool {
@@ -1737,7 +1588,7 @@ impl<E> Involution<E> {
     /// modify the involution to set hedge to sink.
     /// this might make the structure invalid
     fn set(&mut self, hedge: Hedge, mut mapping: InvolutiveMapping<E>) -> Option<EdgeData<E>> {
-        std::mem::swap(&mut self.inv[hedge.0], &mut mapping);
+        std::mem::swap(&mut self.inv[hedge], &mut mapping);
 
         mapping.data()
     }
@@ -1847,24 +1698,8 @@ impl<E> Involution<E> {
         }
     }
 
-    ///Invalidates Subgraphs
-    pub fn swap(&mut self, a: Hedge, b: Hedge) {
-        // Determine if the pointer to them needs to be modified
-        // Need to do this before set inv otherwise you get into an invalid state
-        let inva = self.inv(a);
-        let invb = self.inv(b);
-
-        if inva != a {
-            self.set_inv(inva, b).unwrap();
-        }
-        if invb != b {
-            self.set_inv(invb, a).unwrap();
-        }
-        self.inv.swap(a.0, b.0);
-    }
-
     fn set_inv(&mut self, a: Hedge, inva: Hedge) -> Option<()> {
-        match &mut self.inv[a.0] {
+        match &mut self.inv[a] {
             InvolutiveMapping::Source { sink_idx, .. } => {
                 *sink_idx = inva;
                 Some(())
@@ -1889,7 +1724,7 @@ impl<E> Involution<E> {
 
         let extracted_inv = extract
             .into_iter()
-            .map(|m| match m {
+            .map(|(_, m)| match m {
                 InvolutiveMapping::Identity { data, underlying } => InvolutiveMapping::Identity {
                     data: internal_data(data),
                     underlying,
@@ -1922,9 +1757,9 @@ impl<E> Involution<E> {
         self.delete_impl(graph);
     }
 
-    fn delete_impl<S: SubGraph>(&mut self, graph: &S) -> (Vec<InvolutiveMapping<E>>, Hedge) {
+    fn delete_impl<S: SubGraph>(&mut self, graph: &S) -> (HedgeVec<InvolutiveMapping<E>>, Hedge) {
         let mut left = Hedge(0);
-        let mut extracted = Hedge(self.inv.len());
+        let mut extracted = self.inv.len();
         while left < extracted {
             if !graph.includes(&left) {
                 //left is in the right place
@@ -1951,7 +1786,7 @@ impl<E> Involution<E> {
                 self.source_to_identity_impl(Hedge(i), flow, flow == Flow::Sink);
             }
         }
-        (self.inv.split_off(left.0), left)
+        (self.inv.split_off(left), left)
     }
 
     pub fn hedge_pair(&self, hedge: Hedge) -> HedgePair {
@@ -2019,7 +1854,7 @@ impl<E> Involution<E> {
         if !subgraph.includes(&index) {
             return false;
         }
-        match &self.inv[index.0] {
+        match &self.inv[index] {
             InvolutiveMapping::Identity { .. } => false,
             InvolutiveMapping::Source { sink_idx, .. } => subgraph.includes(sink_idx),
             InvolutiveMapping::Sink { source_idx } => subgraph.includes(source_idx),
@@ -2067,11 +1902,11 @@ impl<E> Involution<E> {
     }
 
     pub fn iter_idx(&self) -> impl Iterator<Item = Hedge> {
-        (0..self.inv.len()).map(Hedge)
+        (0..self.inv.len().0).map(Hedge)
     }
 
     pub fn as_ref(&self) -> Involution<&E> {
-        let inv = self.inv.iter().map(|e| e.as_ref()).collect();
+        let inv = self.inv.iter().map(|(_, e)| e.as_ref()).collect();
         Involution { inv }
     }
 
@@ -2082,7 +1917,7 @@ impl<E> Involution<E> {
         let inv = self
             .inv
             .iter()
-            .map(|e| (e.map_data_ref(g.clone())))
+            .map(|(h, e)| (h, e.map_data_ref(g.clone())))
             .collect();
 
         Involution { inv }
@@ -2095,7 +1930,7 @@ impl<E> Involution<E> {
         let inv = self
             .inv
             .into_iter()
-            .map(|e| (e.map_data(g.clone())))
+            .map(|(h, e)| (h, e.map_data(g.clone())))
             .collect();
 
         Involution { inv }
@@ -2108,8 +1943,8 @@ impl<E> Involution<E> {
         let inv = self
             .inv
             .into_iter()
-            .map(|e| (e.map_data_option(g.clone())))
-            .collect::<Option<Vec<_>>>()?;
+            .map(|(h, e)| (e.map_data_option(g.clone()).map(|e| (h, e))))
+            .collect::<Option<HedgeVec<_>>>()?;
 
         Some(Involution { inv })
     }
@@ -2121,8 +1956,8 @@ impl<E> Involution<E> {
         let inv = self
             .inv
             .into_iter()
-            .map(|e| (e.map_data_result(g.clone())))
-            .collect::<Result<Vec<_>, O>>()?;
+            .map(|(h, e)| e.map_data_result(g.clone()).map(|e| (h, e)))
+            .collect::<Result<HedgeVec<_>, O>>()?;
 
         Ok(Involution { inv })
     }
@@ -2200,7 +2035,7 @@ impl<E> Involution<E> {
             if reverse_orientation {
                 data.orientation = data.orientation.reverse()
             }
-            self.inv[hedge.0] = InvolutiveMapping::Identity { data, underlying };
+            self.inv[hedge] = InvolutiveMapping::Identity { data, underlying };
         }
     }
 
@@ -2217,7 +2052,7 @@ impl<E> Involution<E> {
     pub(super) fn flip_underlying(&mut self, hedge: Hedge) {
         let pair = self.inv(hedge);
 
-        self.inv.swap(hedge.0, pair.0);
+        self.inv.swap(hedge, pair);
 
         match self.hedge_data_mut(hedge) {
             InvolutiveMapping::Identity { underlying, data } => {
@@ -2263,7 +2098,7 @@ impl<E> Involution<E> {
     }
 
     pub fn edge_data(&self, index: Hedge) -> &EdgeData<E> {
-        match &self.inv[index.0] {
+        match &self.inv[index] {
             InvolutiveMapping::Source { data, .. } => data,
             InvolutiveMapping::Identity { data, .. } => data,
             InvolutiveMapping::Sink { source_idx } => self.edge_data(*source_idx),
@@ -2272,10 +2107,10 @@ impl<E> Involution<E> {
 
     #[allow(clippy::needless_return)]
     pub fn edge_data_mut(&mut self, index: Hedge) -> &mut EdgeData<E> {
-        if let InvolutiveMapping::Sink { source_idx } = self.inv[index.0] {
+        if let InvolutiveMapping::Sink { source_idx } = self.inv[index] {
             return self.edge_data_mut(source_idx);
         }
-        match &mut self.inv[index.0] {
+        match &mut self.inv[index] {
             InvolutiveMapping::Source { data, .. } => return data,
             InvolutiveMapping::Identity { data, .. } => return data,
             _ => unreachable!(),
@@ -2283,11 +2118,11 @@ impl<E> Involution<E> {
     }
 
     pub(super) fn hedge_data(&self, hedge: Hedge) -> &InvolutiveMapping<E> {
-        &self.inv[hedge.0]
+        &self.inv[hedge]
     }
 
     pub(crate) fn hedge_data_mut(&mut self, hedge: Hedge) -> &mut InvolutiveMapping<E> {
-        &mut self.inv[hedge.0]
+        &mut self.inv[hedge]
     }
 
     pub(crate) fn data_inv(&self, hedge: Hedge) -> Hedge {
@@ -2340,7 +2175,7 @@ impl<E> Index<Hedge> for Involution<E> {
     type Output = E;
 
     fn index(&self, index: Hedge) -> &Self::Output {
-        match &self.inv[index.0] {
+        match &self.inv[index] {
             InvolutiveMapping::Identity { data, .. } => &data.data,
             InvolutiveMapping::Source { data, .. } => &data.data,
             InvolutiveMapping::Sink { source_idx } => &self[*source_idx],
@@ -2367,18 +2202,13 @@ impl<E> IndexMut<Hedge> for Involution<E> {
 // }
 
 pub struct DrainingInvolutionIter<E> {
-    into: std::vec::IntoIter<InvolutiveMapping<E>>,
-    current: Hedge,
+    into: HedgeVecIntoIter<InvolutiveMapping<E>>,
 }
 
 impl<E> Iterator for DrainingInvolutionIter<E> {
     type Item = (Hedge, InvolutiveMapping<E>);
     fn next(&mut self) -> Option<Self::Item> {
-        self.into.next().map(|e| {
-            let out = (self.current, e);
-            self.current.0 += 1;
-            out
-        })
+        self.into.next()
     }
 }
 
@@ -2388,24 +2218,18 @@ impl<E> IntoIterator for Involution<E> {
     fn into_iter(self) -> Self::IntoIter {
         DrainingInvolutionIter {
             into: self.inv.into_iter(),
-            current: Hedge(0),
         }
     }
 }
 
 pub struct InvolutionIter<'a, E> {
-    into: std::slice::Iter<'a, InvolutiveMapping<E>>,
-    current: Hedge,
+    into: HedgeVecIter<'a, InvolutiveMapping<E>>,
 }
 
 impl<'a, E> Iterator for InvolutionIter<'a, E> {
     type Item = (Hedge, &'a InvolutiveMapping<E>);
     fn next(&mut self) -> Option<Self::Item> {
-        self.into.next().map(|e| {
-            let out = (self.current, e);
-            self.current.0 += 1;
-            out
-        })
+        self.into.next()
     }
 }
 
@@ -2415,24 +2239,18 @@ impl<'a, E> IntoIterator for &'a Involution<E> {
     fn into_iter(self) -> Self::IntoIter {
         InvolutionIter {
             into: self.inv.iter(),
-            current: Hedge(0),
         }
     }
 }
 
 pub struct InvolutionIterMut<'a, E> {
-    into: std::slice::IterMut<'a, InvolutiveMapping<E>>,
-    current: Hedge,
+    into: HedgeVecIterMut<'a, InvolutiveMapping<E>>,
 }
 
 impl<'a, E> Iterator for InvolutionIterMut<'a, E> {
     type Item = (Hedge, &'a mut InvolutiveMapping<E>);
     fn next(&mut self) -> Option<Self::Item> {
-        self.into.next().map(|e| {
-            let out = (self.current, e);
-            self.current.0 += 1;
-            out
-        })
+        self.into.next()
     }
 }
 
@@ -2442,7 +2260,6 @@ impl<'a, E> IntoIterator for &'a mut Involution<E> {
     fn into_iter(self) -> Self::IntoIter {
         InvolutionIterMut {
             into: self.inv.iter_mut(),
-            current: Hedge(0),
         }
     }
 }
@@ -2521,7 +2338,7 @@ impl<'a, E> IntoIterator for &'a mut Involution<E> {
 impl<E> Display for Involution<E> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut out = "".to_string();
-        for (i, e) in self.inv.iter().enumerate() {
+        for (i, e) in self.inv.iter() {
             match e {
                 InvolutiveMapping::Identity { underlying, .. } => match underlying {
                     Flow::Sink => out.push_str(&format!("{i}<<\n")),
@@ -2536,6 +2353,28 @@ impl<E> Display for Involution<E> {
             }
         }
         write!(f, "{out}")
+    }
+}
+
+impl<E> Swap<Hedge> for Involution<E> {
+    ///Invalidates Subgraphs
+    fn swap(&mut self, a: Hedge, b: Hedge) {
+        // Determine if the pointer to them needs to be modified
+        // Need to do this before set inv otherwise you get into an invalid state
+        let inva = self.inv(a);
+        let invb = self.inv(b);
+
+        if inva != a {
+            self.set_inv(inva, b).unwrap();
+        }
+        if invb != b {
+            self.set_inv(invb, a).unwrap();
+        }
+        self.inv.swap(a, b);
+    }
+
+    fn len(&self) -> Hedge {
+        self.inv.len()
     }
 }
 

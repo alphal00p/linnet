@@ -1,13 +1,15 @@
 use super::{
     hedgevec::SmartEdgeVec,
-    involution::{Flow, Hedge, Involution, Orientation},
+    involution::{Flow, Hedge, HedgeVec, Involution, Orientation},
     nodestore::NodeStorageOps,
     subgraph::BaseSubgraph,
+    swap::Swap,
     HedgeGraph, NoData, NodeIndex,
 };
 
 pub struct HedgeData<H> {
     pub data: H,
+    pub is_in_subgraph: bool,
     pub node: NodeIndex,
 }
 
@@ -15,18 +17,25 @@ impl<H: Default> From<NodeIndex> for HedgeData<H> {
     fn from(node: NodeIndex) -> Self {
         HedgeData {
             data: H::default(),
+            is_in_subgraph: false,
             node,
         }
     }
 }
 
 impl<H> HedgeData<H> {
+    pub fn set_in_subgraph(mut self, is_in_subgraph: bool) -> Self {
+        self.is_in_subgraph = is_in_subgraph;
+        self
+    }
+
     pub fn map<F, T>(self, f: F) -> HedgeData<T>
     where
         F: FnOnce(H) -> T,
     {
         HedgeData {
             data: f(self.data),
+            is_in_subgraph: self.is_in_subgraph,
             node: self.node,
         }
     }
@@ -38,6 +47,7 @@ impl<H> HedgeData<H> {
         match f(self.data) {
             Ok(data) => Ok(HedgeData {
                 data,
+                is_in_subgraph: self.is_in_subgraph,
                 node: self.node,
             }),
             Err(err) => Err(err),
@@ -99,7 +109,7 @@ impl<V> HedgeNodeBuilder<V> {
 /// // let graph: HedgeGraph<&str, &str, MyNodeStore> = builder.build();
 /// ```
 pub struct HedgeGraphBuilder<E, V, H = NoData> {
-    hedge_data: Vec<H>,
+    hedge_data: HedgeVec<H>,
     /// A list of nodes currently being built, stored as [`HedgeNodeBuilder`] instances.
     nodes: Vec<HedgeNodeBuilder<V>>,
     /// The [`Involution`] structure managing the half-edges being added to the graph.
@@ -109,7 +119,7 @@ pub struct HedgeGraphBuilder<E, V, H = NoData> {
 impl<E, V, H> HedgeGraphBuilder<E, V, H> {
     pub fn new() -> Self {
         HedgeGraphBuilder {
-            hedge_data: Vec::new(),
+            hedge_data: HedgeVec::new(),
             nodes: Vec::new(),
             involution: Involution::new(),
         }
@@ -169,10 +179,10 @@ impl<E, V, H, N: NodeStorageOps<NodeData = V>> From<HedgeGraphBuilder<E, V, H>>
     for HedgeGraph<E, V, H, N>
 {
     fn from(builder: HedgeGraphBuilder<E, V, H>) -> Self {
-        let len = builder.involution.len();
+        let len: Hedge = builder.involution.len();
 
         HedgeGraph {
-            node_store: N::build(builder.nodes, len),
+            node_store: N::build(builder.nodes, len.0),
             edge_store: SmartEdgeVec::new(builder.involution),
             hedge_data: builder.hedge_data,
         }

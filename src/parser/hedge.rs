@@ -6,6 +6,7 @@ use crate::half_edge::involution::{Flow, Hedge};
 pub struct DotHedgeData {
     pub statement: Option<String>,
     pub id: Option<Hedge>,
+    pub in_subgraph: bool,
 }
 
 impl DotHedgeData {
@@ -29,6 +30,16 @@ impl DotHedgeData {
         }
     }
 
+    pub fn add_to_subgraph(mut self) -> Self {
+        self.in_subgraph = true;
+        self
+    }
+
+    pub fn remove_from_subgraph(mut self) -> Self {
+        self.in_subgraph = false;
+        self
+    }
+
     pub fn with_id(mut self, id: Hedge) -> Self {
         self.id = Some(id);
         self
@@ -49,6 +60,7 @@ impl From<Option<String>> for DotHedgeData {
         DotHedgeData {
             statement,
             id: None,
+            in_subgraph: false,
         }
     }
 }
