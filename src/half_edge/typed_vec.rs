@@ -252,6 +252,11 @@ macro_rules! define_indexed_vec {
             }
         }
 
+        impl<T> ::std::convert::AsRef<[T]> for $Vec<T> {
+            #[inline] fn as_ref(&self) -> &[T] { &self.0 }
+        }
+
+
 
         impl<T> ::std::iter::Extend<($Idx,T)> for $Vec<T> {
             #[inline] fn extend<I: ::std::iter::IntoIterator<Item = ($Idx,T)>>(&mut self, it: I) {
