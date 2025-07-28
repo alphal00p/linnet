@@ -111,13 +111,8 @@ impl DotEdgeData {
         Either<HedgeData<DotHedgeData>, Flow>,
     ) {
         let mut orientation = orientation.into();
-        let mut source_h_data = None;
-        let mut sink_h_data = None;
-        let sink_in_subgraph = edge.sink_in_subgraph();
-        let source_in_subgraph = edge.source_in_subgraph();
-
-        let sink_id = edge.sink_id();
-        let source_id = edge.source_id();
+        let mut source_data = DotHedgeData::from(edge.source_port());
+        let mut sink_data = DotHedgeData::from(edge.sink_port());
         let mut statements = global_data.edge_statements.clone();
         statements.extend(edge.attr.into_iter().filter_map(|(key, value)| {
             match key.as_str() {
@@ -128,10 +123,10 @@ impl DotEdgeData {
                     _ => panic!("Invalid edge direction"),
                 },
                 "source" => {
-                    source_h_data = Some(value);
+                    source_data.statement = Some(value);
                 }
                 "sink" => {
-                    sink_h_data = Some(value);
+                    sink_data.statement = Some(value);
                 }
                 _ => {
                     return Some((key, value));
@@ -141,25 +136,13 @@ impl DotEdgeData {
         }));
 
         let source = map[&edge.from.id].clone();
+
         let target = map[&edge.to.id].clone();
 
         let (edge, source, target) = match (source, target) {
             (NodeIdOrDangling::Id(source), NodeIdOrDangling::Id(target)) => {
                 //Full edge
-
                 let dot_edge: DotEdgeData = statements.into_iter().collect();
-
-                let mut source_data: DotHedgeData = source_h_data.into();
-                let mut sink_data: DotHedgeData = sink_h_data.into();
-
-                sink_data.in_subgraph = sink_in_subgraph;
-                if let Some(sink) = sink_id {
-                    sink_data = sink_data.with_id(sink)
-                }
-                if let Some(source) = source_id {
-                    source_data = source_data.with_id(source)
-                }
-                source_data.in_subgraph = source_in_subgraph;
                 (
                     dot_edge,
                     source.add_data(source_data),
@@ -173,47 +156,32 @@ impl DotEdgeData {
                         .filter(|(a, _)| !(a.as_str() == "shape" || a.as_str() == "label")),
                 );
                 let dot_edge = statements.into_iter().collect();
-
-                orientation = orientation.relative_to(Flow::Sink);
-
-                let mut sink_data: DotHedgeData = sink_h_data.into();
-
-                sink_data.in_subgraph = source_in_subgraph;
-                if let Some(sink) = source_id {
-                    sink_data = sink_data.with_id(sink)
+                orientation = orientation.relative_to(-Flow::Source);
+                if !sink_data.is_none() {
+                    panic!("Sink edge cannot have data:{sink_data}");
                 }
 
-                if sink_id.is_some() {
-                    panic!("Sink edge cannot have a source id");
-                }
                 (
                     dot_edge,
-                    source.add_data(sink_data),
+                    source.add_data(source_data),
                     Either::Right(Flow::Source),
                 )
             }
-            (NodeIdOrDangling::Dangling { statements: states }, NodeIdOrDangling::Id(source)) => {
+            (NodeIdOrDangling::Dangling { statements: states }, NodeIdOrDangling::Id(sink)) => {
                 statements.extend(
                     states
                         .into_iter()
                         .filter(|(a, _)| !(a.as_str() == "shape" || a.as_str() == "label")),
                 );
                 let dot_edge = statements.into_iter().collect();
-
-                orientation = orientation.relative_to(Flow::Source);
-
-                let mut source_data: DotHedgeData = source_h_data.into();
-
-                source_data.in_subgraph = sink_in_subgraph;
-                if let Some(source) = sink_id {
-                    source_data = source_data.with_id(source)
+                orientation = orientation.relative_to(-Flow::Sink);
+                if !source_data.is_none() {
+                    panic!("Source edge cannot have data:{source_data}");
                 }
-                if source_id.is_some() {
-                    panic!("Source edge cannot have a sink id");
-                }
+
                 (
                     dot_edge,
-                    source.add_data(source_data),
+                    sink.add_data(sink_data),
                     Either::Right(Flow::Sink),
                 )
             }

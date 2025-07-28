@@ -3,6 +3,7 @@ use std::ops::{AddAssign, SubAssign};
 use crate::permutation::Permutation;
 
 use super::{
+    hedgevec::SmartEdgeVec,
     involution::{EdgeIndex, Hedge},
     nodestore::NodeStorageOps,
     HedgeGraph, NodeIndex,
@@ -12,6 +13,8 @@ pub trait Swap<Index> {
     fn swap(&mut self, i: Index, j: Index);
 
     fn len(&self) -> Index;
+
+    fn is_empty(&self) -> bool;
 
     fn permute(&mut self, perm: &Permutation)
     where
@@ -57,6 +60,10 @@ impl<E, V, H, N: NodeStorageOps<NodeData = V>> Swap<Hedge> for HedgeGraph<E, V, 
         self.hedge_data.len()
     }
 
+    fn is_empty(&self) -> bool {
+        self.hedge_data.is_empty()
+    }
+
     fn swap(&mut self, i: Hedge, j: Hedge) {
         // println!("Swapping {i:?} with {j:?}");
         self.hedge_data.swap(i, j);
@@ -72,6 +79,10 @@ impl<E, V, H, N: NodeStorageOps<NodeData = V>> Swap<EdgeIndex> for HedgeGraph<E,
         self.edge_store.swap(i, j);
     }
 
+    fn is_empty(&self) -> bool {
+        <SmartEdgeVec<E> as Swap<EdgeIndex>>::is_empty(&self.edge_store)
+    }
+
     fn len(&self) -> EdgeIndex {
         self.edge_store.len()
     }
@@ -80,6 +91,10 @@ impl<E, V, H, N: NodeStorageOps<NodeData = V>> Swap<EdgeIndex> for HedgeGraph<E,
 impl<E, V, H, N: NodeStorageOps<NodeData = V>> Swap<NodeIndex> for HedgeGraph<E, V, H, N> {
     fn swap(&mut self, i: NodeIndex, j: NodeIndex) {
         self.node_store.swap(i, j);
+    }
+
+    fn is_empty(&self) -> bool {
+        <N as Swap<NodeIndex>>::is_empty(&self.node_store)
     }
 
     fn len(&self) -> NodeIndex {

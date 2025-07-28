@@ -1127,6 +1127,10 @@ impl<T> Swap<Hedge> for SmartEdgeVec<T> {
         self.involution.len()
     }
 
+    fn is_empty(&self) -> bool {
+        self.involution.is_empty()
+    }
+
     fn swap(&mut self, e1: Hedge, e2: Hedge) {
         if e1 != e2 {
             if e2 == self.inv(e1) {
@@ -1187,6 +1191,10 @@ impl<T> Swap<Hedge> for SmartEdgeVec<T> {
 impl<T> Swap<EdgeIndex> for SmartEdgeVec<T> {
     fn len(&self) -> EdgeIndex {
         self.data.len()
+    }
+
+    fn is_empty(&self) -> bool {
+        self.data.is_empty()
     }
 
     fn swap(&mut self, e1: EdgeIndex, e2: EdgeIndex) {

@@ -98,6 +98,9 @@ impl<V> UnionFindNodeStore<V> {
 }
 
 impl<V> Swap<Hedge> for UnionFindNodeStore<V> {
+    fn is_empty(&self) -> bool {
+        todo!()
+    }
     fn len(&self) -> Hedge {
         todo!()
     }
@@ -106,6 +109,9 @@ impl<V> Swap<Hedge> for UnionFindNodeStore<V> {
     }
 }
 impl<V> Swap<NodeIndex> for UnionFindNodeStore<V> {
+    fn is_empty(&self) -> bool {
+        todo!()
+    }
     fn len(&self) -> NodeIndex {
         todo!()
     }

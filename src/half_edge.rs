@@ -2509,7 +2509,6 @@ impl<E, V, H, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, H, N> {
     pub fn dot_label<S: SubGraph>(&self, node_as_graph: &S) -> String
     where
         E: Display,
-        H: Display,
         V: Display,
     {
         let mut output = String::new();
@@ -2517,7 +2516,7 @@ impl<E, V, H, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, H, N> {
             &mut output,
             node_as_graph,
             "start=2;\n",
-            &|h| Some(format!("label=\"{h}\"")),
+            &|_| None,
             &|a| Some(format!("label=\"{a}\"")),
             &|v| Some(format!("label=\"{v}\"")),
         )

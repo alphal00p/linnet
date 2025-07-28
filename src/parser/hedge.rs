@@ -1,15 +1,27 @@
 use std::fmt::Display;
 
+use dot_parser::ast::{CompassPt, Port};
+
 use crate::half_edge::involution::{Flow, Hedge};
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+use super::subgraph_free::PortExt;
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct DotHedgeData {
     pub statement: Option<String>,
     pub id: Option<Hedge>,
-    pub in_subgraph: bool,
+    pub port_label: Option<String>,
+    pub compasspt: Option<CompassPt>,
 }
 
 impl DotHedgeData {
+    pub fn is_none(&self) -> bool {
+        self.statement.is_none()
+            && self.id.is_none()
+            && self.port_label.is_none()
+            && self.compasspt.is_none()
+    }
+
     #[allow(clippy::useless_asref)]
     pub fn dot_serialize(&self) -> Option<String> {
         let mut out = String::new();
@@ -30,13 +42,15 @@ impl DotHedgeData {
         }
     }
 
-    pub fn add_to_subgraph(mut self) -> Self {
-        self.in_subgraph = true;
+    pub fn with_statement(mut self, statement: String) -> Self {
+        self.statement = Some(statement);
         self
     }
 
-    pub fn remove_from_subgraph(mut self) -> Self {
-        self.in_subgraph = false;
+    pub fn with_port(mut self, port: &Port) -> Self {
+        self.port_label = port.id().map(|a| a.to_string());
+        self.compasspt = port.compass().cloned();
+        self.id = port.hedge();
         self
     }
 
@@ -59,8 +73,17 @@ impl From<Option<String>> for DotHedgeData {
     fn from(statement: Option<String>) -> Self {
         DotHedgeData {
             statement,
-            id: None,
-            in_subgraph: false,
+            ..Default::default()
+        }
+    }
+}
+
+impl From<Option<&Port>> for DotHedgeData {
+    fn from(port: Option<&Port>) -> Self {
+        if let Some(port) = port {
+            DotHedgeData::default().with_port(port)
+        } else {
+            DotHedgeData::default()
         }
     }
 }

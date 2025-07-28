@@ -83,6 +83,7 @@ use std::{
 };
 
 use ahash::{HashSet, HashSetExt};
+use dot_parser::ast::CompassPt;
 use indenter::CodeFormatter;
 use itertools::{Either, Itertools};
 use subgraph_free::SubGraphFreeGraph;
@@ -145,22 +146,14 @@ pub enum NodeIdOrDangling {
 mod subgraph_free;
 
 impl<S: NodeStorageOps<NodeData = DotVertexData>> DotGraph<S> {
-    pub fn subgraph<Sub: ModifySubgraph<Hedge> + SubGraph>(&self) -> Sub {
+    pub fn compass_subgraph<Sub: ModifySubgraph<Hedge> + SubGraph>(
+        &self,
+        cps: Option<CompassPt>,
+    ) -> Sub {
         let mut a: Sub = self.empty_subgraph();
 
         for (h, d) in self.graph.iter_hedges() {
-            if d.in_subgraph {
-                a.add(h);
-            }
-        }
-        a
-    }
-
-    pub fn subgraph_inv<Sub: ModifySubgraph<Hedge> + SubGraph>(&self) -> Sub {
-        let mut a: Sub = self.empty_subgraph();
-
-        for (h, d) in self.graph.iter_hedges() {
-            if !d.in_subgraph {
+            if cps == d.compasspt {
                 a.add(h);
             }
         }
@@ -498,24 +491,79 @@ impl<E, V, H, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, H, N> {
 pub mod test {
     use bitvec::vec::BitVec;
 
-    use crate::parser::DotGraph;
+    use crate::{
+        half_edge::nodestore::NodeStorageVec,
+        parser::{DotGraph, DotVertexData},
+    };
+
+    use super::GraphSet;
 
     #[test]
     fn test_from_string() {
         let s = "digraph G {
             A      [style=invis]
             A -> B [label=\"Hello\" sink=\"AAA\"];
-            B -> C [label=\"World\" dir=none];
+            B -> C [label=\"World\" dir=back];
         }";
         let graph: DotGraph = DotGraph::from_string(s).unwrap();
 
-        println!("{}", graph.debug_dot());
+        println!("Parsed as:{}", graph.debug_dot());
+        // println!("Inv:{}", graph.graph.as_ref());
         assert_eq!(graph.n_nodes(), 2);
         assert_eq!(graph.n_internals(), 1);
         let g = graph.back_and_forth_dot();
         let gg = g.clone().back_and_forth_dot();
         // println!("{g:?}");
         assert_eq!(g, gg);
+    }
+
+    #[test]
+    fn multiple_graphs() {
+        let s = r#"
+            digraph triangle_0 {
+            graph [
+            overall_factor = 1;
+            multiplicity_factor = 1;
+            ]
+            edge [
+            pdg=1000
+            dod=-100
+            ]
+            ext [style=invis]
+            ext -> v4 [name=p1, mom=p1,num="Q(eid,spenso::mink(4,10))"];
+            ext -> v5 [name=p2, mom=p2,num="Q(eid,spenso::mink(4,20))"];
+            v6 -> ext [name=p3, mom=p3];
+            v5 -> v4 [name=q1,lmb_index=0, num="Q(eid,spenso::mink(4,10))"];
+            v6 -> v5 [name=q2];
+            v4 -> v6 [name=q3,num="Q(eid,spenso::mink(4,20))-Q(0,spenso::mink(4,20))"];
+            }
+
+            digraph tria {
+            graph [
+            overall_factor = -1;
+            multiplicity_factor = 1;
+            ]
+            edge [
+            pdg=1000
+            dod=-100
+            ]
+            ext [style=invis]
+            ext -> v4 [name=p1, mom=p1 num="Q(eid,spenso::mink(4,10))" is_dummy=true];
+            ext -> v5 [name=p2, mom=p2,num="Q(eid,spenso::mink(4,20))" is_dummy=true];
+            // v6 -> ext [name=p3, mom=p3, is_dummy];
+            // v5 -> v4 [pdg=1001, name=q1,lmb_index=0, num="Q(eid,spenso::mink(4,10))"];
+            // v6 -> v5 [pdg=1001, name=q2];
+            // v4 -> v6 [pdg=1001, name=q3,num="Q(eid,spenso::mink(4,20))-Q(0,spenso::mink(4,20))"];
+            }
+            "#;
+
+        assert_eq!(
+            GraphSet::<_, _, _, _, NodeStorageVec<DotVertexData>>::from_string(s)
+                .unwrap()
+                .set
+                .len(),
+            2
+        );
     }
 
     #[test]
@@ -648,8 +696,23 @@ pub mod test {
         })
         .unwrap();
 
-        let sub: BitVec = aligned.subgraph();
+        let sub: BitVec = aligned.compass_subgraph(Some(dot_parser::ast::CompassPt::S));
 
         println!("{}", aligned.dot_of(&sub));
+    }
+}
+
+mod multi {
+
+    #[test]
+    fn multiple() {
+        assert_eq!(
+            dot_parser::ast::Graphs::try_from("graph { A -> subgraph { B C } }\ngraph { A ->  }")
+                .unwrap()
+                .graphs
+                .len(),
+            1
+        );
+        assert!(dot_parser::ast::Graph::try_from("graph { A ->  }").is_err());
     }
 }

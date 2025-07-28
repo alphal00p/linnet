@@ -147,8 +147,8 @@ impl<H> HedgePairWithData<H> {
         }
         if let Some(hedge_label) = hedge.data.1 {
             match flow {
-                Flow::Sink => write!(writer, " source={hedge_label}")?,
-                Flow::Source => write!(writer, " sink={hedge_label}")?,
+                Flow::Sink => write!(writer, " sink={hedge_label}")?,
+                Flow::Source => write!(writer, " source={hedge_label}")?,
             }
         }
         write!(writer, " {attr}")?;
@@ -188,8 +188,8 @@ impl<H> HedgePairWithData<H> {
             },
             if let Some(hedge_label) = hedge.data.1 {
                 match flow {
-                    Flow::Sink => format!(" source={hedge_label}"),
-                    Flow::Source => format!(" sink={hedge_label}"),
+                    Flow::Sink => format!(" sink={hedge_label}"),
+                    Flow::Source => format!(" source={hedge_label}"),
                 }
             } else {
                 "".to_string()
@@ -2357,6 +2357,10 @@ impl<E> Display for Involution<E> {
 }
 
 impl<E> Swap<Hedge> for Involution<E> {
+    fn is_empty(&self) -> bool {
+        self.inv.is_empty()
+    }
+
     ///Invalidates Subgraphs
     fn swap(&mut self, a: Hedge, b: Hedge) {
         // Determine if the pointer to them needs to be modified

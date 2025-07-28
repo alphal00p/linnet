@@ -71,6 +71,10 @@ impl<V, P: ForestNodeStore> Swap<Hedge> for Forest<V, P> {
         Hedge(self.nodes.n_nodes())
     }
 
+    fn is_empty(&self) -> bool {
+        self.nodes.n_nodes() == 0
+    }
+
     fn swap(&mut self, a: Hedge, b: Hedge) {
         if a != b {
             let a = a.into();
@@ -91,6 +95,10 @@ impl<V, P: ForestNodeStore> Swap<Hedge> for Forest<V, P> {
 impl<V, P: ForestNodeStore> Swap<NodeIndex> for Forest<V, P> {
     fn len(&self) -> NodeIndex {
         NodeIndex(self.roots.len())
+    }
+
+    fn is_empty(&self) -> bool {
+        self.roots.is_empty()
     }
     fn swap(&mut self, _i: NodeIndex, _j: NodeIndex) {
         todo!()

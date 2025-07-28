@@ -739,6 +739,7 @@ fn join() {
 }
 use std::time::Instant;
 
+use dot_parser::ast::CompassPt;
 use insta::assert_snapshot;
 use nodestore::NodeStorageVec;
 
@@ -1487,9 +1488,12 @@ fn extracting_network() {
     )
     .unwrap();
 
-    println!("{}", graph.dot_of(&graph.subgraph::<BitVec>()));
+    println!(
+        "{}",
+        graph.dot_of(&graph.compass_subgraph::<BitVec>(Some(CompassPt::S)))
+    );
 
-    let sub: BitVec = graph.subgraph();
+    let sub: BitVec = graph.compass_subgraph::<BitVec>(Some(CompassPt::S));
     let a = graph.extract(
         &sub,
         |a| a.map(Clone::clone),

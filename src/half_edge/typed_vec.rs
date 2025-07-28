@@ -91,6 +91,8 @@ macro_rules! define_indexed_vec {
             fn len(&self) -> $Idx {
                 $Idx(self.0.len())
             }
+            #[inline] fn is_empty(&self) -> bool { self.0.is_empty() }
+
         }
 
         /* --- Delegated Vec<T> API ------------------------------------------------- */
@@ -202,7 +204,7 @@ macro_rules! define_indexed_vec {
 
             /* capacity */
             // #[inline] pub fn len(&self) -> usize { self.0.len() }
-            #[inline] pub fn is_empty(&self) -> bool { self.0.is_empty() }
+
             #[inline] pub fn capacity(&self) -> usize { self.0.capacity() }
             #[inline] pub fn reserve(&mut self, n: usize) { self.0.reserve(n) }
             #[inline] pub fn reserve_exact(&mut self, n: usize) { self.0.reserve_exact(n) }

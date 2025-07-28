@@ -8,6 +8,7 @@ use ahash::HashSetExt;
 use dot_parser::ast::AList;
 pub use dot_parser::ast::AttrList;
 pub use dot_parser::ast::AttrStmt;
+use dot_parser::ast::CompassPt;
 pub use dot_parser::ast::NodeID;
 pub use dot_parser::ast::NodeStmt;
 use dot_parser::ast::Port;
@@ -429,32 +430,42 @@ pub struct Edge {
     pub attr: Vec<(String, String)>,
 }
 
+pub trait PortExt {
+    fn hedge(&self) -> Option<Hedge>;
+    fn compass(&self) -> Option<&CompassPt>;
+    fn id(&self) -> Option<&str>;
+}
+
+impl PortExt for Port {
+    fn hedge(&self) -> Option<Hedge> {
+        match self {
+            Port::ID(id, _) => id.parse().ok(),
+            _ => None,
+        }
+    }
+
+    fn id(&self) -> Option<&str> {
+        match self {
+            Port::ID(id, _) => Some(id.as_str()),
+            _ => None,
+        }
+    }
+
+    fn compass(&self) -> Option<&CompassPt> {
+        match self {
+            Port::Compass(c) => Some(c),
+            Port::ID(_, c) => c.as_ref(),
+        }
+    }
+}
+
 impl Edge {
-    pub fn source_id(&self) -> Option<Hedge> {
-        self.from.port.as_ref().and_then(|p| match p {
-            Port::ID(id, _) => id.parse().ok(),
-            _ => None,
-        })
+    pub fn source_port(&self) -> Option<&Port> {
+        self.from.port.as_ref()
     }
 
-    pub fn source_in_subgraph(&self) -> bool {
-        self.from.port.as_ref().is_some_and(|a| match a {
-            Port::Compass(_) => true,
-            Port::ID(_, c) => c.is_some(),
-        })
-    }
-    pub fn sink_in_subgraph(&self) -> bool {
-        self.to.port.as_ref().is_some_and(|a| match a {
-            Port::Compass(_) => true,
-            Port::ID(_, c) => c.is_some(),
-        })
-    }
-
-    pub fn sink_id(&self) -> Option<Hedge> {
-        self.to.port.as_ref().and_then(|p| match p {
-            Port::ID(id, _) => id.parse().ok(),
-            _ => None,
-        })
+    pub fn sink_port(&self) -> Option<&Port> {
+        self.to.port.as_ref()
     }
 }
 

@@ -156,6 +156,9 @@ impl<N> NodeStorageVec<N> {
 }
 
 impl<N> Swap<Hedge> for NodeStorageVec<N> {
+    fn is_empty(&self) -> bool {
+        self.hedge_data.is_empty()
+    }
     fn len(&self) -> Hedge {
         self.hedge_data.len()
     }
@@ -176,6 +179,10 @@ impl<N> Swap<Hedge> for NodeStorageVec<N> {
 }
 
 impl<N> Swap<NodeIndex> for NodeStorageVec<N> {
+    fn is_empty(&self) -> bool {
+        self.nodes.is_empty()
+    }
+
     fn len(&self) -> NodeIndex {
         self.nodes.len()
     }
