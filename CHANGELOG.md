@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.0](https://github.com/alphal00p/linnet/compare/v0.10.0...v0.11.0) - 2025-07-29
+
+### Other
+
+- serialize global data
+
 ## [0.10.0](https://github.com/alphal00p/linnet/compare/v0.9.1...v0.10.0) - 2025-07-29
 
 ### Other
