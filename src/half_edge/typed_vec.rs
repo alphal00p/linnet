@@ -88,6 +88,12 @@ macro_rules! define_indexed_vec {
                 self.0.swap(a.0, b.0);
             }
 
+            // type Item = T;
+
+            // fn filter(&self, id: &$Idx, filter: &impl Fn(&$Idx, &Self::Item) -> bool) -> bool {
+            //     filter(id,&self[*id])
+            // }
+
             fn len(&self) -> $Idx {
                 $Idx(self.0.len())
             }

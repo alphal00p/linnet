@@ -88,7 +88,7 @@ use std::hash::Hash;
 use std::num::TryFromIntError;
 use std::ops::{Index, IndexMut};
 
-use ahash::{AHashMap, AHashSet};
+use ahash::{AHashMap, AHashSet, HashSet, HashSetExt};
 
 use bitvec::prelude::*;
 use bitvec::{slice::IterOnes, vec::BitVec};
@@ -381,6 +381,19 @@ impl<E, V: Default, H: Default, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V
 }
 
 impl<E, V, H, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, H, N> {
+    pub fn check(&self) -> Result<(), HedgeGraphError> {
+        // Check involution
+        for (h, _) in self.iter_hedges() {
+            if h != self.inv(self.inv(h)) {
+                Err(InvolutionError::NonInvolutive(h))?;
+            }
+        }
+
+        // Check smart edge vec
+        self.edge_store.check_hedge_pairs()?;
+        Ok(())
+    }
+
     /// Deletes all half-edges specified in the `subgraph` from the graph.
     ///
     /// This operation modifies both the `edge_store` and `node_store` to remove
@@ -536,6 +549,30 @@ impl<E, V, H, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, H, N> {
         }
     }
 
+    pub fn extract_nodes<O>(
+        &mut self,
+        nodes: impl IntoIterator<Item = NodeIndex>,
+        split_edge_fn: impl FnMut(EdgeData<&E>) -> EdgeData<O>,
+        internal_data: impl FnMut(EdgeData<E>) -> EdgeData<O>,
+    ) -> HedgeGraph<O, V, H, N>
+    where
+        N: NodeStorageOps<Base = BitVec>,
+    {
+        let (extracted, nodes) = self.node_store.extract_nodes(nodes);
+
+        let left = self.hedge_data.partition(|h| !extracted.includes(h));
+
+        let ne_hedge = self.hedge_data.split_off(left);
+
+        let new_edge_store = self
+            .edge_store
+            .extract(&extracted, split_edge_fn, internal_data);
+        HedgeGraph {
+            hedge_data: ne_hedge,
+            node_store: nodes,
+            edge_store: new_edge_store,
+        }
+    }
     /// Gives the involved hedge.
     /// Returns the opposite (or "twin") half-edge of the given `hedge`.
     ///
@@ -2713,6 +2750,8 @@ where
 
 #[derive(Debug, Error)]
 pub enum HedgeGraphError {
+    #[error("Node ({0}) that Hedge {1} points to does not contain it")]
+    NodeDoesNotContainHedge(NodeIndex, Hedge),
     #[error("Nodes do not partition: {0}")]
     NodesDoNotPartition(String),
     #[error("Invalid node")]
@@ -2739,6 +2778,8 @@ pub enum HedgeGraphError {
     InvolutionError(#[from] InvolutionError),
     #[error("Data length mismatch")]
     DataLengthMismatch,
+    #[error("Invalid hedge pair {0:?} not equal to {1:?} for edge {2}")]
+    InvalidHedgePair(HedgePair, HedgePair, EdgeIndex),
     // #[error("From file error: {0}")]
     // FromFileError(#[from] GraphFromFileError),
     // #[error("Parse error: {0}")]

@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use bitvec::{order::Lsb0, slice::IterOnes, vec::BitVec};
 
 use crate::{
@@ -205,6 +207,38 @@ impl<N> NodeStorageOps for NodeStorageVec<N> {
     type OpStorage<A> = Self::Storage<A>;
     type Base = BitVec;
 
+    fn check_nodes(&self) -> Result<(), HedgeGraphError> {
+        for (h, n) in &self.hedge_data {
+            if !self.nodes[*n].includes(&h) {
+                Err(HedgeGraphError::NodeDoesNotContainHedge(*n, h))?;
+            }
+        }
+
+        let self_n_h: Hedge = self.len();
+        let mut cover = BitVec::empty(self_n_h.0);
+        for (i, node) in self.nodes.iter() {
+            for h in node.included_iter() {
+                if cover.includes(&h) {
+                    return Err(HedgeGraphError::NodesDoNotPartition(format!(
+                        "They overlap for node {i}: Cover:{cover:?}, crown: {h:?}"
+                    )));
+                } else {
+                    cover.add(h);
+                }
+            }
+        }
+
+        let full = !BitVec::empty(self_n_h.0);
+
+        if cover.sym_diff(&full).count_ones() > 0 {
+            return Err(HedgeGraphError::NodesDoNotPartition(format!(
+                "They do not cover the whole graph: cover {cover:?}"
+            )));
+        }
+
+        Ok(())
+    }
+
     fn delete<S: SubGraph<Base = Self::Base>>(&mut self, subgraph: &S) {
         let mut left = Hedge(0);
         let mut extracted = self.len();
@@ -273,6 +307,49 @@ impl<N> NodeStorageOps for NodeStorageVec<N> {
         for i in (left_nodes.0)..(overlapping_nodes.0) {
             let _ = self.nodes[NodeIndex(i)].split_off(left.0);
         }
+    }
+
+    fn extract_nodes(&mut self, nodes: impl IntoIterator<Item = NodeIndex>) -> (BitVec, Self) {
+        let nodes: HashSet<NodeIndex> = nodes.into_iter().collect();
+        let left_nodes = <Self as Swap<NodeIndex>>::partition(self, |n| !nodes.contains(n));
+
+        let mut extracted = BitVec::empty(self.hedge_data.len().0);
+
+        for i in left_nodes.0..self.node_data.len().0 {
+            extracted.union_with(&self.nodes[NodeIndex(i)]);
+        }
+
+        let left = <Self as Swap<Hedge>>::partition(self, |h| !extracted.includes(h));
+
+        let mut extracted_neighbors = self.nodes.split_off(left_nodes);
+        for (_, s) in &mut self.nodes {
+            s.split_off(left.0);
+        }
+
+        for (_, s) in &mut extracted_neighbors {
+            *s = s.split_off(left.0);
+        }
+
+        let extracted_data = self.node_data.split_off(left_nodes);
+        let extracted_hedges = self
+            .hedge_data
+            .split_off(left)
+            .into_iter()
+            .map(|(h, mut n)| {
+                n -= left_nodes;
+                // println!("Extracted hedge: {:?}{n:?}", h);
+                (h, n)
+            })
+            .collect();
+
+        (
+            extracted,
+            Self {
+                nodes: extracted_neighbors,
+                node_data: extracted_data,
+                hedge_data: extracted_hedges,
+            },
+        )
     }
 
     fn extract<S: SubGraph<Base = BitVec>, V2>(

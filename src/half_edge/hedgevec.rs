@@ -39,7 +39,7 @@ pub struct SmartEdgeVec<T> {
     /// The [`Involution`] structure that manages the topological relationships of half-edges.
     /// In this context, the `Involution` stores `EdgeIndex` as its data, pointing back
     /// to the `data` vector of this `SmartHedgeVec`.
-    involution: Involution,
+    pub(super) involution: Involution,
 }
 
 impl<T> AsRef<Involution> for SmartEdgeVec<T> {
@@ -155,6 +155,20 @@ impl<T> Accessors<HedgePair> for SmartEdgeVec<T> {
 }
 
 impl<T> SmartEdgeVec<T> {
+    pub fn check_hedge_pairs(&self) -> Result<(), HedgeGraphError> {
+        for (i, d) in self.involution.iter_edge_data() {
+            let hedge_pair = self.involution.hedge_pair(i);
+            if hedge_pair != self.data[d.data].1 {
+                return Err(HedgeGraphError::InvalidHedgePair(
+                    hedge_pair,
+                    self.data[d.data].1,
+                    d.data,
+                ));
+            }
+        }
+        Ok(())
+    }
+
     pub fn new(involution: Involution<T>) -> Self {
         let mut data = EdgeVec::new();
 
@@ -1123,9 +1137,14 @@ impl<T> Index<&Hedge> for SmartEdgeVec<T> {
 }
 
 impl<T> Swap<Hedge> for SmartEdgeVec<T> {
+    // type Item = EdgeIndex;
     fn len(&self) -> Hedge {
         self.involution.len()
     }
+
+    // fn filter(&self, id: &Hedge, filter: &impl Fn(&Hedge, &Self::Item) -> bool) -> bool {
+    //     filter(id, &self.involution[*id])
+    // }
 
     fn is_empty(&self) -> bool {
         self.involution.is_empty()
@@ -1189,9 +1208,14 @@ impl<T> Swap<Hedge> for SmartEdgeVec<T> {
 }
 
 impl<T> Swap<EdgeIndex> for SmartEdgeVec<T> {
+    // type Item = (T, HedgePair);
     fn len(&self) -> EdgeIndex {
         self.data.len()
     }
+
+    // fn filter(&self, id: &EdgeIndex, filter: &impl Fn(&EdgeIndex, &Self::Item) -> bool) -> bool {
+    //     filter(id, &self.data[*id])
+    // }
 
     fn is_empty(&self) -> bool {
         self.data.is_empty()

@@ -124,6 +124,12 @@ impl<V> NodeStorageOps for UnionFindNodeStore<V> {
     type OpStorage<A> = Self::Storage<A>;
     type Base = BitVec;
 
+    fn check_nodes(&self) -> Result<(), crate::half_edge::HedgeGraphError> {
+        todo!()
+    }
+    fn extract_nodes(&mut self, _nodes: impl IntoIterator<Item = NodeIndex>) -> (BitVec, Self) {
+        todo!()
+    }
     fn forget_identification_history(&mut self) -> NodeVec<Self::NodeData> {
         todo!()
     }

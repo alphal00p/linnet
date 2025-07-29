@@ -36,6 +36,8 @@ pub trait NodeStorageOps: NodeStorage + Swap<Hedge> + Swap<NodeIndex> {
         owned_node: impl FnMut(Self::NodeData) -> V2,
     ) -> Self::OpStorage<V2>;
 
+    fn extract_nodes(&mut self, nodes: impl IntoIterator<Item = NodeIndex>) -> (Self::Base, Self);
+
     fn delete<S: SubGraph<Base = Self::Base>>(&mut self, subgraph: &S);
 
     // fn add_node(&mut self, node_data: Self::NodeData) -> NodeIndex;
@@ -68,6 +70,8 @@ pub trait NodeStorageOps: NodeStorage + Swap<Hedge> + Swap<NodeIndex> {
     fn iter(&self) -> impl Iterator<Item = (NodeIndex, &Self::NodeData)>;
 
     fn check_and_set_nodes(&mut self) -> Result<(), HedgeGraphError>;
+
+    fn check_nodes(&self) -> Result<(), HedgeGraphError>;
 
     fn map_data_ref_graph<'a, E, V2, H>(
         &'a self,

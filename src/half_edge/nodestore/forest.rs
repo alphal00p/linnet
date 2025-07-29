@@ -109,6 +109,13 @@ impl<V, P: ForestNodeStore + ForestNodeStorePreorder + Clone> NodeStorageOps for
     type Base = BitVec;
     type OpStorage<N> = Forest<N, P>;
 
+    fn check_nodes(&self) -> Result<(), crate::half_edge::HedgeGraphError> {
+        todo!()
+    }
+    fn extract_nodes(&mut self, _nodes: impl IntoIterator<Item = NodeIndex>) -> (BitVec, Self) {
+        todo!()
+    }
+
     fn iter(&self) -> impl Iterator<Item = (NodeIndex, &Self::NodeData)> {
         self.iter_roots()
             .enumerate()

@@ -1415,6 +1415,8 @@ pub enum InvolutionError {
     #[error("Should have been an paired hedge")]
     /// Expected a half-edge to be part of a pair (source or sink) but it was an identity.
     NotPaired,
+    #[error("Involutino is non -involutive for {0}")]
+    NonInvolutive(Hedge),
 }
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -1710,6 +1712,15 @@ impl<E> Involution<E> {
             }
             _ => None,
         }
+    }
+
+    pub fn check_involutivity(&self) -> Result<(), String> {
+        for (h, m) in self.iter() {
+            if h != self.inv(self.inv(h)) {
+                return Err(format!("Involution is not involutive at half-edge {h}"));
+            }
+        }
+        Ok(())
     }
     // fn put_at_end(&mut self,)
 
@@ -2360,6 +2371,12 @@ impl<E> Swap<Hedge> for Involution<E> {
     fn is_empty(&self) -> bool {
         self.inv.is_empty()
     }
+
+    // type Item = InvolutiveMapping<E>;
+
+    // fn filter(&self, id: &Hedge, filter: &impl Fn(&Hedge, &Self::Item) -> bool) -> bool {
+    //     filter(id, &self.inv[*id])
+    // }
 
     ///Invalidates Subgraphs
     fn swap(&mut self, a: Hedge, b: Hedge) {

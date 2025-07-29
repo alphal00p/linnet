@@ -1493,6 +1493,19 @@ fn extracting_network() {
         graph.dot_of(&graph.compass_subgraph::<BitVec>(Some(CompassPt::S)))
     );
 
+    let a = graph.clone().extract_nodes(
+        [1, 9, 20, 29, 38, 47, 56, 65, 74, 83, 84]
+            .into_iter()
+            .map(NodeIndex),
+        |a| a.map(Clone::clone),
+        |a| a,
+    );
+
+    // let mut out = String::new();
+    // a.dot_serialize_fmt(&mut out, (), &|a| a.clone(), &|a| a.clone(), &|a| a.clone())
+    //     .unwrap();
+    println!("{}", a.base_dot());
+
     let sub: BitVec = graph.compass_subgraph::<BitVec>(Some(CompassPt::S));
     let a = graph.extract(
         &sub,
@@ -1509,4 +1522,28 @@ fn extracting_network() {
     a.dot_serialize_fmt(&mut out, (), &|a| a.clone(), &|a| a.clone(), &|a| a.clone())
         .unwrap();
     println!("{out}");
+}
+
+#[test]
+fn extract_nodes() {
+    let mut graph: DotGraph = dot!(digraph{
+        A->B
+        C->D
+        B->C
+        D->A
+    })
+    .unwrap();
+
+    let a = graph.clone().extract_nodes(
+        [1].into_iter().map(NodeIndex),
+        |a| a.map(Clone::clone),
+        |a| a,
+    );
+
+    println!("{a:#?}");
+
+    // let mut out = String::new();
+    // a.dot_serialize_fmt(&mut out, (), &|a| a.clone(), &|a| a.clone(), &|a| a.clone())
+    //     .unwrap();
+    println!("{}", a.base_dot());
 }
