@@ -56,6 +56,15 @@ impl Display for DotEdgeData {
 }
 
 impl DotEdgeData {
+    pub fn remove_common(&mut self, common: &GlobalData) {
+        self.statements.retain(|k, v| {
+            if let Some(common_value) = common.edge_statements.get(k) {
+                v != common_value
+            } else {
+                true
+            }
+        });
+    }
     pub fn empty() -> Self {
         DotEdgeData {
             statements: BTreeMap::new(),

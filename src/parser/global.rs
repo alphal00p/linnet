@@ -4,14 +4,22 @@ use dot_parser::ast::AttrStmt;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GlobalData {
+    pub name: String,
     pub statements: BTreeMap<String, String>,
     pub edge_statements: BTreeMap<String, String>,
     pub node_statements: BTreeMap<String, String>,
 }
 
+impl GlobalData {
+    pub fn add_name(&mut self, name: String) {
+        self.name = name;
+    }
+}
+
 impl From<()> for GlobalData {
     fn from(_: ()) -> Self {
         GlobalData {
+            name: String::new(),
             statements: BTreeMap::new(),
             edge_statements: BTreeMap::new(),
             node_statements: BTreeMap::new(),
@@ -92,7 +100,18 @@ impl TryFrom<Vec<AttrStmt<(String, String)>>> for GlobalData {
             }
         }
 
+        let mut name = String::new();
+        statements.retain(|k, v| {
+            if k.as_str() == "name" {
+                name = v.clone();
+                false
+            } else {
+                true
+            }
+        });
+
         Ok(GlobalData {
+            name,
             statements,
             edge_statements,
             node_statements,

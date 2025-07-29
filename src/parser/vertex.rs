@@ -13,6 +13,15 @@ pub struct DotVertexData {
     pub statements: BTreeMap<String, String>,
 }
 impl DotVertexData {
+    pub fn remove_common(&mut self, common: &GlobalData) {
+        self.statements.retain(|k, v| {
+            if let Some(common_value) = common.node_statements.get(k) {
+                v != common_value
+            } else {
+                true
+            }
+        });
+    }
     pub fn name(&self) -> Option<&str> {
         if let Some(d) = self.statements.get("name") {
             Some(d.as_str())

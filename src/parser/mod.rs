@@ -161,20 +161,27 @@ impl<S: NodeStorageOps<NodeData = DotVertexData>> DotGraph<S> {
     }
 
     pub fn write_io<W: std::io::Write>(&self, writer: &mut W) -> Result<(), std::io::Error> {
-        writeln!(writer, "digraph {{")?;
+        writeln!(writer, "digraph {}{{", self.global_data.name)?;
+
+        writeln!(writer, "{}", self.global_data)?;
 
         for (n, (_, _, v)) in self.iter_nodes().enumerate() {
-            writeln!(writer, "  {n} [{v}];")?;
+            let mut node_data: DotVertexData = v.clone();
+            node_data.remove_common(&self.global_data);
+
+            writeln!(writer, "\t{n} [{node_data}];")?;
         }
 
         for (hedge_pair, eid, data) in self.iter_edges() {
+            let mut edata = data.data.clone();
+            edata.remove_common(&self.global_data);
             let attr = GVEdgeAttrs {
                 color: None,
                 label: None,
-                other: Some(data.data.to_string()),
+                other: Some(edata.to_string()),
             };
 
-            write!(writer, "  ")?;
+            // write!(writer, "  ")?;
             hedge_pair.add_data(self).dot_io(
                 writer,
                 self,
@@ -193,15 +200,21 @@ impl<S: NodeStorageOps<NodeData = DotVertexData>> DotGraph<S> {
         let mut writer = CodeFormatter::new(writer, "  ");
         writer.indent(1);
 
+        write!(writer, "{}", self.global_data)?;
         for (n, (_, _, v)) in self.iter_nodes().enumerate() {
-            write!(writer, "\n{n} [{v}];")?;
+            let mut node_data: DotVertexData = v.clone();
+            node_data.remove_common(&self.global_data);
+
+            write!(writer, "\n{n} [{node_data}];")?;
         }
 
         for (hedge_pair, eid, data) in self.iter_edges() {
+            let mut edata = data.data.clone();
+            edata.remove_common(&self.global_data);
             let attr = GVEdgeAttrs {
                 color: None,
                 label: None,
-                other: Some(data.data.to_string()),
+                other: Some(edata.to_string()),
             };
 
             hedge_pair.add_data(self).dot_fmt(
@@ -283,10 +296,14 @@ pub use error::{HedgeParseError, HedgeParseExt};
 impl<S: NodeStorageOps<NodeData = DotVertexData>> From<SubGraphFreeGraph> for DotGraph<S> {
     fn from(value: SubGraphFreeGraph) -> Self {
         let is_digraph = value.is_digraph;
+        let name = value.name.clone();
         let (attrs, _ids, nodes, edges) = value.nodes_and_edges();
 
         // let can_graph = dot_parser::canonical::Graph::from(ast_graph);
-        let global_data = GlobalData::try_from(attrs).unwrap();
+        let mut global_data = GlobalData::try_from(attrs).unwrap();
+        if let Some(name) = name {
+            global_data.add_name(name);
+        }
 
         let mut g = HedgeGraphBuilder::new();
         let mut map = BTreeMap::new();

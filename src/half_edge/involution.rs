@@ -129,12 +129,12 @@ impl<H> HedgePairWithData<H> {
         //we interpret this node as the hidden one. so the flow is reversed.
         match flow {
             Flow::Sink => {
-                writeln!(writer, "ext{edge_id}\t [style=invis];",)?;
-                write!(writer, "  ext{edge_id}\t-> {}\t [", hedge.dot_node())?;
+                writeln!(writer, "\text{edge_id}\t [style=invis];",)?;
+                write!(writer, "\text{edge_id}\t-> {}\t [", hedge.dot_node())?;
             }
             Flow::Source => {
-                writeln!(writer, "ext{edge_id}\t [style=invis];")?;
-                write!(writer, "  {}\t-> ext{edge_id}\t [", hedge.dot_node())?;
+                writeln!(writer, "\text{edge_id}\t [style=invis];")?;
+                write!(writer, "\t{}\t-> ext{edge_id}\t [", hedge.dot_node())?;
             }
         }
 
@@ -239,9 +239,9 @@ impl<H> HedgePairWithData<H> {
         attr: &GVEdgeAttrs,
         orientation: Orientation,
     ) -> Result<(), std::io::Error> {
-        write!(
+        writeln!(
             writer,
-            "\n{}\t-> {}\t [id={}{}{}{} {}];",
+            "\t{}\t-> {}\t [id={}{}{}{} {}];",
             source_data.dot_node(),
             sink_data.dot_node(),
             eid.0,
