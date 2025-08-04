@@ -1637,7 +1637,7 @@ impl<E, V, H, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, H, N> {
         &self,
         iter: I,
     ) -> Result<EdgeVec<T>, HedgeGraphError> {
-        self.edge_store.new_hedgevec_from_iter(iter)
+        self.edge_store.new_edgevec_from_iter(iter)
     }
 }
 
@@ -2441,11 +2441,11 @@ impl<E, V, H, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, H, N> {
         &'a self,
         subgraph: &'a S,
     ) -> impl Iterator<Item = (HedgePair, EdgeIndex, EdgeData<&'a E>)> + 'a {
-        self.edge_store.iter_edges(subgraph)
+        self.edge_store.iter_edges_of(subgraph)
     }
 
     pub fn iter_edges(&self) -> impl Iterator<Item = (HedgePair, EdgeIndex, EdgeData<&E>)> {
-        self.edge_store.iter_all_edges()
+        self.edge_store.iter_edges()
     }
 
     pub fn iter_nodes_of<'a, S: SubGraph>(

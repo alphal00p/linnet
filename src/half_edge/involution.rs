@@ -442,6 +442,36 @@ pub enum HedgePair {
     },
 }
 
+impl Display for HedgePair {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            HedgePair::Paired { source, sink } => {
+                write!(f, "({} -> {})", source, sink)
+            }
+            HedgePair::Split {
+                source,
+                sink,
+                split,
+            } => match split {
+                Flow::Source => {
+                    write!(f, "([{}] -> {})", source, sink)
+                }
+                Flow::Sink => {
+                    write!(f, "({} -> [{}])", sink, source)
+                }
+            },
+            HedgePair::Unpaired { hedge, flow } => match flow {
+                Flow::Source => {
+                    write!(f, "([{}] ->)", hedge)
+                }
+                Flow::Sink => {
+                    write!(f, "( -> [{}])", hedge)
+                }
+            },
+        }
+    }
+}
+
 impl HedgePair {
     pub fn add_data_of<'a, S: SubGraph, V, E, H, N: NodeStorage<NodeData = V>>(
         self,
@@ -2202,6 +2232,31 @@ impl<E> IndexMut<Hedge> for Involution<E> {
             InvolutiveMapping::Identity { data, .. } => &mut data.data,
             InvolutiveMapping::Source { data, .. } => &mut data.data,
             _ => panic!("should have gotten data inv"),
+        }
+    }
+}
+
+impl<E> Index<&HedgePair> for Involution<E> {
+    type Output = EdgeData<E>;
+
+    fn index(&self, index: &HedgePair) -> &Self::Output {
+        match index {
+            HedgePair::Paired { source, sink } | HedgePair::Split { source, sink, .. } => {
+                if let InvolutiveMapping::Source { data, sink_idx } = &self.inv[*source] {
+                    debug_assert_eq!(sink_idx, sink);
+                    data
+                } else {
+                    panic!("{index} should be aligned with involution but here {source} is not a source")
+                }
+            }
+            HedgePair::Unpaired { hedge, flow } => {
+                if let InvolutiveMapping::Identity { data, underlying } = &self.inv[*hedge] {
+                    debug_assert_eq!(flow, underlying);
+                    data
+                } else {
+                    panic!("{index} should be aligned with involution but here {hedge} is not a identity")
+                }
+            }
         }
     }
 }

@@ -226,7 +226,7 @@ impl<T> SmartEdgeVec<T> {
             .collect()
     }
 
-    pub fn new_hedgevec_from_iter<T2, I: IntoIterator<Item = T2>>(
+    pub fn new_edgevec_from_iter<T2, I: IntoIterator<Item = T2>>(
         &self,
         iter: I,
     ) -> Result<EdgeVec<T2>, HedgeGraphError> {
@@ -1009,7 +1009,7 @@ impl<T> SmartEdgeVec<T> {
         self.involution.hedge_data(hedge)
     }
 
-    pub fn iter_edges<'a, S: SubGraph>(
+    pub fn iter_edges_of<'a, S: SubGraph>(
         &'a self,
         subgraph: &'a S,
     ) -> impl Iterator<Item = (HedgePair, EdgeIndex, EdgeData<&'a T>)> + 'a {
@@ -1024,10 +1024,10 @@ impl<T> SmartEdgeVec<T> {
         })
     }
 
-    pub fn iter_all_edges(&self) -> impl Iterator<Item = (HedgePair, EdgeIndex, EdgeData<&T>)> {
-        self.involution
-            .iter_edge_data()
-            .map(move |(i, d)| (self[&self[&i]].1, d.data, d.as_ref().map(|&a| &self[a])))
+    pub fn iter_edges(&self) -> impl Iterator<Item = (HedgePair, EdgeIndex, EdgeData<&T>)> {
+        self.data
+            .iter()
+            .map(|(i, (d, p))| (*p, i, self.involution[p].as_ref().map(|_| d)))
     }
 
     pub fn n_internals<S: SubGraph>(&self, subgraph: &S) -> usize {
