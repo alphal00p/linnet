@@ -111,7 +111,7 @@ impl DotEdgeData {
     pub fn from_parser(
         edge: Edge,
         map: &BTreeMap<String, NodeIdOrDangling>,
-        orientation: impl Into<Orientation>,
+        is_digraph: impl Into<Orientation>,
         global_data: &GlobalData,
     ) -> (
         Self,
@@ -119,7 +119,7 @@ impl DotEdgeData {
         HedgeData<DotHedgeData>,
         Either<HedgeData<DotHedgeData>, Flow>,
     ) {
-        let mut orientation = orientation.into();
+        let mut orientation = is_digraph.into();
         let mut source_data = DotHedgeData::from(edge.source_port());
         let mut sink_data = DotHedgeData::from(edge.sink_port());
         let mut statements = global_data.edge_statements.clone();
@@ -165,7 +165,7 @@ impl DotEdgeData {
                         .filter(|(a, _)| !(a.as_str() == "shape" || a.as_str() == "label")),
                 );
                 let dot_edge = statements.into_iter().collect();
-                orientation = orientation.relative_to(-Flow::Source);
+
                 if !sink_data.is_none() {
                     panic!("Sink edge cannot have data:{sink_data}");
                 }
@@ -183,7 +183,7 @@ impl DotEdgeData {
                         .filter(|(a, _)| !(a.as_str() == "shape" || a.as_str() == "label")),
                 );
                 let dot_edge = statements.into_iter().collect();
-                orientation = orientation.relative_to(-Flow::Sink);
+
                 if !source_data.is_none() {
                     panic!("Source edge cannot have data:{source_data}");
                 }

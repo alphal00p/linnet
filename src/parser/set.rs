@@ -57,3 +57,28 @@ impl<S: NodeStorageOps<NodeData = DotVertexData>>
         Ok(GraphSet { set, global_data })
     }
 }
+
+impl<S: NodeStorageOps<NodeData = DotVertexData>> IntoIterator
+    for GraphSet<DotEdgeData, DotVertexData, DotHedgeData, GlobalData, S>
+{
+    type Item = DotGraph<S>;
+    type IntoIter = std::iter::Map<
+        std::iter::Zip<
+            std::vec::IntoIter<HedgeGraph<DotEdgeData, DotVertexData, DotHedgeData, S>>,
+            std::vec::IntoIter<GlobalData>,
+        >,
+        fn(
+            (
+                HedgeGraph<DotEdgeData, DotVertexData, DotHedgeData, S>,
+                GlobalData,
+            ),
+        ) -> DotGraph<S>,
+    >;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.set
+            .into_iter()
+            .zip(self.global_data)
+            .map(|(graph, global_data)| DotGraph { global_data, graph })
+    }
+}

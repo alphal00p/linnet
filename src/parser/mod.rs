@@ -516,6 +516,23 @@ pub mod test {
     use super::GraphSet;
 
     #[test]
+    fn orientations() {
+        let s: DotGraph = dot!(
+        digraph bba1{
+                        ext    [style=invis]
+                        ext -> A:1   [particle=a id=1]
+                        ext -> A:2    [particle="b" id=2]
+                        A:0  -> ext  [particle="b" id=0]
+                    })
+        .unwrap();
+
+        let g = s.back_and_forth_dot();
+        let gg = g.clone().back_and_forth_dot();
+        // println!("{g:?}");
+        assert_eq!(g, gg);
+    }
+
+    #[test]
     fn test_from_string() {
         let s = "digraph G {
             A      [style=invis]
@@ -574,13 +591,14 @@ pub mod test {
             }
             "#;
 
-        assert_eq!(
-            GraphSet::<_, _, _, _, NodeStorageVec<DotVertexData>>::from_string(s)
-                .unwrap()
-                .set
-                .len(),
-            2
-        );
+        let set = GraphSet::<_, _, _, _, NodeStorageVec<DotVertexData>>::from_string(s).unwrap();
+        assert_eq!(set.set.len(), 2);
+
+        for g in set {
+            let gg = g.back_and_forth_dot();
+            let ggg = gg.clone().back_and_forth_dot();
+            assert_eq!(gg, ggg);
+        }
     }
 
     #[test]
