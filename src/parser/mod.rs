@@ -196,7 +196,8 @@ impl<S: NodeStorageOps<NodeData = DotVertexData>> DotGraph<S> {
     }
 
     pub fn write_fmt<W: std::fmt::Write>(&self, writer: &mut W) -> Result<(), std::fmt::Error> {
-        writeln!(writer, "digraph {{")?;
+        writeln!(writer, "digraph {}{{", self.global_data.name)?;
+
         let mut writer = CodeFormatter::new(writer, "  ");
         writer.indent(1);
 
