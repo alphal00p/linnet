@@ -363,6 +363,7 @@ pub trait SubGraph:
                     graph,
                     eid,
                     hedge_attr,
+                    |a| a.to_string(),
                     data.orientation,
                     attr,
                 )?;
@@ -374,6 +375,7 @@ pub trait SubGraph:
                     graph,
                     eid,
                     hedge_attr,
+                    |a| a.to_string(),
                     data.orientation,
                     attr,
                 )?;
@@ -422,6 +424,7 @@ pub trait SubGraph:
                     graph,
                     eid,
                     hedge_attr,
+                    |a| a.to_string(),
                     data.orientation,
                     attr,
                 )?;
@@ -432,6 +435,7 @@ pub trait SubGraph:
                     graph,
                     eid,
                     hedge_attr,
+                    |a| a.to_string(),
                     data.orientation,
                     attr,
                 )?;

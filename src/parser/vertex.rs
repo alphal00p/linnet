@@ -129,14 +129,14 @@ impl DotVertexData {
 impl Display for DotVertexData {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut first = true;
-        if let Some(id) = self.name() {
-            first = false;
-            write!(f, "name={id}")?;
-        }
+        // if let Some(id) = self.name() {
+        //     first = false;
+        //     write!(f, "name={id}")?;
+        // }
         for (key, value) in &self.statements {
-            if key == "name" {
-                continue;
-            }
+            // if key == "name" {
+            //     continue;
+            // }
             if !first {
                 write!(f, " ")?;
             }

@@ -169,7 +169,18 @@ impl<S: NodeStorageOps<NodeData = DotVertexData>> DotGraph<S> {
             let mut node_data: DotVertexData = v.clone();
             node_data.remove_common(&self.global_data);
 
-            writeln!(writer, "\t{n} [{node_data}];")?;
+            if let Some(name) = &node_data.name {
+                write!(writer, "\n{name}")?;
+            } else {
+                write!(writer, "\n{n}")?;
+            }
+
+            let data = node_data.to_string();
+            if !data.is_empty() {
+                write!(writer, " [{}];", data)?;
+            } else {
+                write!(writer, ";")?;
+            }
         }
 
         for (hedge_pair, eid, data) in self.iter_edges() {
@@ -187,6 +198,7 @@ impl<S: NodeStorageOps<NodeData = DotVertexData>> DotGraph<S> {
                 self,
                 eid,
                 |h| h.statement.clone(),
+                |a| self[a].name.clone().unwrap_or(a.to_string()),
                 data.orientation,
                 attr,
             )?;
@@ -206,7 +218,18 @@ impl<S: NodeStorageOps<NodeData = DotVertexData>> DotGraph<S> {
             let mut node_data: DotVertexData = v.clone();
             node_data.remove_common(&self.global_data);
 
-            write!(writer, "\n{n} [{node_data}];")?;
+            if let Some(name) = &node_data.name {
+                write!(writer, "\n{name}")?;
+            } else {
+                write!(writer, "\n{n}")?;
+            }
+
+            let data = node_data.to_string();
+            if !data.is_empty() {
+                write!(writer, " [{}];", data)?;
+            } else {
+                write!(writer, ";")?;
+            }
         }
 
         for (hedge_pair, eid, data) in self.iter_edges() {
@@ -223,6 +246,7 @@ impl<S: NodeStorageOps<NodeData = DotVertexData>> DotGraph<S> {
                 self,
                 eid,
                 |h| h.statement.clone(),
+                |a| self[a].name.clone().unwrap_or(a.to_string()),
                 data.orientation,
                 attr,
             )?;
@@ -259,6 +283,7 @@ impl<S: NodeStorageOps<NodeData = DotVertexData>> DotGraph<S> {
     pub fn debug_dot(&self) -> String {
         let mut out = String::new();
         self.write_fmt(&mut out).unwrap();
+        // println!("{out}");
         out
     }
 
@@ -529,7 +554,7 @@ pub mod test {
 
         let g = s.back_and_forth_dot();
         let gg = g.clone().back_and_forth_dot();
-        // println!("{g:?}");
+        println!("{g:?}");
         assert_eq!(g, gg);
     }
 

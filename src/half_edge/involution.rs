@@ -114,6 +114,15 @@ impl HedgeData<(Hedge, Option<String>)> {
             if self.is_in_subgraph { ":s" } else { "" },
         )
     }
+
+    pub fn dot_node_map(&self, map: impl Fn(NodeIndex) -> String) -> String {
+        format!(
+            "{}:{}{}",
+            map(self.node),
+            self.data.0,
+            if self.is_in_subgraph { ":s" } else { "" },
+        )
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -122,6 +131,7 @@ impl<H> HedgePairWithData<H> {
         writer: &mut W,
         edge_id: EdgeIndex,
         hedge: HedgeData<(Hedge, Option<String>)>,
+        map: impl Fn(NodeIndex) -> String,
         attr: &GVEdgeAttrs,
         orientation: Orientation,
         flow: Flow,
@@ -130,11 +140,19 @@ impl<H> HedgePairWithData<H> {
         match flow {
             Flow::Sink => {
                 writeln!(writer, "\text{edge_id}\t [style=invis];",)?;
-                write!(writer, "\text{edge_id}\t-> {}\t [", hedge.dot_node())?;
+                write!(
+                    writer,
+                    "\text{edge_id}\t-> {}\t [",
+                    hedge.dot_node_map(&map)
+                )?;
             }
             Flow::Source => {
                 writeln!(writer, "\text{edge_id}\t [style=invis];")?;
-                write!(writer, "\t{}\t-> ext{edge_id}\t [", hedge.dot_node())?;
+                write!(
+                    writer,
+                    "\t{}\t-> ext{edge_id}\t [",
+                    hedge.dot_node_map(&map)
+                )?;
             }
         }
 
@@ -161,6 +179,7 @@ impl<H> HedgePairWithData<H> {
         writer: &mut W,
         edge_id: EdgeIndex,
         hedge: HedgeData<(Hedge, Option<String>)>,
+        map: impl Fn(NodeIndex) -> String,
         attr: &GVEdgeAttrs,
         orientation: Orientation,
         flow: Flow,
@@ -169,11 +188,11 @@ impl<H> HedgePairWithData<H> {
         let estr = match flow {
             Flow::Sink => {
                 write!(writer, "\next{}\t [style=invis];", edge_id.0)?;
-                format!("ext{}\t-> {}", edge_id.0, hedge.dot_node())
+                format!("ext{}\t-> {}", edge_id.0, hedge.dot_node_map(&map))
             }
             Flow::Source => {
                 write!(writer, "\next{}\t [style=invis];", edge_id.0)?;
-                format!("{}\t-> ext{}", hedge.dot_node(), edge_id.0,)
+                format!("{}\t-> ext{}", hedge.dot_node_map(&map), edge_id.0,)
             }
         };
 
@@ -203,14 +222,15 @@ impl<H> HedgePairWithData<H> {
         eid: EdgeIndex,
         source_data: HedgeData<(Hedge, Option<String>)>,
         sink_data: HedgeData<(Hedge, Option<String>)>,
+        map: impl Fn(NodeIndex) -> String,
         attr: &GVEdgeAttrs,
         orientation: Orientation,
     ) -> Result<(), std::fmt::Error> {
         write!(
             writer,
             "\n{}\t-> {}\t [id={}{}{}{} {}];",
-            source_data.dot_node(),
-            sink_data.dot_node(),
+            source_data.dot_node_map(&map),
+            sink_data.dot_node_map(&map),
             eid.0,
             match orientation {
                 Orientation::Reversed => " dir=back",
@@ -236,14 +256,15 @@ impl<H> HedgePairWithData<H> {
         eid: EdgeIndex,
         source_data: HedgeData<(Hedge, Option<String>)>,
         sink_data: HedgeData<(Hedge, Option<String>)>,
+        map: impl Fn(NodeIndex) -> String,
         attr: &GVEdgeAttrs,
         orientation: Orientation,
     ) -> Result<(), std::io::Error> {
         writeln!(
             writer,
             "\t{}\t-> {}\t [id={}{}{}{} {}];",
-            source_data.dot_node(),
-            sink_data.dot_node(),
+            source_data.dot_node_map(&map),
+            sink_data.dot_node_map(&map),
             eid.0,
             match orientation {
                 Orientation::Reversed => " dir=back",
@@ -271,6 +292,7 @@ impl<H> HedgePairWithData<&H> {
         graph: &HedgeGraph<E, V, H, N>,
         eid: EdgeIndex,
         labeler: impl Fn(&H) -> Option<String>,
+        ider: impl Fn(NodeIndex) -> String,
         orientation: Orientation,
         attr: GVEdgeAttrs,
     ) -> Result<(), std::fmt::Error> {
@@ -287,6 +309,7 @@ impl<H> HedgePairWithData<&H> {
                     .node_id(*hedge)
                     .add_data((*hedge, labeler(data)))
                     .set_in_subgraph(*is_in_subgraph),
+                &ider,
                 &attr,
                 orientation,
                 *flow,
@@ -308,6 +331,7 @@ impl<H> HedgePairWithData<&H> {
                     .node_id(*sink)
                     .add_data((*sink, labeler(sink_data)))
                     .set_in_subgraph(*is_in_subgraph),
+                &ider,
                 &attr,
                 orientation,
             ),
@@ -328,6 +352,7 @@ impl<H> HedgePairWithData<&H> {
                     .node_id(*sink)
                     .add_data((*sink, labeler(sink_data)))
                     .set_in_subgraph(*split == Flow::Sink),
+                &ider,
                 &attr,
                 orientation,
             ),
@@ -340,6 +365,7 @@ impl<H> HedgePairWithData<&H> {
         graph: &HedgeGraph<E, V, H, N>,
         eid: EdgeIndex,
         labeler: impl Fn(&H) -> Option<String>,
+        ider: impl Fn(NodeIndex) -> String,
         orientation: Orientation,
         attr: GVEdgeAttrs,
     ) -> Result<(), std::io::Error> {
@@ -356,6 +382,7 @@ impl<H> HedgePairWithData<&H> {
                     .node_id(*hedge)
                     .add_data((*hedge, labeler(data)))
                     .set_in_subgraph(*is_in_subgraph),
+                &ider,
                 &attr,
                 orientation,
                 *flow,
@@ -377,6 +404,7 @@ impl<H> HedgePairWithData<&H> {
                     .node_id(*sink)
                     .add_data((*sink, labeler(sink_data)))
                     .set_in_subgraph(*is_in_subgraph),
+                &ider,
                 &attr,
                 orientation,
             ),
@@ -397,6 +425,7 @@ impl<H> HedgePairWithData<&H> {
                     .node_id(*sink)
                     .add_data((*sink, labeler(sink_data)))
                     .set_in_subgraph(*split == Flow::Source),
+                &ider,
                 &attr,
                 orientation,
             ),
