@@ -177,11 +177,13 @@ impl<S: NodeStorageOps<NodeData = DotVertexData>> DotGraph<S> {
 
             let data = node_data.to_string();
             if !data.is_empty() {
-                write!(writer, " [{}];", data)?;
+                write!(writer, " [{data}];")?;
             } else {
                 write!(writer, ";")?;
             }
         }
+
+        writeln!(writer)?;
 
         for (hedge_pair, eid, data) in self.iter_edges() {
             let mut edata = data.data.clone();
@@ -226,11 +228,12 @@ impl<S: NodeStorageOps<NodeData = DotVertexData>> DotGraph<S> {
 
             let data = node_data.to_string();
             if !data.is_empty() {
-                write!(writer, " [{}];", data)?;
+                write!(writer, " [{data}];")?;
             } else {
                 write!(writer, ";")?;
             }
         }
+        writer.write_str("\n")?;
 
         for (hedge_pair, eid, data) in self.iter_edges() {
             let mut edata = data.data.clone();
