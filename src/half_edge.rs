@@ -88,7 +88,7 @@ use std::hash::Hash;
 use std::num::TryFromIntError;
 use std::ops::{Index, IndexMut};
 
-use ahash::{AHashMap, AHashSet, HashSet, HashSetExt};
+use ahash::{AHashMap, AHashSet};
 
 use bitvec::prelude::*;
 use bitvec::{slice::IterOnes, vec::BitVec};

@@ -286,6 +286,7 @@ impl<H> HedgePairWithData<H> {
     }
 }
 impl<H> HedgePairWithData<&H> {
+    #[allow(clippy::too_many_arguments)]
     pub fn dot_fmt<W: std::fmt::Write, E, V, N: NodeStorageOps<NodeData = V>>(
         &self,
         writer: &mut W,
@@ -359,6 +360,7 @@ impl<H> HedgePairWithData<&H> {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn dot_io<W: std::io::Write, E, V, N: NodeStorageOps<NodeData = V>>(
         &self,
         writer: &mut W,
@@ -475,7 +477,7 @@ impl Display for HedgePair {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             HedgePair::Paired { source, sink } => {
-                write!(f, "({} -> {})", source, sink)
+                write!(f, "({source} -> {sink})")
             }
             HedgePair::Split {
                 source,
@@ -483,18 +485,18 @@ impl Display for HedgePair {
                 split,
             } => match split {
                 Flow::Source => {
-                    write!(f, "([{}] -> {})", source, sink)
+                    write!(f, "([{source}] -> {sink})")
                 }
                 Flow::Sink => {
-                    write!(f, "({} -> [{}])", sink, source)
+                    write!(f, "({sink} -> [{source}])")
                 }
             },
             HedgePair::Unpaired { hedge, flow } => match flow {
                 Flow::Source => {
-                    write!(f, "([{}] ->)", hedge)
+                    write!(f, "([{hedge}] ->)")
                 }
                 Flow::Sink => {
-                    write!(f, "( -> [{}])", hedge)
+                    write!(f, "( -> [{hedge}])")
                 }
             },
         }
@@ -1774,7 +1776,7 @@ impl<E> Involution<E> {
     }
 
     pub fn check_involutivity(&self) -> Result<(), String> {
-        for (h, m) in self.iter() {
+        for (h, _) in self.iter() {
             if h != self.inv(self.inv(h)) {
                 return Err(format!("Involution is not involutive at half-edge {h}"));
             }
