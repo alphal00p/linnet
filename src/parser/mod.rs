@@ -170,9 +170,9 @@ impl<S: NodeStorageOps<NodeData = DotVertexData>> DotGraph<S> {
             node_data.remove_common(&self.global_data);
 
             if let Some(name) = &node_data.name {
-                write!(writer, "\n{name}")?;
+                write!(writer, "\n\t{name}")?;
             } else {
-                write!(writer, "\n{n}")?;
+                write!(writer, "\n\t{n}")?;
             }
 
             let data = node_data.to_string();
@@ -326,10 +326,10 @@ impl<S: NodeStorageOps<NodeData = DotVertexData>> From<SubGraphFreeGraph> for Do
     fn from(value: SubGraphFreeGraph) -> Self {
         let is_digraph = value.is_digraph;
         let name = value.name.clone();
-        let (attrs, _ids, nodes, edges) = value.nodes_and_edges();
+        let (attrs, ids, nodes, edges) = value.nodes_and_edges();
 
         // let can_graph = dot_parser::canonical::Graph::from(ast_graph);
-        let mut global_data = GlobalData::try_from(attrs).unwrap();
+        let mut global_data = GlobalData::try_from((attrs, ids)).unwrap();
         if let Some(name) = name {
             global_data.add_name(name);
         }

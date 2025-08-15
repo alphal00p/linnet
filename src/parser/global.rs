@@ -1,6 +1,6 @@
 use std::{collections::BTreeMap, fmt::Display};
 
-use dot_parser::ast::AttrStmt;
+use dot_parser::{ast::AttrStmt, canonical::IDEq};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GlobalData {
@@ -72,15 +72,15 @@ impl Display for GlobalData {
     }
 }
 
-impl TryFrom<Vec<AttrStmt<(String, String)>>> for GlobalData {
+impl TryFrom<(Vec<AttrStmt<(String, String)>>, Vec<IDEq>)> for GlobalData {
     type Error = ();
 
-    fn try_from(value: Vec<AttrStmt<(String, String)>>) -> Result<Self, Self::Error> {
+    fn try_from(value: (Vec<AttrStmt<(String, String)>>, Vec<IDEq>)) -> Result<Self, Self::Error> {
         let mut statements = BTreeMap::new();
         let mut edge_statements = BTreeMap::new();
         let mut node_statements = BTreeMap::new();
 
-        for attr_stmt in value {
+        for attr_stmt in value.0 {
             match attr_stmt {
                 AttrStmt::Graph(l) => {
                     for l in l.elems {
@@ -98,6 +98,10 @@ impl TryFrom<Vec<AttrStmt<(String, String)>>> for GlobalData {
                     }
                 }
             }
+        }
+
+        for e in value.1 {
+            statements.insert(e.lhs, e.rhs);
         }
 
         let mut name = String::new();

@@ -240,6 +240,7 @@ impl<N> NodeStorageOps for NodeStorageVec<N> {
     }
 
     fn delete<S: SubGraph<Base = Self::Base>>(&mut self, subgraph: &S) {
+        // println!("Deleting subgraph");
         let mut left = Hedge(0);
         let mut extracted = self.len();
         while left < extracted {
@@ -384,8 +385,14 @@ impl<N> NodeStorageOps for NodeStorageVec<N> {
                 //left is in the right place
                 left_nodes.0 += 1;
             } else {
+                // println!(
+                //     "Needs swapping left {} extracted {}",
+                //     left_nodes.0, extracted_nodes.0
+                // );
                 //left needs to be swapped
                 extracted_nodes.0 -= 1;
+                // println!("{}", self.nodes[extracted_nodes].nhedges());
+                // println!("{:?}", self.nodes[extracted_nodes]);
                 if !self.nodes[extracted_nodes].has_greater(left) {
                     //only with an extracted that is in the wrong spot
                     self.swap(left_nodes, extracted_nodes);
@@ -393,7 +400,8 @@ impl<N> NodeStorageOps for NodeStorageVec<N> {
                 }
             }
         }
-
+        // println!("left: {}", left_nodes.0);
+        // println!("extracted: {}", extracted_nodes.0);
         let mut overlapping_nodes = left_nodes;
         let mut non_overlapping_extracted = self.len();
 
@@ -411,6 +419,9 @@ impl<N> NodeStorageOps for NodeStorageVec<N> {
                 }
             }
         }
+
+        // println!("overlapping_nodes: {}", overlapping_nodes.0);
+        // println!("non_overlapping_extracted: {}", non_overlapping_extracted.0);
 
         let mut extracted_nodes = self.nodes.split_off(overlapping_nodes);
         let mut extracted_data: NodeVec<_> = self

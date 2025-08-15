@@ -1488,6 +1488,11 @@ fn extracting_network() {
     )
     .unwrap();
 
+    // graph.iter_crown(NodeIndex(201)).for_each(|h| {
+    //     println!("Hedge: {:?}", h);
+    // });
+
+    // return;
     println!(
         "{}",
         graph.dot_of(&graph.compass_subgraph::<BitVec>(Some(CompassPt::S)))
@@ -1507,6 +1512,8 @@ fn extracting_network() {
     println!("{}", a.base_dot());
 
     let sub: BitVec = graph.compass_subgraph::<BitVec>(Some(CompassPt::S));
+    let node: NodeIndex = graph.len();
+    println!("{node}");
     let a = graph.extract(
         &sub,
         |a| a.map(Clone::clone),

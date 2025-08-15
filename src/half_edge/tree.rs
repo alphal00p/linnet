@@ -411,16 +411,24 @@ impl<P: ForestNodeStore<NodeData = ()>> SimpleTraversalTree<P> {
         P: ForestNodeStoreBfs,
     {
         let root_node = self.forest[&RootId::from(node_id)];
+
+        let root_node_data = self.forest[RootId::from(node_id)];
+
+        // println!("{:?}", root_node);
         self.forest.iter_bfs(root_node).filter_map(move |a| {
-            if root_node == a {
+            if root_node == a && !root_node_data.is_root() {
                 return None;
             }
             let h = Hedge::from(a);
+            // println!("Hedge:{h}");
             if self.tree_subgraph.includes(&h) {
                 let invh = inv.as_ref().inv(a.into());
+                // println!("Included");
                 if invh != h {
+                    // println!("Hi");
                     if self.tree_subgraph.includes(&invh) {
                         let child = self.node_id(invh);
+                        // println!("Node:{child}");
 
                         let root = RootId::from(child);
 
