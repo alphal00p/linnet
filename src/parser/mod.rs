@@ -163,27 +163,25 @@ impl<S: NodeStorageOps<NodeData = DotVertexData>> DotGraph<S> {
     pub fn write_io<W: std::io::Write>(&self, writer: &mut W) -> Result<(), std::io::Error> {
         writeln!(writer, "digraph {}{{", self.global_data.name)?;
 
-        writeln!(writer, "{}", self.global_data)?;
+        writeln!(writer, "{:4}", self.global_data)?;
 
         for (n, (_, _, v)) in self.iter_nodes().enumerate() {
             let mut node_data: DotVertexData = v.clone();
             node_data.remove_common(&self.global_data);
 
             if let Some(name) = &node_data.name {
-                write!(writer, "\n\t{name}")?;
+                write!(writer, "\t{name}")?;
             } else {
-                write!(writer, "\n\t{n}")?;
+                write!(writer, "\t{n}")?;
             }
 
             let data = node_data.to_string();
             if !data.is_empty() {
-                write!(writer, " [{data}];")?;
+                writeln!(writer, " [{data}];")?;
             } else {
-                write!(writer, ";")?;
+                writeln!(writer, ";")?;
             }
         }
-
-        writeln!(writer)?;
 
         for (hedge_pair, eid, data) in self.iter_edges() {
             let mut edata = data.data.clone();
@@ -219,19 +217,17 @@ impl<S: NodeStorageOps<NodeData = DotVertexData>> DotGraph<S> {
         for (n, (_, _, v)) in self.iter_nodes().enumerate() {
             let mut node_data: DotVertexData = v.clone();
             node_data.remove_common(&self.global_data);
-
-            if let Some(name) = &node_data.name {
-                write!(writer, "\n{name}")?;
-            } else {
-                write!(writer, "\n{n}")?;
-            }
-
             let data = node_data.to_string();
-            if !data.is_empty() {
-                write!(writer, " [{data}];")?;
-            } else {
-                write!(writer, ";")?;
-            }
+            write!(
+                writer,
+                "\n{}{};",
+                node_data.name.clone().unwrap_or(n.to_string()),
+                if !data.is_empty() {
+                    format!("[{data}]")
+                } else {
+                    String::new()
+                }
+            )?;
         }
         writer.write_str("\n")?;
 
@@ -548,6 +544,7 @@ pub mod test {
     fn orientations() {
         let s: DotGraph = dot!(
         digraph bba1{
+            num=1
                         ext    [style=invis]
                         ext -> A:1   [particle=a id=1]
                         ext -> A:2    [particle="b" id=2]
@@ -557,7 +554,7 @@ pub mod test {
 
         let g = s.back_and_forth_dot();
         let gg = g.clone().back_and_forth_dot();
-        println!("{g:?}");
+        println!("{}", g.debug_dot());
         assert_eq!(g, gg);
     }
 

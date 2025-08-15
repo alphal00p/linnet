@@ -30,20 +30,22 @@ impl From<()> for GlobalData {
 impl Display for GlobalData {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if !self.statements.is_empty() {
-            write!(f, "graph\t [")?;
-            let mut first = true;
             for (key, value) in &self.statements {
-                if !first {
-                    write!(f, ", ")?;
+                if let Some(indent) = f.width() {
+                    writeln!(f, "{}{key} = {value};", vec![" "; indent].join(""))?;
+                } else {
+                    write!(f, "\n{key} = {value};")?;
                 }
-                write!(f, "{key} = {value}")?;
-                first = false;
             }
-            writeln!(f, "]")?;
         }
 
         if !self.edge_statements.is_empty() {
-            write!(f, "edge\t [")?;
+            if let Some(indent) = f.width() {
+                writeln!(f, "{}edge\t [", vec![" "; indent].join(""))?;
+            } else {
+                write!(f, "edge\t [")?;
+            }
+
             let mut first = true;
             for (key, value) in &self.edge_statements {
                 if !first {
@@ -56,7 +58,12 @@ impl Display for GlobalData {
         }
 
         if !self.node_statements.is_empty() {
-            write!(f, "node\t [")?;
+            if let Some(indent) = f.width() {
+                writeln!(f, "{}node\t [", vec![" "; indent].join(""))?;
+            } else {
+                write!(f, "node\t [")?;
+            }
+
             let mut first = true;
             for (key, value) in &self.node_statements {
                 if !first {
