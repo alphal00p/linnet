@@ -1533,7 +1533,7 @@ fn extracting_network() {
 
 #[test]
 fn extract_nodes() {
-    let mut graph: DotGraph = dot!(digraph{
+    let graph: DotGraph = dot!(digraph{
         A->B
         C->D
         B->C
