@@ -134,6 +134,268 @@ impl Permutation {
         Permutation { map, inv }
     }
 
+    /// Creates a permutation from (from,to) pairs, minimizing swaps among all valid completions.
+    pub fn from_mappings<I>(mappings: I, size: usize) -> Result<Self, String>
+    where
+        I: IntoIterator<Item = (usize, usize)>,
+    {
+        if size == 0 {
+            return Ok(Self::id(0));
+        }
+
+        // Identity to start from
+        let mut map: Vec<usize> = (0..size).collect();
+
+        // forced_sources[s] = true iff s has an explicitly forced mapping
+        let mut forced_sources = vec![false; size];
+
+        // owner_of_target[t] = Some(s) if *any* assignment currently owns t (forced or identity we keep)
+        let mut owner_of_target: Vec<Option<usize>> = vec![None; size];
+
+        // forced_owner_of_target[t] = Some(s) iff a *forced* mapping s -> t exists
+        let mut forced_owner_of_target: Vec<Option<usize>> = vec![None; size];
+
+        // 1) Apply & validate forced mappings in O(1) each
+        for (from, to) in mappings {
+            if from >= size || to >= size {
+                return Err(format!(
+                    "Index out of bounds: mapping ({from}, {to}) for size {size}",
+                ));
+            }
+            if let Some(prev_from) = forced_owner_of_target[to] {
+                if prev_from != from {
+                    return Err(format!(
+                        "Target {to} is mapped from multiple sources ({prev_from} and {from})",
+                    ));
+                }
+            }
+            if forced_sources[from] && map[from] != to {
+                return Err(format!(
+                    "Source {} has conflicting mappings ({} vs {})",
+                    from, map[from], to
+                ));
+            }
+
+            map[from] = to;
+            forced_sources[from] = true;
+            forced_owner_of_target[to] = Some(from);
+            owner_of_target[to] = Some(from);
+        }
+
+        // 2) Keep identities whenever possible; collect displaced (unforced whose identity is taken)
+        let mut displaced_sources: Vec<usize> = Vec::new();
+        for s in 0..size {
+            if forced_sources[s] {
+                continue; // fixed by input
+            }
+            if owner_of_target[s].is_none() {
+                // identity slot s is free -> keep s->s
+                map[s] = s;
+                owner_of_target[s] = Some(s);
+            } else {
+                // identity slot s is already taken by a forced mapping -> s is displaced
+                displaced_sources.push(s);
+            }
+        }
+
+        // 3) For each displaced source s, assign it to the unique free target reachable
+        //    by walking through forced owners: t0 = s; while forced_owner_of_target[t] = Some(u) { t = u; }
+        //    Use a small memo to avoid re-walking shared tails.
+        let mut sink_cache: Vec<Option<usize>> = vec![None; size];
+
+        for s in displaced_sources {
+            let mut path: Vec<usize> = Vec::new();
+            let mut t = s;
+
+            // Walk until we hit a cached sink or a free target
+            loop {
+                if let Some(sink) = sink_cache[t] {
+                    // propagate cached sink to the path and assign
+                    for x in path.drain(..) {
+                        sink_cache[x] = Some(sink);
+                    }
+                    map[s] = sink;
+                    owner_of_target[sink] = Some(s);
+                    break;
+                }
+                path.push(t);
+
+                match forced_owner_of_target[t] {
+                    Some(owner) => {
+                        // advance along the forced-owner chain
+                        t = owner;
+                        continue;
+                    }
+                    None => {
+                        // t is a free target (no forced owner) -> this is the sink
+                        for x in path.drain(..) {
+                            sink_cache[x] = Some(t);
+                        }
+                        map[s] = t;
+                        owner_of_target[t] = Some(s);
+                        break;
+                    }
+                }
+            }
+        }
+
+        // 4) Final uniqueness check
+        let mut seen = vec![false; size];
+        for &to in &map {
+            if to >= size || std::mem::replace(&mut seen[to], true) {
+                return Err("Failed to create valid permutation".to_string());
+            }
+        }
+
+        Ok(Self::from_map(map))
+    }
+
+    /// Creates a permutation from a list of sources mapping to the prefix targets 0..k-1.
+    ///
+    /// The j-th element of `sources` is forced to map to target `j`.
+    /// Remaining indices are chosen to (1) keep identities when possible and
+    /// (2) minimize the number of swaps (maximize the number of cycles).
+    ///
+    /// # Arguments
+    /// * `sources` - iterator of distinct indices in `0..size`, length = k
+    /// * `size`    - total permutation size (n)
+    ///
+    /// # Returns
+    /// A swaps-optimal completion satisfying `sources[j] -> j`.
+    ///
+    /// # Example
+    /// ```
+    /// # use linnet::permutation::Permutation;
+    /// let p = Permutation::from_prefix_sources([5, 0, 3], 6).unwrap();
+    /// // forced: 5->0, 0->1, 3->2  (targets 0,1,2)
+    /// assert_eq!(p[5], 0);
+    /// assert_eq!(p[0], 1);
+    /// assert_eq!(p[3], 2);
+    /// // others chosen swaps-optimally
+    /// ```
+    pub fn from_prefix_sources<I>(sources: I, size: usize) -> Result<Self, String>
+    where
+        I: IntoIterator<Item = usize>,
+    {
+        if size == 0 {
+            return Ok(Self::id(0));
+        }
+
+        // Collect sources and validate in O(n+k)
+        let src_vec: Vec<usize> = sources.into_iter().collect();
+        let k = src_vec.len();
+        if k > size {
+            return Err(format!("Too many sources: k={k} > size={size}"));
+        }
+
+        let mut seen_source = vec![false; size];
+        for &s in &src_vec {
+            if s >= size {
+                return Err(format!("Source {s} out of bounds for size {size}"));
+            }
+            if std::mem::replace(&mut seen_source[s], true) {
+                return Err(format!("Duplicate source index {s}"));
+            }
+        }
+
+        // Identity base
+        let mut map: Vec<usize> = (0..size).collect();
+
+        // Bookkeeping
+        let mut forced_sources = vec![false; size]; // s is in src_vec
+        let mut owner_of_target: Vec<Option<usize>> = vec![None; size]; // who currently owns target t
+
+        // forced_owner_of_target[t] = Some(s) only for t in 0..k with s = src_vec[t]
+        // (This defines the fixed "owner graph" we walk to find sinks.)
+        let mut forced_owner_of_target: Vec<Option<usize>> = vec![None; size];
+
+        // 1) Apply forced prefix mappings: src_vec[j] -> j
+        for (t, &s) in (0..k).zip(src_vec.iter()) {
+            // note: t is guaranteed < size since k <= size
+            if let Some(prev) = owner_of_target[t] {
+                // Should never happen here because each prefix target appears exactly once
+                if prev != s {
+                    return Err(format!("Target {t} already owned by {prev}"));
+                }
+            }
+            map[s] = t;
+            forced_sources[s] = true;
+            owner_of_target[t] = Some(s);
+            forced_owner_of_target[t] = Some(s);
+        }
+
+        // 2) Keep identities whenever possible; collect displaced
+        let mut displaced: Vec<usize> = Vec::new();
+        for i in 0..size {
+            if forced_sources[i] {
+                continue;
+            }
+            if owner_of_target[i].is_none() {
+                // identity target i is free -> keep i->i
+                map[i] = i;
+                owner_of_target[i] = Some(i);
+            } else {
+                // identity target taken by some forced mapping -> i is displaced
+                displaced.push(i);
+            }
+        }
+
+        // 3) Route each displaced source to its unique sink via forced-owner chains.
+        //    Cache sinks so shared tails are walked once.
+        let mut sink_cache: Vec<Option<usize>> = vec![None; size];
+
+        for s in displaced {
+            let mut path: Vec<usize> = Vec::new();
+            let mut t = s;
+
+            loop {
+                if let Some(cached) = sink_cache[t] {
+                    // Assign cached sink; mark ownership
+                    for x in path.drain(..) {
+                        sink_cache[x] = Some(cached);
+                    }
+                    // Safety: cached is free by construction of earlier assignments
+                    map[s] = cached;
+                    owner_of_target[cached] = Some(s);
+                    break;
+                }
+
+                path.push(t);
+
+                match forced_owner_of_target[t] {
+                    Some(owner) => {
+                        // Follow the forced owner chain
+                        t = owner;
+                    }
+                    None => {
+                        // We reached a target not in the forced prefix (or outside 0..k)
+                        // This is the unique sink for the whole component.
+                        // It is guaranteed free at this point because:
+                        // - If t == i for some identity i kept earlier, that i cannot lie on the
+                        //   forced-owner chain (no forced owner on t), hence we would not be
+                        //   displacing s into an already-owned t in this component.
+                        for x in path.drain(..) {
+                            sink_cache[x] = Some(t);
+                        }
+                        map[s] = t;
+                        owner_of_target[t] = Some(s);
+                        break;
+                    }
+                }
+            }
+        }
+
+        // 4) Verify permutation validity
+        let mut seen = vec![false; size];
+        for &to in &map {
+            if to >= size || std::mem::replace(&mut seen[to], true) {
+                return Err("Construction failed: duplicate or OOB target".into());
+            }
+        }
+
+        Ok(Self::from_map(map))
+    }
+
     /// Returns the internal mapping as a slice.
     ///
     /// # Examples
@@ -2011,5 +2273,337 @@ mod tests {
 
             assert_eq!(result_inv_by_ref, data_copy);
         }
+    }
+
+    #[test]
+    fn test_from_mappings() {
+        // Test the example from the docstring
+        let mappings = [(5, 0), (0, 1)];
+        let p = Permutation::from_mappings(mappings.iter().copied(), 6).unwrap();
+        assert_eq!(p.map(), &[1, 5, 2, 3, 4, 0]);
+        assert_eq!(p[5], 0);
+        assert_eq!(p[0], 1);
+
+        // Test simple swap
+        let mappings = [(0, 1), (1, 0)];
+        let p = Permutation::from_mappings(mappings.iter().copied(), 3).unwrap();
+        assert_eq!(p.map(), &[1, 0, 2]);
+
+        // Test single mapping
+        let mappings = [(0, 2)];
+        let p = Permutation::from_mappings(mappings.iter().copied(), 3).unwrap();
+        // Should have 0->2, and need to place 1 and 2 somewhere
+        // 2 is used by 0, so 2 can't stay at position 2
+        // Available targets are 0 and 1
+        // Position 1 is not forced, so it can map to available target
+        // Position 2 is not forced, so it can map to available target
+        assert_eq!(p[0], 2);
+        // The exact arrangement of 1 and 2 may vary, but should be valid
+        let mut targets: Vec<_> = p.map().to_vec();
+        targets.sort();
+        assert_eq!(targets, vec![0, 1, 2]);
+
+        // Test cycle
+        let mappings = [(0, 1), (1, 2), (2, 0)];
+        let p = Permutation::from_mappings(mappings.iter().copied(), 3).unwrap();
+        assert_eq!(p.map(), &[1, 2, 0]);
+
+        // Test conflicting mappings - should fail
+        let mappings = [(0, 1), (1, 1)];
+        let result = Permutation::from_mappings(mappings.iter().copied(), 2);
+        assert!(result.is_err());
+
+        // Test out of bounds - should fail
+        let mappings = [(0, 5)];
+        let result = Permutation::from_mappings(mappings.iter().copied(), 3);
+        assert!(result.is_err());
+
+        // Test empty mappings - should be identity
+        let mappings: Vec<(usize, usize)> = vec![];
+        let p = Permutation::from_mappings(mappings.iter().copied(), 4).unwrap();
+        assert_eq!(p, Permutation::id(4));
+
+        // Test size 0
+        let mappings: Vec<(usize, usize)> = vec![];
+        let _p = Permutation::from_mappings(mappings.iter().copied(), 0).unwrap();
+        // assert_eq!(p.map(), &[]);
+    }
+
+    #[test]
+    fn test_from_mappings_complex() {
+        // Test more complex displacement
+        let mappings = [(0, 3), (1, 0)];
+        let p = Permutation::from_mappings(mappings.iter().copied(), 4).unwrap();
+        assert_eq!(p[0], 3);
+        assert_eq!(p[1], 0);
+        // Positions 2 and 3 need to be mapped somewhere
+        // Target 3 is taken by position 0
+        // Target 0 is taken by position 1
+        // Available targets are 1 and 2
+        // So positions 2 and 3 should map to 1 and 2 in some order
+        let mut targets: Vec<_> = p.map().to_vec();
+        targets.sort();
+        assert_eq!(targets, vec![0, 1, 2, 3]);
+
+        // Test that the permutation is valid
+        assert!(p.map().iter().all(|&target| target < 4));
+        let mut seen = [false; 4];
+        for &target in p.map() {
+            assert!(!seen[target]);
+            seen[target] = true;
+        }
+    }
+
+    #[test]
+    fn test_from_mappings_user_example() {
+        // Test the specific example from the user's request:
+        // Going from invalid map [1,1,2,3,4,0] to valid [1,5,2,3,4,0]
+        // This means we want: 5->0 and 0->1
+        let mappings = [(5, 0), (0, 1)];
+        let p = Permutation::from_mappings(mappings.iter().copied(), 6).unwrap();
+
+        // Should result in [1, 5, 2, 3, 4, 0]
+        assert_eq!(p.map(), &[1, 5, 2, 3, 4, 0]);
+
+        // Verify the specific mappings
+        assert_eq!(p[5], 0); // 5 -> 0 ✓
+        assert_eq!(p[0], 1); // 0 -> 1 ✓
+
+        // Verify other elements stay in place where possible
+        assert_eq!(p[2], 2); // 2 -> 2 (identity preserved)
+        assert_eq!(p[3], 3); // 3 -> 3 (identity preserved)
+        assert_eq!(p[4], 4); // 4 -> 4 (identity preserved)
+
+        // Element 1 had to be displaced because its identity target (1)
+        // was taken by element 0, so it maps to the available target 5
+        assert_eq!(p[1], 5); // 1 -> 5 (displaced to available target)
+    }
+}
+
+#[cfg(test)]
+mod swaps_optimality_tests {
+    use super::*;
+
+    /// Return the minimum number of swaps to realize permutation p from identity:
+    /// n - number_of_cycles.
+    fn min_swaps_of_perm(p: &Permutation) -> usize {
+        let n = p.length();
+        let cycles = p.find_cycles();
+        let num_cycles = cycles.len();
+        n - num_cycles
+    }
+
+    /// Check whether permutation p satisfies a set of forced mappings.
+    fn satisfies_forced(p: &Permutation, forced: &[(usize, usize)]) -> bool {
+        forced.iter().all(|&(f, t)| p[f] == t)
+    }
+
+    /// Simple next_permutation over a slice of usize in-place; returns false when wrapped.
+    fn next_permutation(a: &mut [usize]) -> bool {
+        // Find longest non-increasing suffix
+        if a.len() < 2 {
+            return false;
+        }
+        let mut i = a.len() - 2;
+        while a[i] >= a[i + 1] {
+            if i == 0 {
+                return false;
+            }
+            i -= 1;
+        }
+        // Find rightmost successor to pivot
+        let mut j = a.len() - 1;
+        while a[j] <= a[i] {
+            j -= 1;
+        }
+        a.swap(i, j);
+        // Reverse suffix
+        a[i + 1..].reverse();
+        true
+    }
+
+    /// Exhaustively compute the minimum possible swap-count over all permutations
+    /// of size `n` that satisfy `forced`. (Brute force = (n!) scan; only use for small n.)
+    fn brute_min_swaps_given_forced(
+        n: usize,
+        forced: &[(usize, usize)],
+    ) -> Option<(usize, Vec<usize>)> {
+        if n == 0 {
+            return Some((0, vec![]));
+        }
+        let mut map: Vec<usize> = (0..n).collect(); // identity
+        let mut best: Option<(usize, Vec<usize>)> = None;
+
+        loop {
+            // candidate permutation
+            let cand = Permutation::from_map(map.clone());
+            if satisfies_forced(&cand, forced) {
+                let cost = min_swaps_of_perm(&cand);
+                match &best {
+                    None => best = Some((cost, map.clone())),
+                    Some((best_cost, _)) if cost < *best_cost => best = Some((cost, map.clone())),
+                    _ => {}
+                }
+            }
+            if !next_permutation(&mut map) {
+                break;
+            }
+        }
+        best
+    }
+
+    #[test]
+    fn from_mappings_is_swaps_optimal_on_counterexample() {
+        // Classic counterexample where naive zip can make a single 4-cycle (3 swaps)
+        // but the optimal completion yields two 2-cycles (2 swaps).
+        // Forced: 0->1, 2->3 on n=4.
+        let n = 4;
+        let forced = vec![(0, 1), (2, 3)];
+
+        let p = Permutation::from_mappings(forced.iter().copied(), n)
+            .expect("from_mappings should succeed");
+
+        // Our constructor must achieve the brute-force minimal swap count.
+        let (min_cost, _witness) =
+            brute_min_swaps_given_forced(n, &forced).expect("At least one completion must exist");
+        let cost = min_swaps_of_perm(&p);
+        assert_eq!(
+            cost, min_cost,
+            "from_mappings is not swaps-optimal on the counterexample"
+        );
+
+        // Strengthen: for this particular instance, the true optimum is 2.
+        assert_eq!(
+            min_cost, 2,
+            "Unexpected brute-force minimum for the counterexample"
+        );
+    }
+
+    #[test]
+    fn from_mappings_handles_long_forced_chains_optimally() {
+        // Forced chain that displaces a block:
+        // 0->1, 1->2, 3->4 with n=6.
+        // The optimal wiring should maximize the number of cycles among the remaining
+        // (displaced) sources.
+        let n = 6;
+        let forced = vec![(0, 1), (1, 2), (3, 4)];
+        let p = Permutation::from_mappings(forced.iter().copied(), n).unwrap();
+
+        let (min_cost, _witness) = brute_min_swaps_given_forced(n, &forced).unwrap();
+        let cost = min_swaps_of_perm(&p);
+        assert_eq!(
+            cost,
+            min_cost,
+            "Non-optimal swaps for long forced chain: got {cost}, want {min_cost}. p={:?}",
+            p.map()
+        );
+
+        // Sanity: still respects all forced pairs
+        for (f, t) in forced {
+            assert_eq!(p[f], t);
+        }
+    }
+
+    #[test]
+    fn from_mappings_preserves_zero_swaps_when_possible() {
+        // No forced pairs: must return identity (0 swaps).
+        let n = 7;
+        let forced: Vec<(usize, usize)> = vec![];
+        let p = Permutation::from_mappings(forced.iter().copied(), n).unwrap();
+        assert!(p.is_identity());
+        assert_eq!(min_swaps_of_perm(&p), 0);
+
+        // Forced identity only: still 0 swaps.
+        let forced = [(0, 0), (3, 3), (6, 6)];
+        let p = Permutation::from_mappings(forced.iter().copied(), n).unwrap();
+        assert_eq!(min_swaps_of_perm(&p), 0);
+    }
+
+    #[test]
+    fn from_mappings_extends_forced_2cycle_optimally() {
+        // Forced 2-cycle plus one extra forced edge that displaces someone else.
+        // n=5, forced: (0,1), (1,0) and (3,2).
+        // Optimal completion pairs (2,3) into a 2-cycle and leaves 4 fixed, for min swaps.
+        let n = 5;
+        let forced = vec![(0, 1), (1, 0), (3, 2)];
+
+        let p = Permutation::from_mappings(forced.iter().copied(), n).unwrap();
+        let (min_cost, _witness) = brute_min_swaps_given_forced(n, &forced).unwrap();
+        let cost = min_swaps_of_perm(&p);
+        assert_eq!(
+            cost, min_cost,
+            "Should close remaining component(s) into max cycles"
+        );
+        for (f, t) in forced {
+            assert_eq!(p[f], t);
+        }
+    }
+
+    #[test]
+    fn from_mappings_user_case_is_swaps_optimal() {
+        // The user’s earlier scenario: n=6, forced (5->0),(0->1).
+        let n = 6;
+        let forced = vec![(5, 0), (0, 1)];
+
+        let p = Permutation::from_mappings(forced.iter().copied(), n).unwrap();
+        assert_eq!(p[5], 0);
+        assert_eq!(p[0], 1);
+
+        let (min_cost, _witness) = brute_min_swaps_given_forced(n, &forced).unwrap();
+        let cost = min_swaps_of_perm(&p);
+        assert_eq!(cost, min_cost, "User case should be swaps-optimal too");
+    }
+
+    #[test]
+    fn from_mappings_exhaustive_small_n() {
+        // Fully adversarial: for n=5 we scan a *suite* of forced sets and
+        // verify the constructor attains the brute-force minimum swaps each time.
+        // (We don't iterate over *all* subsets to keep test time reasonable.)
+        let n = 5;
+
+        let forced_sets: Vec<Vec<(usize, usize)>> = vec![
+            vec![],                       // empty
+            vec![(0, 1)],                 // single edge
+            vec![(0, 1), (2, 3)],         // two disjoint forced edges
+            vec![(0, 1), (1, 2)],         // small forced chain
+            vec![(0, 1), (1, 0)],         // forced 2-cycle
+            vec![(0, 2), (2, 4), (4, 0)], // forced 3-cycle
+            vec![(0, 2), (2, 4), (1, 3)], // 3-chain + extra edge
+            vec![(4, 0)],                 // target at opposite end
+        ];
+
+        for forced in forced_sets {
+            let p = Permutation::from_mappings(forced.iter().copied(), n)
+                .expect("from_mappings should succeed on these cases");
+
+            // Must satisfy constraints
+            assert!(
+                satisfies_forced(&p, &forced),
+                "Does not satisfy forced pairs: {forced:?}",
+            );
+
+            // Must achieve global min swaps among all completions
+            let (min_cost, _witness) = brute_min_swaps_given_forced(n, &forced)
+                .expect("No valid completion in brute force (unexpected)");
+            let cost = min_swaps_of_perm(&p);
+            assert_eq!(
+                cost,
+                min_cost,
+                "Not swaps-optimal for forced={forced:?}. Got {cost}, want {min_cost}. p={:?}",
+                p.map()
+            );
+        }
+    }
+
+    #[test]
+    fn from_mappings_rejects_conflicts() {
+        // Conflicting forced targets for same to-value
+        let n = 4;
+        let forced = [(0, 1), (2, 1)];
+        assert!(Permutation::from_mappings(forced.iter().copied(), n).is_err());
+
+        // Out of bounds
+        let forced = [(0, 5)];
+        assert!(Permutation::from_mappings(forced.iter().copied(), n).is_err());
     }
 }
