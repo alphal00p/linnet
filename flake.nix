@@ -37,9 +37,18 @@
 
       inherit (pkgs) lib;
 
+      rustToolchain = fenix.packages.${system}.combine [
+        (fenix.packages.${system}.stable.withComponents [
+          "cargo"
+          "rustc"
+          "rust-src"
+        ])
+        fenix.packages.${system}.targets.wasm32-unknown-unknown.stable.rust-std
+      ];
+
       craneLib =
         (crane.mkLib nixpkgs.legacyPackages.${system}).overrideToolchain
-        fenix.packages.${system}.stable.toolchain;
+        rustToolchain;
       src = craneLib.cleanCargoSource (craneLib.path ./.);
 
       iaiCallgrindRunner = pkgs.rustPlatform.buildRustPackage rec {
@@ -92,13 +101,18 @@
         # MY_CUSTOM_VAR = "some value";
       };
 
-      craneLibLLvmTools =
-        craneLib.overrideToolchain
+      rustToolchainLLvm = fenix.packages.${system}.combine [
         (fenix.packages.${system}.stable.withComponents [
           "cargo"
           "llvm-tools"
           "rustc"
-        ]);
+        ])
+        fenix.packages.${system}.targets.wasm32-unknown-unknown.stable.rust-std
+      ];
+
+      craneLibLLvmTools =
+        craneLib.overrideToolchain
+        rustToolchainLLvm;
 
       # Build *just* the cargo dependencies, so we can reuse
       # all of that work (e.g. via cachix) when running in CI
@@ -198,6 +212,7 @@
           cargo-edit
           cargo-watch
           rust-analyzer
+          tinymist
           # nixd
           # nil
         ];

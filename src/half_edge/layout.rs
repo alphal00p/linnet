@@ -4,14 +4,11 @@ use std::{
 };
 
 // use crate::half_edge::drawing::Decoration;
-use argmin::{
-    core::{CostFunction, Executor, State},
-    solver::simulatedannealing::{Anneal, SimulatedAnnealing},
-};
+use frostfire::prelude::*;
 
 // #[cfg(feature = "drawing")]
 use cgmath::{Angle, InnerSpace, Rad, Vector2, Zero};
-use rand::{rngs::SmallRng, Rng, SeedableRng};
+use rand::{rngs::{SmallRng, StdRng}, SeedableRng, Rng};
 
 // #[cfg(feature = "drawing")]
 use super::{
@@ -41,6 +38,10 @@ impl<V> LayoutVertex<V> {
             data,
             pos: Vector2::new(x, y),
         }
+    }
+
+    pub fn pos(&self) -> &Vector2<f64> {
+        &self.pos
     }
 }
 
@@ -460,56 +461,45 @@ pub struct Positions {
     /// - `Option<(f64, f64)>`: If `Some`, this is a fixed (x, y) position for the vertex.
     /// - `usize`, `usize`: If the Option is `None`, these are indices into the flat
     ///   parameter vector (`Vec<f64>`) for the vertex's x and y coordinates, respectively.
-    vertex_positions: Vec<(Option<(f64, f64)>, usize, usize)>,
+    pub vertex_positions: Vec<(Option<(f64, f64)>, usize, usize)>,
     /// Stores position information for each edge's control point(s).
     /// Similar structure to `vertex_positions`, but wrapped in `HedgeVec` to be
     /// indexed by `EdgeIndex`.
-    edge_positions: EdgeVec<(Option<(f64, f64)>, usize, usize)>,
+    pub edge_positions: EdgeVec<(Option<(f64, f64)>, usize, usize)>,
 }
 
 impl Positions {
-    pub fn scale(&mut self, scale: f64) {
-        self.vertex_positions.iter_mut().for_each(|(a, _, _)| {
-            if let Some(pos) = a {
-                pos.0 /= scale;
-                pos.1 /= scale;
-            }
-        });
-
-        self.edge_positions.iter_mut().for_each(|(_, a)| {
-            if let Some(pos) = &mut a.0 {
-                pos.0 /= scale;
-                pos.1 /= scale;
-            }
-        });
+    pub fn scale(&mut self, _scale: f64) {
+        // Don't scale pinned positions - they should remain at their absolute coordinates
+        // Only the parameters for non-pinned positions get scaled in the layout function
     }
     pub fn max(&self, params: &[f64]) -> Option<f64> {
+        // Only consider optimized parameters for scaling, not pinned positions
+        // This keeps pinned positions at their absolute coordinates
         let vertex_max = self
             .vertex_positions
             .iter()
-            .map(|(v, i, j)| {
-                if let Some((x, y)) = v {
-                    x.abs().max(y.abs())
+            .filter_map(|(v, i, j)| {
+                if v.is_none() {
+                    Some(params[*i].abs().max(params[*j].abs()))
                 } else {
-                    params[*i].abs().max(params[*j].abs())
+                    None // Skip pinned positions
                 }
             })
             .reduce(f64::max);
 
         let mut max_edges = None;
         for (_, (a, i, j)) in self.edge_positions.iter() {
-            let data = if let Some((x, y)) = a {
-                x.abs().max(y.abs())
-            } else {
-                params[*i].abs().max(params[*j].abs())
-            };
-            if let Some(max) = max_edges {
-                if max < data {
+            if a.is_none() {
+                let data = params[*i].abs().max(params[*j].abs());
+                if let Some(max) = max_edges {
+                    if max < data {
+                        max_edges = Some(data);
+                    }
+                } else {
                     max_edges = Some(data);
                 }
-            } else {
-                max_edges = Some(data);
-            }
+            } // Skip pinned edges
         }
 
         match (vertex_max, max_edges) {
@@ -526,8 +516,8 @@ impl Positions {
     ) -> PositionalHedgeGraph<E, V, H> {
         graph.map(
             |_, i, v| {
-                let pos = self.vertex_positions[i.0];
-                LayoutVertex::new(v, params[pos.1], params[pos.2])
+                let (x, y) = self.get_vertex_position(i, params);
+                LayoutVertex::new(v, x, y)
             },
             |i, p, h, _, e| match h {
                 HedgePair::Paired { source, sink } => {
@@ -535,10 +525,10 @@ impl Positions {
                     let src = p.node_id_ref(source);
                     let sk = p.node_id_ref(sink);
 
-                    let source_pos = self.vertex_positions[src.0];
-                    let source_pos = Vector2::new(params[source_pos.1], params[source_pos.2]);
-                    let sink_pos = self.vertex_positions[sk.0];
-                    let sink_pos = Vector2::new(params[sink_pos.1], params[sink_pos.2]);
+                    let source_pos = self.get_vertex_position(src, params);
+                    let source_pos = Vector2::new(source_pos.0, source_pos.1);
+                    let sink_pos = self.get_vertex_position(sk, params);
+                    let sink_pos = Vector2::new(sink_pos.0, sink_pos.1);
                     let pos = &self.get_edge_position(eid, params);
 
                     e.map(|d| LayoutEdge::new_internal(d, &source_pos, &sink_pos, pos.0, pos.1))
@@ -548,10 +538,10 @@ impl Positions {
                     let src = p.node_id_ref(source);
                     let sk = p.node_id_ref(sink);
 
-                    let source_pos = self.vertex_positions[src.0];
-                    let source_pos = Vector2::new(params[source_pos.1], params[source_pos.2]);
-                    let sink_pos = self.vertex_positions[sk.0];
-                    let sink_pos = Vector2::new(params[sink_pos.1], params[sink_pos.2]);
+                    let source_pos = self.get_vertex_position(src, params);
+                    let source_pos = Vector2::new(source_pos.0, source_pos.1);
+                    let sink_pos = self.get_vertex_position(sk, params);
+                    let sink_pos = Vector2::new(sink_pos.0, sink_pos.1);
                     let pos = &self.get_edge_position(eid, params);
 
                     e.map(|d| LayoutEdge::new_internal(d, &source_pos, &sink_pos, pos.0, pos.1))
@@ -560,8 +550,8 @@ impl Positions {
                     let eid = i[h.any_hedge()];
                     let src = p.node_id_ref(hedge);
 
-                    let source_pos = self.vertex_positions[src.0];
-                    let source_pos = Vector2::new(params[source_pos.1], params[source_pos.2]);
+                    let source_pos = self.get_vertex_position(src, params);
+                    let source_pos = Vector2::new(source_pos.0, source_pos.1);
                     let pos = &self.get_edge_position(eid, params);
 
                     e.map(|d| LayoutEdge::new_external(d, &source_pos, pos.0, pos.1, flow))
@@ -569,6 +559,17 @@ impl Positions {
             },
             |_, h| h,
         )
+    }
+
+    /// Create a Positions struct from pre-constructed components
+    pub fn from_components(
+        vertex_positions: Vec<(Option<(f64, f64)>, usize, usize)>,
+        edge_positions: EdgeVec<(Option<(f64, f64)>, usize, usize)>,
+    ) -> Self {
+        Positions {
+            vertex_positions,
+            edge_positions,
+        }
     }
 
     pub fn new<E, V, H>(
@@ -690,18 +691,50 @@ impl Positions {
             (params[ix], params[iy])
         }
     }
+
+    pub fn get_vertex_position(&self, vertex: NodeIndex, params: &[f64]) -> (f64, f64) {
+        let (p, ix, iy) = self.vertex_positions[vertex.0];
+        if let Some(p) = p {
+            (p.0, p.1)
+        } else {
+            (params[ix], params[iy])
+        }
+    }
 }
 
-impl<E, V, H> CostFunction for GraphLayout<'_, E, V, H> {
-    type Param = Vec<f64>;
-    type Output = f64;
+// State implementation for frostfire
+#[derive(Clone)]
+pub struct LayoutState {
+    pub params: Vec<f64>,
+    pub delta: f64,
+}
 
-    fn cost(&self, param: &Self::Param) -> Result<Self::Output, argmin::core::Error> {
+impl State for LayoutState {
+    fn neighbor(&self, rng: &mut impl Rng) -> Self {
+        let mut new_params = self.params.clone();
+        // Modify a random parameter
+        let idx = rng.gen_range(0..new_params.len());
+        let delta = rng.gen_range(-self.delta..self.delta);
+        new_params[idx] += delta;
+        LayoutState { params: new_params,delta:self.delta }
+    }
+}
+
+// Energy implementation for frostfire
+pub struct GraphLayoutEnergy<'a, E, V, H> {
+    pub graph: &'a super::HedgeGraph<E, V, H, super::nodestore::NodeStorageVec<V>>,
+    pub positions: &'a Positions,
+    pub params: &'a LayoutParams,
+}
+
+impl<'a, E, V, H> Energy for GraphLayoutEnergy<'a, E, V, H> {
+    type State = LayoutState;
+
+    fn cost(&self, state: &Self::State) -> f64 {
+        let param = &state.params;
         let mut cost = 0.0;
 
         // global edge repulsion:
-        //
-
         for (x, y) in self.positions.iter_edge_positions(param) {
             for (ex, ey) in self.positions.iter_edge_positions(param) {
                 if ex == x && ey == y {
@@ -710,7 +743,10 @@ impl<E, V, H> CostFunction for GraphLayout<'_, E, V, H> {
                 let dx = x - ex;
                 let dy = y - ey;
 
-                cost += self.params.global_edge_repulsion / (dx * dx + dy * dy).sqrt();
+                let dist_sq = dx * dx + dy * dy;
+                let dist = (dist_sq + 1e-6).sqrt(); // Add epsilon for stability
+                let repulsion = self.params.global_edge_repulsion / dist;
+                cost += repulsion.min(1000.0); // Cap energy to prevent overflow
             }
         }
 
@@ -719,8 +755,10 @@ impl<E, V, H> CostFunction for GraphLayout<'_, E, V, H> {
                 let dx = x - ex;
                 let dy = y - ey;
 
-                let dist = (dx * dx + dy * dy).sqrt();
-                cost += self.params.edge_vertex_repulsion / dist;
+                let dist_sq = dx * dx + dy * dy;
+                let dist = (dist_sq + 1e-6).sqrt(); // Add epsilon for stability
+                let repulsion = self.params.edge_vertex_repulsion / dist;
+                cost += repulsion.min(1000.0); // Cap energy to prevent overflow
             }
             for e in self.graph.iter_crown(node) {
                 let (ex, ey) = self.positions.get_edge_position(self.graph[&e], param);
@@ -728,11 +766,10 @@ impl<E, V, H> CostFunction for GraphLayout<'_, E, V, H> {
                 let dx = x - ex;
                 let dy = y - ey;
 
-                let dist = (dx * dx + dy * dy).sqrt();
-
+                let dist_sq = dx * dx + dy * dy;
+                let dist = (dist_sq + 1e-8).sqrt(); // Small epsilon for spring forces
                 cost +=
                     0.5 * self.params.spring_constant * (self.params.spring_length - dist).powi(2);
-                // cost += self.params.charge_constant_e / dist;
 
                 for othere in self.graph.iter_crown(node) {
                     let a = self.graph.inv(othere);
@@ -740,8 +777,10 @@ impl<E, V, H> CostFunction for GraphLayout<'_, E, V, H> {
                         let (ox, oy) = self.positions.get_edge_position(self.graph[&othere], param);
                         let dx = ex - ox;
                         let dy = ey - oy;
-                        let dist = (dx * dx + dy * dy).sqrt();
-                        cost += self.params.charge_constant_e / dist;
+                        let dist_sq = dx * dx + dy * dy;
+                        let dist = (dist_sq + 1e-6).sqrt(); // Add epsilon for stability
+                        let charge = self.params.charge_constant_e / dist;
+                        cost += charge.min(1000.0); // Cap energy to prevent overflow
                     }
                 }
             }
@@ -750,79 +789,20 @@ impl<E, V, H> CostFunction for GraphLayout<'_, E, V, H> {
                 if node != other {
                     let dx = x - ox;
                     let dy = y - oy;
-                    let dist = (dx * dx + dy * dy).sqrt();
-                    cost += 0.5 * self.params.charge_constant_v / dist;
+                    let dist_sq = dx * dx + dy * dy;
+                    let dist = (dist_sq + 1e-6).sqrt(); // Add epsilon for stability
+                    let charge = 0.5 * self.params.charge_constant_v / dist;
+                    cost += charge.min(1000.0); // Cap energy to prevent overflow
 
                     let dist_to_center = (ox * ox + oy * oy).sqrt();
                     if dist_to_center > 1.0 {
                         cost += 0.5 * self.params.central_force_constant / dist_to_center;
                     }
-
-                    // cost += 0.5 * self.central_force_constant / dist_to_center;
                 }
             }
-
-            // for e in 0..self.graph.involution.inv.len() {
-            //     match self.positions.edge_positions.inv[e] {
-            //         InvolutiveMapping::Identity(_) => {
-            //             let (ox, oy) = self.positions.get_edge_position(e, param);
-            //             let dx = x - ox;
-            //             let dy = y - oy;
-            //             let dist = (dx * dx + dy * dy).sqrt();
-            //             cost += 0.5 * self.charge_constant_v / dist;
-            //             let dist_to_center = (ox * ox + oy * oy).sqrt();
-
-            //             cost += 0.5 * self.external_constant / dist_to_center;
-            //         }
-            //         _ => {}
-            //     }
-            // }
         }
 
-        // for othere in 0..self.graph.involution.inv.len() {
-        //     for e in 0..self.graph.involution.inv.len() {
-        //         match self.positions.edge_positions.inv[e].1 {
-        //             InvolutiveMapping::Sink(_) => {}
-        //             _ => {
-        //                 if e > othere {
-        //                     let (ox, oy) = self.positions.get_edge_position(othere, param);
-        //                     let (ex, ey) = self.positions.get_edge_position(e, param);
-        //                     let dx = ex - ox;
-        //                     let dy = ey - oy;
-        //                     let dist = (dx * dx + dy * dy).sqrt();
-        //                     cost += self.charge_constant_e / dist;
-        //                 }
-        //             }
-        //         }
-        //     }
-        // }
-        Ok(cost)
-    }
-}
-
-impl<E, V, H> Anneal for GraphLayout<'_, E, V, H> {
-    type Param = Vec<f64>;
-    type Output = Vec<f64>;
-    type Float = f64;
-
-    /// Anneal a parameter vector
-    fn anneal(&self, param: &Vec<f64>, temp: f64) -> Result<Vec<f64>, argmin::core::Error> {
-        let mut param_n = param.clone();
-        let mut rng = self.rng.lock().unwrap();
-        // let distr = Uniform::from(0..param.len());
-        // Perform modifications to a degree proportional to the current temperature `temp`.
-        for _ in 0..(temp.floor() as u64 + 1) {
-            // Compute random index of the parameter vector using the supplied random number
-            // generator.
-            let idx: usize = rng.gen_range(0..param.len());
-
-            // Compute random number in [0.1, 0.1].
-            let val = rng.gen_range(-0.5..0.5);
-
-            // modify previous parameter value at random position `idx` by `val`
-            param_n[idx] += val;
-        }
-        Ok(param_n)
+        cost
     }
 }
 
@@ -856,6 +836,8 @@ pub struct LayoutIters {
     /// parameter for other iterative solvers. It often influences the likelihood
     /// of accepting worse solutions, allowing escape from local minima.
     pub temp: f64,
+
+    pub delta: f64,
     /// A seed for the random number generator used in stochastic layout algorithms,
     /// ensuring reproducibility.
     pub seed: u64,
@@ -875,6 +857,36 @@ impl LayoutSettings {
             iters,
             init_params,
         }
+    }
+
+    /// Create a LayoutSettings from pre-constructed components
+    pub fn from_components(
+        params: LayoutParams,
+        positions: Positions,
+        iters: LayoutIters,
+        init_params: Vec<f64>,
+    ) -> Self {
+        LayoutSettings {
+            params,
+            positions,
+            iters,
+            init_params,
+        }
+    }
+
+    /// Get the layout parameters
+    pub fn params(&self) -> &LayoutParams {
+        &self.params
+    }
+
+    /// Get the layout iterations settings
+    pub fn iters(&self) -> &LayoutIters {
+        &self.iters
+    }
+
+    /// Get the initialization parameters
+    pub fn init_params(&self) -> &Vec<f64> {
+        &self.init_params
     }
 
     pub fn left_right_square<E, V, H>(
@@ -1017,34 +1029,45 @@ impl<E, V, H> HedgeGraph<E, V, H, NodeStorageVec<V>> {
         self,
         mut settings: LayoutSettings,
     ) -> HedgeGraph<LayoutEdge<E>, LayoutVertex<V>, H, NodeStorageVec<LayoutVertex<V>>> {
-        let layout = GraphLayout {
-            rng: Arc::new(Mutex::new(SmallRng::seed_from_u64(0))),
-            positions: settings.positions.clone(),
+
+        let initial_state = LayoutState { params: settings.init_params,delta:settings.iters.delta };
+        let energy = GraphLayoutEnergy {
             graph: &self,
-            params: settings.params,
+            positions: &settings.positions,
+            params: &settings.params,
         };
+        let schedule = GeometricSchedule::new(settings.iters.temp, 0.95);
+        let rng = StdRng::seed_from_u64(settings.iters.seed);
 
-        let solver = SimulatedAnnealing::new(settings.iters.temp).unwrap();
 
-        let best = {
-            let res = Executor::new(layout, solver)
-                .configure(|state| {
-                    state
-                        .param(settings.init_params)
-                        .max_iters(settings.iters.n_iters)
-                })
-                // run the solver on the defined problem
-                .run()
-                .unwrap();
-            res.state().get_best_param().unwrap().clone()
-        };
 
-        let max = settings.positions.max(&best).unwrap();
 
-        let best: Vec<_> = best.into_iter().map(|a| a / max).collect();
-        settings.positions.scale(max);
+        let mut annealer = Annealer::new(
+            initial_state,
+            energy,
+            schedule,
+            rng,
+            settings.iters.n_iters as usize,
+        );
 
-        settings.positions.to_graph(self, &best)
+        let (best_state, _best_energy) = annealer.run();
+        let best = best_state.params;
+
+        // Check if we have any pinned positions
+        let has_pins = settings.positions.vertex_positions.iter().any(|(pin, _, _)| pin.is_some()) ||
+                      settings.positions.edge_positions.iter().any(|(_, (edge_data, _, _))| edge_data.is_some());
+
+        if has_pins {
+            // When pins are present, they establish the coordinate system scale
+            // Don't rescale - keep pin coordinates at their absolute values
+            settings.positions.to_graph(self, &best)
+        } else {
+            // When no pins are present, normalize to prevent coordinates from becoming too large
+            let max = settings.positions.max(&best).unwrap_or(1.0);
+            let best: Vec<_> = best.into_iter().map(|a| a / max).collect();
+            settings.positions.scale(max);
+            settings.positions.to_graph(self, &best)
+        }
     }
 }
 
@@ -1076,6 +1099,7 @@ pub mod test {
                 n_iters: 100,
                 temp: 1.,
                 seed: 1,
+                delta: 0.1,
             },
         );
         boxdiag.graph.layout(layout_settings);
@@ -1107,6 +1131,7 @@ pub mod test {
                 n_iters: 30000,
                 temp: 1.,
                 seed: 1,
+                delta: 0.1,
             },
         );
         let mut layout = sunshine.graph.layout(layout_settings);

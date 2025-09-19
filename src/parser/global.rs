@@ -3,6 +3,7 @@ use std::{collections::BTreeMap, fmt::Display};
 use dot_parser::{ast::AttrStmt, canonical::IDEq};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct GlobalData {
     pub name: String,
     pub statements: BTreeMap<String, String>,

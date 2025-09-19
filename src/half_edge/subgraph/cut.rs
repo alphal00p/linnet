@@ -1084,6 +1084,7 @@ pub mod test {
                     n_iters: 10,
                     temp: 1.,
                     seed: 1,
+                    delta: 0.1
                 },
                 10.,
             );

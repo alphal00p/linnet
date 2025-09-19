@@ -30,8 +30,14 @@
         "check": {
           "onSave": true,
           "features": ["drawing", "bincode", "symbolica"],
-          "command": "clippy"
+          "command": "check"
         }
+      }
+    },
+    "tinymist": {
+      "settings": {
+        "exportPdf": "onSave",
+        "outputPath": "$root/$name"
       }
     }
   }
