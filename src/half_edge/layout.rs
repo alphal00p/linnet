@@ -439,75 +439,144 @@ impl Default for LayoutParams {
 //     central_force_constant: 0.0,
 // }
 
+/// Represents different constraint types for a single coordinate (x or y).
+#[derive(Debug, Clone, Copy)]
+pub enum CoordinateConstraint {
+    /// The coordinate is fixed to a specific value and won't be optimized.
+    Fixed(f64),
+    /// The coordinate is free to be optimized, with the given index in the parameter vector.
+    Free(usize),
+    /// The coordinate is linked to another coordinate at the same parameter index.
+    /// This allows multiple elements to share the same coordinate value.
+    Linked(usize),
+}
+
+/// Represents position constraints for a graph element (vertex or edge).
+/// Allows independent control over x and y coordinates.
+#[derive(Debug, Clone, Copy)]
+pub struct PositionConstraints {
+    /// Constraint for the x coordinate.
+    pub x: CoordinateConstraint,
+    /// Constraint for the y coordinate.
+    pub y: CoordinateConstraint,
+}
+
+impl PositionConstraints {
+    /// Create constraints with both coordinates fixed.
+    pub fn fixed(x: f64, y: f64) -> Self {
+        Self {
+            x: CoordinateConstraint::Fixed(x),
+            y: CoordinateConstraint::Fixed(y),
+        }
+    }
+
+    /// Create constraints with both coordinates free.
+    pub fn free(x_index: usize, y_index: usize) -> Self {
+        Self {
+            x: CoordinateConstraint::Free(x_index),
+            y: CoordinateConstraint::Free(y_index),
+        }
+    }
+
+    /// Create constraints with x fixed and y free.
+    pub fn fix_x(x: f64, y_index: usize) -> Self {
+        Self {
+            x: CoordinateConstraint::Fixed(x),
+            y: CoordinateConstraint::Free(y_index),
+        }
+    }
+
+    /// Create constraints with y fixed and x free.
+    pub fn fix_y(x_index: usize, y: f64) -> Self {
+        Self {
+            x: CoordinateConstraint::Free(x_index),
+            y: CoordinateConstraint::Fixed(y),
+        }
+    }
+
+    /// Create constraints with both coordinates linked to other elements.
+    pub fn linked(x_index: usize, y_index: usize) -> Self {
+        Self {
+            x: CoordinateConstraint::Linked(x_index),
+            y: CoordinateConstraint::Linked(y_index),
+        }
+    }
+
+    /// Create constraints with x linked and y free.
+    pub fn link_x(x_index: usize, y_index: usize) -> Self {
+        Self {
+            x: CoordinateConstraint::Linked(x_index),
+            y: CoordinateConstraint::Free(y_index),
+        }
+    }
+
+    /// Create constraints with y linked and x free.
+    pub fn link_y(x_index: usize, y_index: usize) -> Self {
+        Self {
+            x: CoordinateConstraint::Free(x_index),
+            y: CoordinateConstraint::Linked(y_index),
+        }
+    }
+
+    /// Get the coordinate value from the constraints and parameter vector.
+    pub fn get_position(&self, params: &[f64]) -> (f64, f64) {
+        let x = match self.x {
+            CoordinateConstraint::Fixed(val) => val,
+            CoordinateConstraint::Free(idx) | CoordinateConstraint::Linked(idx) => params[idx],
+        };
+        let y = match self.y {
+            CoordinateConstraint::Fixed(val) => val,
+            CoordinateConstraint::Free(idx) | CoordinateConstraint::Linked(idx) => params[idx],
+        };
+        (x, y)
+    }
+}
+
 #[derive(Debug, Clone)]
-#[allow(clippy::type_complexity)]
 /// Manages the positional parameters for graph elements during layout optimization.
 ///
-/// It distinguishes between positions that might be fixed (e.g., external edges pinned
-/// to a circle) and those that are optimizable by the layout algorithm.
-/// The actual coordinate values are stored in a flat `Vec<f64>` (the `param` argument
-/// in `argmin`'s `CostFunction`), and this struct holds indices into that vector
-/// for each vertex and edge control point.
-///
-/// Fields:
-/// - `vertex_positions`: For each vertex, stores an optional fixed position `(x, y)`
-///   or, if `None`, indices `(usize, usize)` into the optimizable parameter vector
-///   for its x and y coordinates.
-/// - `edge_positions`: For each edge (via `HedgeVec`), stores similar information
-///   for its control point(s).
+/// It distinguishes between coordinates that might be fixed, free to optimize, or linked
+/// to other coordinates. The actual coordinate values are stored in a flat `Vec<f64>`
+/// (the `param` argument in optimization), and this struct holds constraints for each
+/// vertex and edge control point.
 pub struct Positions {
-    /// Stores position information for each vertex.
-    /// Each element is a tuple: `(Option<(f64, f64)>, usize, usize)`.
-    /// - `Option<(f64, f64)>`: If `Some`, this is a fixed (x, y) position for the vertex.
-    /// - `usize`, `usize`: If the Option is `None`, these are indices into the flat
-    ///   parameter vector (`Vec<f64>`) for the vertex's x and y coordinates, respectively.
-    pub vertex_positions: Vec<(Option<(f64, f64)>, usize, usize)>,
-    /// Stores position information for each edge's control point(s).
-    /// Similar structure to `vertex_positions`, but wrapped in `HedgeVec` to be
-    /// indexed by `EdgeIndex`.
-    pub edge_positions: EdgeVec<(Option<(f64, f64)>, usize, usize)>,
+    /// Stores position constraints for each vertex.
+    pub vertex_positions: Vec<PositionConstraints>,
+    /// Stores position constraints for each edge's control point(s).
+    pub edge_positions: EdgeVec<PositionConstraints>,
 }
 
 impl Positions {
     pub fn scale(&mut self, _scale: f64) {
-        // Don't scale pinned positions - they should remain at their absolute coordinates
-        // Only the parameters for non-pinned positions get scaled in the layout function
+        // Don't scale fixed positions - they should remain at their absolute coordinates
+        // Only the parameters for free/linked positions get scaled in the layout function
     }
+
     pub fn max(&self, params: &[f64]) -> Option<f64> {
-        // Only consider optimized parameters for scaling, not pinned positions
-        // This keeps pinned positions at their absolute coordinates
-        let vertex_max = self
-            .vertex_positions
-            .iter()
-            .filter_map(|(v, i, j)| {
-                if v.is_none() {
-                    Some(params[*i].abs().max(params[*j].abs()))
-                } else {
-                    None // Skip pinned positions
-                }
-            })
-            .reduce(f64::max);
+        // Only consider free parameters for scaling, not fixed positions
+        let mut max_val = None;
 
-        let mut max_edges = None;
-        for (_, (a, i, j)) in self.edge_positions.iter() {
-            if a.is_none() {
-                let data = params[*i].abs().max(params[*j].abs());
-                if let Some(max) = max_edges {
-                    if max < data {
-                        max_edges = Some(data);
-                    }
-                } else {
-                    max_edges = Some(data);
+        // Check vertex positions
+        for constraints in &self.vertex_positions {
+            for coord_constraint in [&constraints.x, &constraints.y] {
+                if let CoordinateConstraint::Free(idx) | CoordinateConstraint::Linked(idx) = coord_constraint {
+                    let val = params[*idx].abs();
+                    max_val = Some(max_val.map_or(val, |current: f64| current.max(val)));
                 }
-            } // Skip pinned edges
+            }
         }
 
-        match (vertex_max, max_edges) {
-            (Some(a), Some(b)) => Some(a.max(b)),
-            (Some(a), None) => Some(a),
-            (None, Some(b)) => Some(b),
-            (None, None) => None,
+        // Check edge positions
+        for (_, constraints) in self.edge_positions.iter() {
+            for coord_constraint in [&constraints.x, &constraints.y] {
+                if let CoordinateConstraint::Free(idx) | CoordinateConstraint::Linked(idx) = coord_constraint {
+                    let val = params[*idx].abs();
+                    max_val = Some(max_val.map_or(val, |current: f64| current.max(val)));
+                }
+            }
         }
+
+        max_val
     }
     pub fn to_graph<E, V, H>(
         self,
@@ -529,7 +598,7 @@ impl Positions {
                     let source_pos = Vector2::new(source_pos.0, source_pos.1);
                     let sink_pos = self.get_vertex_position(sk, params);
                     let sink_pos = Vector2::new(sink_pos.0, sink_pos.1);
-                    let pos = &self.get_edge_position(eid, params);
+                    let pos = self.get_edge_position(eid, params);
 
                     e.map(|d| LayoutEdge::new_internal(d, &source_pos, &sink_pos, pos.0, pos.1))
                 }
@@ -542,7 +611,7 @@ impl Positions {
                     let source_pos = Vector2::new(source_pos.0, source_pos.1);
                     let sink_pos = self.get_vertex_position(sk, params);
                     let sink_pos = Vector2::new(sink_pos.0, sink_pos.1);
-                    let pos = &self.get_edge_position(eid, params);
+                    let pos = self.get_edge_position(eid, params);
 
                     e.map(|d| LayoutEdge::new_internal(d, &source_pos, &sink_pos, pos.0, pos.1))
                 }
@@ -552,7 +621,7 @@ impl Positions {
 
                     let source_pos = self.get_vertex_position(src, params);
                     let source_pos = Vector2::new(source_pos.0, source_pos.1);
-                    let pos = &self.get_edge_position(eid, params);
+                    let pos = self.get_edge_position(eid, params);
 
                     e.map(|d| LayoutEdge::new_external(d, &source_pos, pos.0, pos.1, flow))
                 }
@@ -563,8 +632,8 @@ impl Positions {
 
     /// Create a Positions struct from pre-constructed components
     pub fn from_components(
-        vertex_positions: Vec<(Option<(f64, f64)>, usize, usize)>,
-        edge_positions: EdgeVec<(Option<(f64, f64)>, usize, usize)>,
+        vertex_positions: Vec<PositionConstraints>,
+        edge_positions: EdgeVec<PositionConstraints>,
     ) -> Self {
         Positions {
             vertex_positions,
@@ -583,7 +652,8 @@ impl Positions {
         let range = -1.0..1.0;
 
         let edge_positions = graph.new_edgevec(|_, _, pair| {
-            let j = params.len();
+            let x_idx = params.len();
+            let y_idx = params.len() + 1;
             if pair.is_unpaired() {
                 params.push(rng.gen_range(ext_range.clone()));
                 params.push(rng.gen_range(ext_range.clone()));
@@ -591,14 +661,15 @@ impl Positions {
                 params.push(rng.gen_range(range.clone()));
                 params.push(rng.gen_range(range.clone()));
             }
-            (None, j, j + 1)
+            PositionConstraints::free(x_idx, y_idx)
         });
 
         for _ in graph.iter_node_ids() {
-            let j = params.len();
+            let x_idx = params.len();
+            let y_idx = params.len() + 1;
             params.push(rng.gen_range(range.clone()));
             params.push(rng.gen_range(range.clone()));
-            vertex_positions.push((None, j, j + 1));
+            vertex_positions.push(PositionConstraints::free(x_idx, y_idx));
         }
 
         (
@@ -625,24 +696,26 @@ impl Positions {
         let angle_step = 2. * std::f64::consts::PI / f64::from(graph.n_externals() as u32);
 
         let edge_positions = graph.new_edgevec(|_, _, pair| {
-            let j = params.len();
+            let x_idx = params.len();
+            let y_idx = params.len() + 1;
             params.push(rng.gen_range(range.clone()));
             params.push(rng.gen_range(range.clone()));
             if pair.is_unpaired() {
                 let x = radius * f64::cos(angle);
                 let y = radius * f64::sin(angle);
                 angle += angle_step;
-                (Some((x, y)), j, j + 1)
+                PositionConstraints::fixed(x, y)
             } else {
-                (None, j, j + 1)
+                PositionConstraints::free(x_idx, y_idx)
             }
         });
 
         for _ in graph.iter_node_ids() {
-            let j = params.len();
+            let x_idx = params.len();
+            let y_idx = params.len() + 1;
             params.push(rng.gen_range(range.clone()));
             params.push(rng.gen_range(range.clone()));
-            vertex_positions.push((None, j, j + 1));
+            vertex_positions.push(PositionConstraints::free(x_idx, y_idx));
         }
 
         (
@@ -661,12 +734,8 @@ impl Positions {
         self.vertex_positions
             .iter()
             .enumerate()
-            .map(|(i, (p, x, y))| {
-                if let Some(p) = p {
-                    (NodeIndex(i), (p.0, p.1))
-                } else {
-                    (NodeIndex(i), (params[*x], params[*y]))
-                }
+            .map(|(i, constraints)| {
+                (NodeIndex(i), constraints.get_position(params))
             })
     }
 
@@ -674,32 +743,138 @@ impl Positions {
         &'a self,
         params: &'a [f64],
     ) -> impl Iterator<Item = (f64, f64)> + 'a {
-        self.edge_positions.iter().map(|(_, (p, x, y))| {
-            if let Some(p) = p {
-                (p.0, p.1)
-            } else {
-                (params[*x], params[*y])
-            }
+        self.edge_positions.iter().map(|(_, constraints)| {
+            constraints.get_position(params)
         })
     }
 
     pub fn get_edge_position(&self, edge: EdgeIndex, params: &[f64]) -> (f64, f64) {
-        let (p, ix, iy) = self.edge_positions[edge];
-        if let Some(p) = p {
-            (p.0, p.1)
-        } else {
-            (params[ix], params[iy])
-        }
+        self.edge_positions[edge].get_position(params)
     }
 
     pub fn get_vertex_position(&self, vertex: NodeIndex, params: &[f64]) -> (f64, f64) {
-        let (p, ix, iy) = self.vertex_positions[vertex.0];
-        if let Some(p) = p {
-            (p.0, p.1)
+        self.vertex_positions[vertex.0].get_position(params)
+    }
+
+    /// Set a vertex to have a fixed x coordinate while keeping y free to optimize
+    pub fn fix_vertex_x(&mut self, vertex: NodeIndex, x: f64) {
+        let constraints = &mut self.vertex_positions[vertex.0];
+        constraints.x = CoordinateConstraint::Fixed(x);
+    }
+
+    /// Set a vertex to have a fixed y coordinate while keeping x free to optimize
+    pub fn fix_vertex_y(&mut self, vertex: NodeIndex, y: f64) {
+        let constraints = &mut self.vertex_positions[vertex.0];
+        constraints.y = CoordinateConstraint::Fixed(y);
+    }
+
+    /// Link two vertices to share the same x coordinate
+    pub fn link_vertices_x(&mut self, vertex1: NodeIndex, vertex2: NodeIndex, params: &mut Vec<f64>) {
+        // Create a new parameter index for the shared x coordinate
+        let shared_x_idx = params.len();
+        params.push(0.0); // Initialize with default value
+
+        self.vertex_positions[vertex1.0].x = CoordinateConstraint::Linked(shared_x_idx);
+        self.vertex_positions[vertex2.0].x = CoordinateConstraint::Linked(shared_x_idx);
+    }
+
+    /// Link two vertices to share the same y coordinate
+    pub fn link_vertices_y(&mut self, vertex1: NodeIndex, vertex2: NodeIndex, params: &mut Vec<f64>) {
+        // Create a new parameter index for the shared y coordinate
+        let shared_y_idx = params.len();
+        params.push(0.0); // Initialize with default value
+
+        self.vertex_positions[vertex1.0].y = CoordinateConstraint::Linked(shared_y_idx);
+        self.vertex_positions[vertex2.0].y = CoordinateConstraint::Linked(shared_y_idx);
+    }
+
+    /// Set an edge to have a fixed x coordinate while keeping y free to optimize
+    pub fn fix_edge_x(&mut self, edge: EdgeIndex, x: f64) {
+        self.edge_positions[edge].x = CoordinateConstraint::Fixed(x);
+    }
+
+    /// Set an edge to have a fixed y coordinate while keeping x free to optimize
+    pub fn fix_edge_y(&mut self, edge: EdgeIndex, y: f64) {
+        self.edge_positions[edge].y = CoordinateConstraint::Fixed(y);
+    }
+
+    /// Link two edges to share the same x coordinate
+    pub fn link_edges_x(&mut self, edge1: EdgeIndex, edge2: EdgeIndex, params: &mut Vec<f64>) {
+        // Create a new parameter index for the shared x coordinate
+        let shared_x_idx = params.len();
+        params.push(0.0); // Initialize with default value
+
+        self.edge_positions[edge1].x = CoordinateConstraint::Linked(shared_x_idx);
+        self.edge_positions[edge2].x = CoordinateConstraint::Linked(shared_x_idx);
+    }
+
+    /// Link two edges to share the same y coordinate
+    pub fn link_edges_y(&mut self, edge1: EdgeIndex, edge2: EdgeIndex, params: &mut Vec<f64>) {
+        // Create a new parameter index for the shared y coordinate
+        let shared_y_idx = params.len();
+        params.push(0.0); // Initialize with default value
+
+        self.edge_positions[edge1].y = CoordinateConstraint::Linked(shared_y_idx);
+        self.edge_positions[edge2].y = CoordinateConstraint::Linked(shared_y_idx);
+    }
+
+    /// Link a vertex and an edge to share the same x coordinate
+    pub fn link_vertex_edge_x(&mut self, vertex: NodeIndex, edge: EdgeIndex, params: &mut Vec<f64>) {
+        // Create a new parameter index for the shared x coordinate
+        let shared_x_idx = params.len();
+        params.push(0.0); // Initialize with default value
+
+        self.vertex_positions[vertex.0].x = CoordinateConstraint::Linked(shared_x_idx);
+        self.edge_positions[edge].x = CoordinateConstraint::Linked(shared_x_idx);
+    }
+
+    /// Link a vertex and an edge to share the same y coordinate
+    pub fn link_vertex_edge_y(&mut self, vertex: NodeIndex, edge: EdgeIndex, params: &mut Vec<f64>) {
+        // Create a new parameter index for the shared y coordinate
+        let shared_y_idx = params.len();
+        params.push(0.0); // Initialize with default value
+
+        self.vertex_positions[vertex.0].y = CoordinateConstraint::Linked(shared_y_idx);
+        self.edge_positions[edge].y = CoordinateConstraint::Linked(shared_y_idx);
+    }
+
+    /// Create a horizontal rail constraint for multiple vertices at the same y coordinate
+    pub fn create_horizontal_rail(&mut self, vertices: &[NodeIndex], y: f64, params: &mut Vec<f64>) {
+        if vertices.is_empty() { return; }
+
+        if vertices.len() == 1 {
+            // Single vertex - just fix its y coordinate
+            self.fix_vertex_y(vertices[0], y);
         } else {
-            (params[ix], params[iy])
+            // Multiple vertices - create a shared parameter for y coordinate
+            let shared_y_idx = params.len();
+            params.push(y); // Initialize with the rail position
+
+            for &vertex in vertices {
+                self.vertex_positions[vertex.0].y = CoordinateConstraint::Linked(shared_y_idx);
+            }
         }
     }
+
+    /// Create a vertical rail constraint for multiple vertices at the same x coordinate
+    pub fn create_vertical_rail(&mut self, vertices: &[NodeIndex], x: f64, params: &mut Vec<f64>) {
+        if vertices.is_empty() { return; }
+
+        if vertices.len() == 1 {
+            // Single vertex - just fix its x coordinate
+            self.fix_vertex_x(vertices[0], x);
+        } else {
+            // Multiple vertices - create a shared parameter for x coordinate
+            let shared_x_idx = params.len();
+            params.push(x); // Initialize with the rail position
+
+            for &vertex in vertices {
+                self.vertex_positions[vertex.0].x = CoordinateConstraint::Linked(shared_x_idx);
+            }
+        }
+    }
+
+
 }
 
 // State implementation for frostfire
@@ -746,7 +921,7 @@ impl<'a, E, V, H> Energy for GraphLayoutEnergy<'a, E, V, H> {
                 let dist_sq = dx * dx + dy * dy;
                 let dist = (dist_sq + 1e-6).sqrt(); // Add epsilon for stability
                 let repulsion = self.params.global_edge_repulsion / dist;
-                cost += repulsion.min(1000.0); // Cap energy to prevent overflow
+                cost += repulsion;//.min(1000.0); // Cap energy to prevent overflow
             }
         }
 
@@ -758,7 +933,7 @@ impl<'a, E, V, H> Energy for GraphLayoutEnergy<'a, E, V, H> {
                 let dist_sq = dx * dx + dy * dy;
                 let dist = (dist_sq + 1e-6).sqrt(); // Add epsilon for stability
                 let repulsion = self.params.edge_vertex_repulsion / dist;
-                cost += repulsion.min(1000.0); // Cap energy to prevent overflow
+                cost += repulsion;//.min(1000.0); // Cap energy to prevent overflow
             }
             for e in self.graph.iter_crown(node) {
                 let (ex, ey) = self.positions.get_edge_position(self.graph[&e], param);
@@ -792,7 +967,7 @@ impl<'a, E, V, H> Energy for GraphLayoutEnergy<'a, E, V, H> {
                     let dist_sq = dx * dx + dy * dy;
                     let dist = (dist_sq + 1e-6).sqrt(); // Add epsilon for stability
                     let charge = 0.5 * self.params.charge_constant_v / dist;
-                    cost += charge.min(1000.0); // Cap energy to prevent overflow
+                    cost += charge;//.min(1000.0); // Cap energy to prevent overflow
 
                     let dist_to_center = (ox * ox + oy * oy).sqrt();
                     if dist_to_center > 1.0 {
@@ -874,6 +1049,16 @@ impl LayoutSettings {
         }
     }
 
+    /// Get mutable access to positions for adding constraints
+    pub fn positions_mut(&mut self) -> &mut Positions {
+        &mut self.positions
+    }
+
+    /// Get mutable access to init_params for constraint modifications
+    pub fn init_params_mut(&mut self) -> &mut Vec<f64> {
+        &mut self.init_params
+    }
+
     /// Get the layout parameters
     pub fn params(&self) -> &LayoutParams {
         &self.params
@@ -931,29 +1116,29 @@ impl LayoutSettings {
         };
 
         let mut edge_positions = graph.new_edgevec(|_, _, _| {
-            let j = init_params.len();
+            let x_idx = init_params.len();
+            let y_idx = init_params.len() + 1;
             init_params.push(rng.gen_range(range.clone()));
             init_params.push(rng.gen_range(range.clone()));
-            (None, j, j + 1)
+            PositionConstraints::free(x_idx, y_idx)
         });
 
         for i in left {
-            let (_, a, b) = edge_positions[i];
-            edge_positions[i] = (Some(left_bot_corner), a, b);
+            edge_positions[i] = PositionConstraints::fixed(left_bot_corner.0, left_bot_corner.1);
             left_bot_corner.1 += left_step;
         }
 
         for i in right {
-            let (_, a, b) = edge_positions[i];
-            edge_positions[i] = (Some(right_bot_corner), a, b);
+            edge_positions[i] = PositionConstraints::fixed(right_bot_corner.0, right_bot_corner.1);
             right_bot_corner.1 += right_step;
         }
 
         for _ in graph.iter_node_ids() {
-            let j = init_params.len();
+            let x_idx = init_params.len();
+            let y_idx = init_params.len() + 1;
             init_params.push(rng.gen_range(range.clone()));
             init_params.push(rng.gen_range(range.clone()));
-            vertex_positions.push((None, j, j + 1));
+            vertex_positions.push(PositionConstraints::free(x_idx, y_idx));
         }
 
         LayoutSettings {
@@ -989,7 +1174,8 @@ impl LayoutSettings {
         let mut exti = 0;
 
         let edge_positions = graph.new_edgevec(|_, _, e| {
-            let j = init_params.len();
+            let x_idx = init_params.len();
+            let y_idx = init_params.len() + 1;
             init_params.push(rng.gen_range(range.clone()));
             init_params.push(rng.gen_range(range.clone()));
             if e.is_unpaired() {
@@ -997,17 +1183,18 @@ impl LayoutSettings {
                 exti += 1;
                 let x = radius * angle.cos();
                 let y = radius * angle.sin();
-                (Some((x, y)), j, j + 1)
+                PositionConstraints::fixed(x, y)
             } else {
-                (None, j, j + 1)
+                PositionConstraints::free(x_idx, y_idx)
             }
         });
 
         for _ in graph.iter_node_ids() {
-            let j = init_params.len();
+            let x_idx = init_params.len();
+            let y_idx = init_params.len() + 1;
             init_params.push(rng.gen_range(range.clone()));
             init_params.push(rng.gen_range(range.clone()));
-            vertex_positions.push((None, j, j + 1));
+            vertex_positions.push(PositionConstraints::free(x_idx, y_idx));
         }
 
         LayoutSettings {
@@ -1053,16 +1240,21 @@ impl<E, V, H> HedgeGraph<E, V, H, NodeStorageVec<V>> {
         let (best_state, _best_energy) = annealer.run();
         let best = best_state.params;
 
-        // Check if we have any pinned positions
-        let has_pins = settings.positions.vertex_positions.iter().any(|(pin, _, _)| pin.is_some()) ||
-                      settings.positions.edge_positions.iter().any(|(_, (edge_data, _, _))| edge_data.is_some());
+        // Check if we have any fixed positions
+        let has_pins = settings.positions.vertex_positions.iter().any(|constraints| {
+            matches!(constraints.x, CoordinateConstraint::Fixed(_)) ||
+            matches!(constraints.y, CoordinateConstraint::Fixed(_))
+        }) || settings.positions.edge_positions.iter().any(|(_, constraints)| {
+            matches!(constraints.x, CoordinateConstraint::Fixed(_)) ||
+            matches!(constraints.y, CoordinateConstraint::Fixed(_))
+        });
 
         if has_pins {
-            // When pins are present, they establish the coordinate system scale
-            // Don't rescale - keep pin coordinates at their absolute values
+            // When fixed coordinates are present, they establish the coordinate system scale
+            // Don't rescale - keep fixed coordinates at their absolute values
             settings.positions.to_graph(self, &best)
         } else {
-            // When no pins are present, normalize to prevent coordinates from becoming too large
+            // When no fixed coordinates are present, normalize to prevent coordinates from becoming too large
             let max = settings.positions.max(&best).unwrap_or(1.0);
             let best: Vec<_> = best.into_iter().map(|a| a / max).collect();
             settings.positions.scale(max);
@@ -1155,5 +1347,123 @@ pub mod test {
             .as_str();
 
         println!("{out}");
+    }
+
+    #[test]
+    fn test_coordinate_constraints() {
+        let simple_graph = dot!(
+            digraph{
+                a->b->c->a
+            }
+        )
+        .unwrap();
+
+        // Create layout settings with constraints
+        let mut layout_settings = LayoutSettings::new(
+            &simple_graph,
+            LayoutParams::default(),
+            LayoutIters {
+                n_iters: 1000,
+                temp: 1.,
+                seed: 42,
+                delta: 0.1,
+            },
+        );
+
+        // Example 1: Fix vertex 'a' to have x = 0.0 (acts like on a vertical rail)
+        layout_settings.positions_mut().fix_vertex_x(NodeIndex(0), 0.0);
+
+        // Example 2: Fix vertex 'b' to have y = 1.0 (acts like on a horizontal rail)
+        layout_settings.positions_mut().fix_vertex_y(NodeIndex(1), 1.0);
+
+        // Example 3: Link vertices 'b' and 'c' to share the same x coordinate
+        layout_settings.positions_mut().link_vertices_x(
+            NodeIndex(1),
+            NodeIndex(2),
+            layout_settings.init_params_mut()
+        );
+
+        let layout = simple_graph.graph.layout(layout_settings);
+
+        // Verify constraints are satisfied
+        let vertex_a_pos = layout.node_store.node_data[NodeIndex(0)].pos();
+        let vertex_b_pos = layout.node_store.node_data[NodeIndex(1)].pos();
+        let vertex_c_pos = layout.node_store.node_data[NodeIndex(2)].pos();
+
+        // Check that vertex 'a' has x = 0.0
+        assert!((vertex_a_pos.x - 0.0).abs() < 1e-10, "Vertex 'a' x should be fixed at 0.0");
+
+        // Check that vertex 'b' has y = 1.0
+        assert!((vertex_b_pos.y - 1.0).abs() < 1e-10, "Vertex 'b' y should be fixed at 1.0");
+
+        // Check that vertices 'b' and 'c' share the same x coordinate
+        assert!((vertex_b_pos.x - vertex_c_pos.x).abs() < 1e-10,
+                "Vertices 'b' and 'c' should share the same x coordinate");
+
+        println!("Constraint test passed!");
+        println!("Vertex A: ({}, {})", vertex_a_pos.x, vertex_a_pos.y);
+        println!("Vertex B: ({}, {})", vertex_b_pos.x, vertex_b_pos.y);
+        println!("Vertex C: ({}, {})", vertex_c_pos.x, vertex_c_pos.y);
+    }
+
+    #[test]
+    fn test_edge_constraints() {
+        let graph_with_externals = dot!(
+            digraph{
+                0 [flow= source]
+                1 [flow= sink]
+                a->0
+                a->1
+                a->b
+            }
+        )
+        .unwrap();
+
+        let mut layout_settings = LayoutSettings::new(
+            &graph_with_externals,
+            LayoutParams::default(),
+            LayoutIters {
+                n_iters: 1000,
+                temp: 1.,
+                seed: 42,
+                delta: 0.1,
+            },
+        );
+
+        // Find edge indices (this would typically be done based on your graph structure)
+        let mut external_edges = Vec::new();
+        let mut internal_edges = Vec::new();
+
+        for (edge_idx, _, _) in graph_with_externals.iter_edges() {
+            if edge_idx.is_unpaired() {
+                external_edges.push(graph_with_externals[&edge_idx.any_hedge()]);
+            } else {
+                internal_edges.push(graph_with_externals[&edge_idx.any_hedge()]);
+            }
+        }
+
+        // Fix an external edge to have y = 2.0 (horizontal rail)
+        if let Some(&first_external) = external_edges.first() {
+            layout_settings.positions_mut().fix_edge_y(first_external, 2.0);
+        }
+
+        // Link two edges to share the same x coordinate if we have enough edges
+        if external_edges.len() >= 2 {
+            layout_settings.positions_mut().link_edges_x(
+                external_edges[0],
+                external_edges[1],
+                layout_settings.init_params_mut()
+            );
+        }
+
+        let layout = graph_with_externals.graph.layout(layout_settings);
+
+        println!("Edge constraint test completed!");
+
+        // Print edge positions for verification
+        for (edge_idx, _, _) in layout.iter_edges() {
+            let edge_data = layout.get_edge_data(edge_idx.any_hedge());
+            println!("Edge position: ({}, {})", edge_data.pos().x, edge_data.pos().y);
+        }
     }
 }

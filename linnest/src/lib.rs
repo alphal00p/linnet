@@ -18,11 +18,11 @@
 //! You can control node and edge positions using special attributes:
 //!
 //! ### Pin Attribute
-//! The `pin` attribute fixes a node or edge to a specific position during layout:
+//! The `pin` attribute supports various constraint types for fine-grained position control:
 //!
 //! ```dot
 //! digraph {
-//!     // Pin nodes to specific coordinates
+//!     // Fixed positions (traditionalPin nodes to specific coordinates
 //!     center [pin="0.0,0.0"];           // Fixed at origin
 //!     anchor [pin="(5.0, 3.0)"];       // Fixed at (5, 3)
 //!
@@ -207,13 +207,162 @@ use cgmath::{Rad, Zero};
 use linnet::{
     half_edge::{
         involution::{EdgeData, EdgeIndex, EdgeVec, Flow, Hedge, HedgePair, Involution},
-        layout::{LayoutEdge, LayoutIters, LayoutParams, LayoutSettings, LayoutVertex, Positions},
+        layout::{LayoutEdge, LayoutIters, LayoutParams, LayoutSettings, LayoutVertex, PositionConstraints, Positions},
         nodestore::NodeStorageOps,
 
         EdgeAccessors, HedgeGraph, NodeIndex, NodeVec,
     },
     parser::{DotEdgeData, DotGraph, DotHedgeData, DotVertexData, GlobalData, HedgeParseError},
 };
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub enum PinConstraint {
+    /// Pin both coordinates to fixed values: pin="1.0,2.0"
+    Fixed(f64, f64),
+    /// Fix only x coordinate: pin="x:1.0"
+    FixX(f64),
+    /// Fix only y coordinate: pin="y:2.0"
+    FixY(f64),
+    /// Link x coordinate to a named group: pin="x:@group1"
+    LinkX(String),
+    /// Link y coordinate to a named group: pin="y:@group1"
+    LinkY(String),
+    /// Link both coordinates to a named group: pin="@group1"
+    LinkBoth(String),
+    /// Combine constraints: pin="x:1.0,y:@group1"
+    Combined(Box<PinConstraint>, Box<PinConstraint>),
+}
+
+impl PinConstraint {
+    pub fn parse(input: &str) -> Option<Self> {
+        let input = input.trim().trim_matches(|c| c == '(' || c == ')');
+
+        // Handle @group syntax for linking both coordinates
+        if input.starts_with('@') {
+            return Some(PinConstraint::LinkBoth(input[1..].to_string()));
+        }
+
+        // Handle x:value,y:value syntax or fixed coordinates (comma or space separated)
+        if input.contains(',') || input.split_whitespace().count() == 2 {
+            let parts: Vec<&str> = if input.contains(',') {
+                input.split(',').map(|s| s.trim()).collect()
+            } else {
+                input.split_whitespace().collect()
+            };
+
+            if parts.len() == 2 {
+                // Try to parse as coordinate constraints
+                let x_constraint = Self::parse_single_constraint(parts[0]);
+                let y_constraint = Self::parse_single_constraint(parts[1]);
+
+                match (x_constraint, y_constraint) {
+                    (Some(x), Some(y)) => return Some(PinConstraint::Combined(Box::new(x), Box::new(y))),
+                    _ => {
+                        // Fall back to parsing as fixed coordinates
+                        if let (Ok(x), Ok(y)) = (parts[0].parse::<f64>(), parts[1].parse::<f64>()) {
+                            return Some(PinConstraint::Fixed(x, y));
+                        }
+                    }
+                }
+            }
+        }
+
+        // Handle single constraint
+        Self::parse_single_constraint(input)
+    }
+
+    fn parse_single_constraint(input: &str) -> Option<Self> {
+        let input = input.trim();
+
+        if input.starts_with("x:") {
+            let value = &input[2..];
+            if value.starts_with('@') {
+                Some(PinConstraint::LinkX(value[1..].to_string()))
+            } else if let Ok(x) = value.parse::<f64>() {
+                Some(PinConstraint::FixX(x))
+            } else {
+                None
+            }
+        } else if input.starts_with("y:") {
+            let value = &input[2..];
+            if value.starts_with('@') {
+                Some(PinConstraint::LinkY(value[1..].to_string()))
+            } else if let Ok(y) = value.parse::<f64>() {
+                Some(PinConstraint::FixY(y))
+            } else {
+                None
+            }
+        } else if input.starts_with('@') {
+            Some(PinConstraint::LinkBoth(input[1..].to_string()))
+        } else {
+            None
+        }
+    }
+
+    pub fn to_position_constraints<F, R>(
+        &self,
+        params: &mut Vec<f64>,
+        get_link_index: &mut F,
+        rng: &mut R,
+        is_external: bool,
+    ) -> PositionConstraints
+    where
+        F: FnMut(&str, &mut Vec<f64>, &mut R) -> usize,
+        R: Rng,
+    {
+        let range = if is_external { 2.0..4.0 } else { -1.0..1.0 };
+
+        match self {
+            PinConstraint::Fixed(x, y) => PositionConstraints::fixed(*x, *y),
+            PinConstraint::FixX(x) => {
+                let y_idx = params.len();
+                params.push(rng.gen_range(range));
+                PositionConstraints::fix_x(*x, y_idx)
+            },
+            PinConstraint::FixY(y) => {
+                let x_idx = params.len();
+                params.push(rng.gen_range(range));
+                PositionConstraints::fix_y(x_idx, *y)
+            },
+            PinConstraint::LinkX(group) => {
+                let x_idx = get_link_index(group, params, rng);
+                let y_idx = params.len();
+                params.push(rng.gen_range(range));
+                PositionConstraints::link_x(x_idx, y_idx)
+            },
+            PinConstraint::LinkY(group) => {
+                let x_idx = params.len();
+                params.push(rng.gen_range(range));
+                let y_idx = get_link_index(group, params, rng);
+                PositionConstraints::link_y(x_idx, y_idx)
+            },
+            PinConstraint::LinkBoth(group) => {
+                let x_idx = get_link_index(&format!("{}_x", group), params, rng);
+                let y_idx = get_link_index(&format!("{}_y", group), params, rng);
+                PositionConstraints::linked(x_idx, y_idx)
+            },
+            PinConstraint::Combined(x_constraint, y_constraint) => {
+                let x_pos = x_constraint.to_position_constraints(params, get_link_index, rng, is_external);
+                let y_pos = y_constraint.to_position_constraints(params, get_link_index, rng, is_external);
+                PositionConstraints { x: x_pos.x, y: y_pos.y }
+            },
+        }
+    }
+}
+
+impl std::fmt::Display for PinConstraint {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PinConstraint::Fixed(x, y) => write!(f, "{},{}", x, y),
+            PinConstraint::FixX(x) => write!(f, "x:{}", x),
+            PinConstraint::FixY(y) => write!(f, "y:{}", y),
+            PinConstraint::LinkX(group) => write!(f, "x:@{}", group),
+            PinConstraint::LinkY(group) => write!(f, "y:@{}", group),
+            PinConstraint::LinkBoth(group) => write!(f, "@{}", group),
+            PinConstraint::Combined(x, y) => write!(f, "{},{}", x, y),
+        }
+    }
+}
 
 
 use serde::{Deserialize, Serialize};
@@ -306,7 +455,7 @@ register_custom_getrandom!(custom_getrandom);
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct TypstNode {
     pos: (f64, f64),
-    pin: Option<(f64, f64)>,
+    pin: Option<PinConstraint>,
     shift: Option<(f64, f64)>,
     eval: Option<String>,
 }
@@ -317,9 +466,9 @@ impl TypstNode {
         self.pos
     }
 
-    /// Get the pin position if set
-    pub fn pin(&self) -> Option<(f64, f64)> {
-        self.pin
+    /// Get the pin constraint if set
+    pub fn pin(&self) -> Option<&PinConstraint> {
+        self.pin.as_ref()
     }
 
     /// Get the shift offset if set
@@ -335,8 +484,8 @@ impl TypstNode {
         statements.insert("pos".to_string(), format!("{},{}", self.pos.0, self.pos.1));
 
         // Add pin if present
-        if let Some((x, y)) = self.pin {
-            statements.insert("pin".to_string(), format!("{},{}", x, y));
+        if let Some(pin) = &self.pin {
+            statements.insert("pin".to_string(), pin.to_string());
         }
 
         // Add shift if present
@@ -352,7 +501,7 @@ impl TypstNode {
     }
 
     fn parse(_inv: &Involution, _nid: NodeIndex, data: DotVertexData) -> Self {
-        let pin = Self::parse_position(&data.statements, "pin");
+        let pin = Self::parse_pin_constraint(&data.statements, "pin");
         let shift = Self::parse_position(&data.statements, "shift");
 
         let mut eval: Option<String> = data.get("eval").transpose().unwrap();
@@ -372,6 +521,18 @@ impl TypstNode {
             pin,
             shift,
             eval,
+        }
+    }
+
+    fn parse_pin_constraint(
+        statements: &std::collections::BTreeMap<String, String>,
+        attr: &str,
+    ) -> Option<PinConstraint> {
+        if let Some(value) = statements.get(attr) {
+            let unquoted = value.trim().trim_matches('"');
+            PinConstraint::parse(unquoted)
+        } else {
+            None
         }
     }
 
@@ -423,7 +584,7 @@ pub struct TypstEdge {
     pos: (f64, f64),
     eval: Option<String>,
     mom_eval: Option<String>,
-    pin: Option<(f64, f64)>,
+    pin: Option<PinConstraint>,
     shift: Option<(f64, f64)>,
 }
 
@@ -451,8 +612,8 @@ impl TypstEdge {
         data: EdgeData<DotEdgeData>,
     ) -> EdgeData<Self> {
         data.map(|d| {
-            let pin = Self::parse_position(&d.statements, "pin");
-            let shift = Self::parse_position(&d.statements, "shift");
+            let pin = TypstNode::parse_pin_constraint(&d.statements, "pin");
+            let shift = TypstNode::parse_position(&d.statements, "shift");
 
             let mut eval: Option<String> = d.get("eval").transpose().unwrap();
 
@@ -478,7 +639,7 @@ impl TypstEdge {
                 expand_template(clean_template, &d.statements)
             });
             let mut from = None;
-let mut to = None;
+            let mut to = None;
             match p{
                 HedgePair::Split { source, sink ,..}|HedgePair::Paired { source, sink }=>{
                     from=Some(node_store.node_id_ref(source));
@@ -499,7 +660,8 @@ let mut to = None;
                 pin,
                 eval,
                 mom_eval,
-                shift,..Default::default()
+                shift,
+                ..Default::default()
             }
         })
     }
@@ -514,8 +676,8 @@ let mut to = None;
         statements.insert("pos".to_string(), format!("{},{}", self.pos.0, self.pos.1));
 
         // Add pin if present
-        if let Some((x, y)) = self.pin {
-            statements.insert("pin".to_string(), format!("{},{}", x, y));
+        if let Some(pin) = &self.pin {
+            statements.insert("pin".to_string(), pin.to_string());
         }
 
         // Add shift if present
@@ -542,31 +704,7 @@ let mut to = None;
         }
     }
 
-    fn parse_position(
-        statements: &std::collections::BTreeMap<String, String>,
-        attr: &str,
-    ) -> Option<(f64, f64)> {
-        if let Some(value) = statements.get(attr) {
-            // Remove outer quotes from DOT parsing: "\"1.0,2.0\"" -> "1.0,2.0"
-            let unquoted = value.trim().trim_matches('"');
-            // Parse formats like "1.0,2.0" or "1.0 2.0" or "(1.0,2.0)"
-            let cleaned = unquoted.trim().trim_matches(|c| c == '(' || c == ')');
-            let parts: Vec<&str> = cleaned
-                .split(|c| c == ',' || c == ' ')
-                .filter(|s| !s.is_empty())
-                .collect();
 
-            if parts.len() == 2 {
-                if let (Ok(x), Ok(y)) = (
-                    parts[0].trim().parse::<f64>(),
-                    parts[1].trim().parse::<f64>(),
-                ) {
-                    return Some((x, y));
-                }
-            }
-        }
-        None
-    }
 
     fn parse_layout<N: NodeStorageOps<NodeData = LayoutVertex<TypstNode>>>(
         _inv: &Involution,
@@ -686,10 +824,9 @@ impl TypstGraph {
         )
     }
 
-    /// Helper function to create Positions struct using pin values from nodes and edges
+    /// Helper function to create Positions struct using pin and constraint values from nodes and edges
     fn create_positions_with_pins(&self) -> (Vec<f64>, Positions) {
         let graph = self.deref();
-        // Use a simple deterministic random number generator for WASM compatibility
         let seed = self.layout_iters.seed;
         let mut vertex_positions = Vec::new();
         let mut params = Vec::new();
@@ -699,39 +836,55 @@ impl TypstGraph {
         // Use proper seeded RNG for deterministic randomness
         let mut rng = StdRng::seed_from_u64(seed);
 
-        // Create edge positions, respecting pin attributes
+        // Track link indices for coordinate linking
+        let mut link_indices: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+
+        // Helper function to get or create parameter index for linking
+        let mut get_link_index = |link_name: &str, params: &mut Vec<f64>, rng: &mut StdRng| -> usize {
+            if let Some(&idx) = link_indices.get(link_name) {
+                idx
+            } else {
+                let idx = params.len();
+                params.push(rng.gen_range(range.clone()));
+                link_indices.insert(link_name.to_string(), idx);
+                idx
+            }
+        };
+
+        // Create edge positions, respecting pin constraints
         let edge_positions = graph.new_edgevec(|_, eid, pair| {
             let edge_data = &graph[eid];
-            if let Some(pin_pos) = edge_data.pin {
-                // Edge is pinned to a fixed position - no parameters needed
-                (Some(pin_pos), 0, 0) // Dummy indices since position is fixed
-            } else {
-                // Edge position is optimizable
-                let j = params.len();
-                if pair.is_unpaired() {
-                    params.push(rng.gen_range(ext_range.clone()));
-                    params.push(rng.gen_range(ext_range.clone()));
-                } else {
-                    params.push(rng.gen_range(range.clone()));
-                    params.push(rng.gen_range(range.clone()));
-                }
-                (None, j, j + 1)
-            }
+            edge_data.pin.as_ref()
+                .map(|pin| pin.to_position_constraints(&mut params, &mut get_link_index, &mut rng, pair.is_unpaired()))
+                .unwrap_or_else(|| {
+                    // Default: both coordinates free
+                    let x_idx = params.len();
+                    let y_idx = params.len() + 1;
+                    if pair.is_unpaired() {
+                        params.push(rng.gen_range(ext_range.clone()));
+                        params.push(rng.gen_range(ext_range.clone()));
+                    } else {
+                        params.push(rng.gen_range(range.clone()));
+                        params.push(rng.gen_range(range.clone()));
+                    }
+                    PositionConstraints::free(x_idx, y_idx)
+                })
         });
 
-        // Create vertex positions, respecting pin attributes
+        // Create vertex positions, respecting pin constraints
         for node_id in graph.iter_node_ids() {
             let node_data = &graph[node_id];
-            if let Some(pin_pos) = node_data.pin {
-                // Node is pinned to a fixed position - no parameters needed
-                vertex_positions.push((Some(pin_pos), 0, 0)); // Dummy indices since position is fixed
-            } else {
-                // Node position is optimizable
-                let j = params.len();
-                params.push(rng.gen_range(range.clone()));
-                params.push(rng.gen_range(range.clone()));
-                vertex_positions.push((None, j, j + 1));
-            }
+            let constraints = node_data.pin.as_ref()
+                .map(|pin| pin.to_position_constraints(&mut params, &mut get_link_index, &mut rng, false))
+                .unwrap_or_else(|| {
+                    // Default: both coordinates free
+                    let x_idx = params.len();
+                    let y_idx = params.len() + 1;
+                    params.push(rng.gen_range(range.clone()));
+                    params.push(rng.gen_range(range.clone()));
+                    PositionConstraints::free(x_idx, y_idx)
+                });
+            vertex_positions.push(constraints);
         }
 
         (
@@ -1138,7 +1291,7 @@ mod tests {
     use linnet::half_edge::layout::{LayoutParams};
     use linnet::half_edge::swap::Swap;
 
-    use crate::{CBORTypstGraph, TypstGraph, TypstNode};
+    use crate::{CBORTypstGraph, TypstGraph, TypstNode, PinConstraint};
 
     #[test]
     fn dot_cbor() {
@@ -1589,6 +1742,217 @@ mod tests {
     }
 
     #[test]
+    fn test_pin_constraint_display() {
+        use crate::PinConstraint;
+
+        // Test string representation matches expected syntax
+        assert_eq!(PinConstraint::Fixed(1.0, 2.0).to_string(), "1,2");
+        assert_eq!(PinConstraint::FixX(1.5).to_string(), "x:1.5");
+        assert_eq!(PinConstraint::FixY(2.5).to_string(), "y:2.5");
+        assert_eq!(PinConstraint::LinkX("group1".to_string()).to_string(), "x:@group1");
+        assert_eq!(PinConstraint::LinkY("group2".to_string()).to_string(), "y:@group2");
+        assert_eq!(PinConstraint::LinkBoth("shared".to_string()).to_string(), "@shared");
+
+        let combined = PinConstraint::Combined(
+            Box::new(PinConstraint::FixX(1.0)),
+            Box::new(PinConstraint::LinkY("group".to_string()))
+        );
+        assert_eq!(combined.to_string(), "x:1,y:@group");
+    }
+
+    #[test]
+    fn test_pin_constraint_roundtrip() {
+        use crate::PinConstraint;
+
+        // Test that parsing and displaying gives consistent results
+        let test_cases = vec![
+            "1.5,2.5",
+            "x:3.0",
+            "y:4.0",
+            "x:@group1",
+            "y:@group2",
+            "@shared",
+            "x:1.0,y:@group",
+            "x:@group,y:2.0",
+        ];
+
+        for case in test_cases {
+            let parsed = PinConstraint::parse(case).unwrap();
+            let displayed = parsed.to_string();
+            let reparsed = PinConstraint::parse(&displayed).unwrap();
+
+            // The reparsed version should be functionally equivalent
+            // (we don't require exact string match due to formatting differences)
+            match (&parsed, &reparsed) {
+                (PinConstraint::Fixed(x1, y1), PinConstraint::Fixed(x2, y2)) => {
+                    assert!((x1 - x2).abs() < 1e-10 && (y1 - y2).abs() < 1e-10);
+                },
+                (PinConstraint::FixX(x1), PinConstraint::FixX(x2)) => {
+                    assert!((x1 - x2).abs() < 1e-10);
+                },
+                (PinConstraint::FixY(y1), PinConstraint::FixY(y2)) => {
+                    assert!((y1 - y2).abs() < 1e-10);
+                },
+                (PinConstraint::LinkX(g1), PinConstraint::LinkX(g2)) => {
+                    assert_eq!(g1, g2);
+                },
+                (PinConstraint::LinkY(g1), PinConstraint::LinkY(g2)) => {
+                    assert_eq!(g1, g2);
+                },
+                (PinConstraint::LinkBoth(g1), PinConstraint::LinkBoth(g2)) => {
+                    assert_eq!(g1, g2);
+                },
+                (PinConstraint::Combined(_, _), PinConstraint::Combined(_, _)) => {
+                    // For combined constraints, just check they're both combined
+                    // More detailed checking would require recursive matching
+                },
+                _ => panic!("Parsed and reparsed constraints don't match: {:?} vs {:?}", parsed, reparsed),
+            }
+        }
+    }
+
+    #[test]
+    fn test_new_pin_constraint_syntax() {
+        // Test the new pin constraint syntax with actual graph layout
+        let dot_content = r#"
+            digraph {
+                n_iters = 100;
+                temp = 0.1;
+
+                // Fixed positions (traditional syntax)
+                center [pin="0.0,0.0"];
+                corner [pin="(2.0,2.0)"];
+
+                // Fix only x coordinate (vertical rail)
+                rail_vertical [pin="x:1.0"];
+
+                // Fix only y coordinate (horizontal rail)
+                rail_horizontal [pin="y:1.5"];
+
+                // Link nodes to share x coordinate
+                linked_x1 [pin="x:@xgroup"];
+                linked_x2 [pin="x:@xgroup"];
+                linked_x3 [pin="x:@xgroup"];
+
+                // Link nodes to share y coordinate
+                linked_y1 [pin="y:@ygroup"];
+                linked_y2 [pin="y:@ygroup"];
+
+                // Link both coordinates (same position)
+                same_pos1 [pin="@position"];
+                same_pos2 [pin="@position"];
+
+                // Combined constraints
+                mixed1 [pin="x:2.5,y:@ygroup"];
+                mixed2 [pin="x:@xgroup,y:0.5"];
+
+                // Edges with constraints
+                center -> rail_vertical [pin="x:0.5"];
+                rail_horizontal -> corner [pin="y:1.0"];
+                linked_x1 -> linked_y1 [pin="@edge_group"];
+                linked_x2 -> linked_y2 [pin="@edge_group"];
+
+                // Connect everything
+                center -> linked_x1;
+                rail_vertical -> linked_x2;
+                rail_horizontal -> linked_y1;
+                corner -> mixed1;
+                same_pos1 -> same_pos2;
+            }
+        "#;
+
+        let mut graph: TypstGraph = TypstGraph::parse(dot_content).unwrap();
+
+        // Verify parsing worked
+        let mut pin_constraints = Vec::new();
+        for node_id in graph.iter_node_ids() {
+            let node = &graph[node_id];
+            if let Some(pin) = &node.pin {
+                pin_constraints.push(pin.clone());
+            }
+        }
+
+        assert!(pin_constraints.len() >= 10, "Should have many pin constraints");
+
+        // Layout should work with constraints
+        graph.layout();
+
+        // Verify constraints are satisfied
+        let mut x_fixed_nodes = Vec::new();
+        let mut y_fixed_nodes = Vec::new();
+        let mut x_linked_nodes = Vec::new();
+        let mut y_linked_nodes = Vec::new();
+        let mut same_position_nodes = Vec::new();
+
+        for node_id in graph.iter_node_ids() {
+            let node = &graph[node_id];
+            let pos = node.pos();
+
+            if let Some(pin) = &node.pin {
+                match pin {
+                    PinConstraint::Fixed(x, y) => {
+                        assert!((pos.0 - x).abs() < 1e-10, "Fixed x should be exact");
+                        assert!((pos.1 - y).abs() < 1e-10, "Fixed y should be exact");
+                    },
+                    PinConstraint::FixX(x) => {
+                        assert!((pos.0 - x).abs() < 1e-10, "Fixed x should be exact");
+                        x_fixed_nodes.push(pos);
+                    },
+                    PinConstraint::FixY(y) => {
+                        assert!((pos.1 - y).abs() < 1e-10, "Fixed y should be exact");
+                        y_fixed_nodes.push(pos);
+                    },
+                    PinConstraint::LinkX(_) => {
+                        x_linked_nodes.push(pos);
+                    },
+                    PinConstraint::LinkY(_) => {
+                        y_linked_nodes.push(pos);
+                    },
+                    PinConstraint::LinkBoth(_) => {
+                        same_position_nodes.push(pos);
+                    },
+                    PinConstraint::Combined(_, _) => {
+                        // Complex constraint - specific validation would need more parsing
+                    },
+                }
+            }
+        }
+
+        // Verify x-linked nodes share x coordinates
+        if x_linked_nodes.len() >= 2 {
+            let first_x = x_linked_nodes[0].0;
+            for pos in &x_linked_nodes[1..] {
+                assert!((pos.0 - first_x).abs() < 1e-10,
+                       "X-linked nodes should share x coordinate");
+            }
+        }
+
+        // Verify y-linked nodes share y coordinates
+        if y_linked_nodes.len() >= 2 {
+            let first_y = y_linked_nodes[0].1;
+            for pos in &y_linked_nodes[1..] {
+                assert!((pos.1 - first_y).abs() < 1e-10,
+                       "Y-linked nodes should share y coordinate");
+            }
+        }
+
+        // Verify same-position nodes are at the same location
+        if same_position_nodes.len() >= 2 {
+            let first_pos = same_position_nodes[0];
+            for pos in &same_position_nodes[1..] {
+                assert!((pos.0 - first_pos.0).abs() < 1e-10 &&
+                       (pos.1 - first_pos.1).abs() < 1e-10,
+                       "Same-position nodes should be at identical coordinates");
+            }
+        }
+
+        println!("Pin constraint test passed!");
+        println!("X-fixed nodes: {}, Y-fixed nodes: {}", x_fixed_nodes.len(), y_fixed_nodes.len());
+        println!("X-linked nodes: {}, Y-linked nodes: {}", x_linked_nodes.len(), y_linked_nodes.len());
+        println!("Same-position nodes: {}", same_position_nodes.len());
+    }
+
+    #[test]
     fn test_template_expansion_functionality() {
         // Test template expansion for eval attributes
         let dot_content = r#"
@@ -1938,5 +2302,165 @@ mod tests {
         assert!(debug_output.contains("n_iters = 200"));
         assert!(debug_output.contains("temp = 0.3"));
     }
+
+    #[test]
+    fn test_pin_constraint_syntax_demo() {
+        println!("=== Pin Constraint Syntax Demo ===\n");
+
+        // Example 1: Traditional fixed positioning
+        println!("1. Traditional fixed positioning:");
+        let traditional = r#"
+            digraph {
+                n_iters = 50;
+                center [pin="0.0,0.0"];
+                corner [pin="(2.0,2.0)"];
+                center -> corner;
+            }
+        "#;
+
+        let mut graph1: TypstGraph = TypstGraph::parse(traditional).unwrap();
+        graph1.layout();
+
+        for node_id in graph1.iter_node_ids() {
+            let node = &graph1[node_id];
+            println!("  Node {} at ({:.2}, {:.2})",
+                     node_id.0, node.pos().0, node.pos().1);
+        }
+
+        // Example 2: Individual coordinate constraints (rails)
+        println!("\n2. Individual coordinate constraints (rails):");
+        let rails = r#"
+            digraph {
+                n_iters = 50;
+
+                // Vertical rail - x coordinate is fixed, y is free
+                rail_left [pin="x:0.0"];
+                rail_right [pin="x:2.0"];
+
+                // Horizontal rail - y coordinate is fixed, x is free
+                rail_top [pin="y:2.0"];
+                rail_bottom [pin="y:0.0"];
+
+                // Connect them
+                rail_left -> rail_top;
+                rail_right -> rail_bottom;
+                rail_top -> rail_bottom;
+            }
+        "#;
+
+        let mut graph2: TypstGraph = TypstGraph::parse(rails).unwrap();
+        graph2.layout();
+
+        for node_id in graph2.iter_node_ids() {
+            let node = &graph2[node_id];
+            println!("  Node {} at ({:.2}, {:.2})",
+                     node_id.0, node.pos().0, node.pos().1);
+        }
+
+        // Example 3: Coordinate linking
+        println!("\n3. Coordinate linking:");
+        let linking = r#"
+            digraph {
+                n_iters = 50;
+
+                // Share x coordinates
+                left1 [pin="x:@vertical_line"];
+                left2 [pin="x:@vertical_line"];
+                left3 [pin="x:@vertical_line"];
+
+                // Share y coordinates
+                top1 [pin="y:@horizontal_line"];
+                top2 [pin="y:@horizontal_line"];
+
+                // Share both coordinates (same position)
+                same_pos1 [pin="@shared_position"];
+                same_pos2 [pin="@shared_position"];
+
+                // Connect them
+                left1 -> left2 -> left3;
+                top1 -> top2;
+                same_pos1 -> same_pos2;
+                left1 -> top1;
+            }
+        "#;
+
+        let mut graph3: TypstGraph = TypstGraph::parse(linking).unwrap();
+        graph3.layout();
+
+        println!("  Nodes sharing x coordinate:");
+        for node_id in graph3.iter_node_ids() {
+            let node = &graph3[node_id];
+            if let Some(pin) = node.pin() {
+                if matches!(pin, PinConstraint::LinkX(_)) {
+                    println!("    Node {} at ({:.2}, {:.2})",
+                             node_id.0, node.pos().0, node.pos().1);
+                }
+            }
+        }
+
+        println!("  Nodes sharing y coordinate:");
+        for node_id in graph3.iter_node_ids() {
+            let node = &graph3[node_id];
+            if let Some(pin) = node.pin() {
+                if matches!(pin, PinConstraint::LinkY(_)) {
+                    println!("    Node {} at ({:.2}, {:.2})",
+                             node_id.0, node.pos().0, node.pos().1);
+                }
+            }
+        }
+
+        println!("  Nodes sharing both coordinates:");
+        for node_id in graph3.iter_node_ids() {
+            let node = &graph3[node_id];
+            if let Some(pin) = node.pin() {
+                if matches!(pin, PinConstraint::LinkBoth(_)) {
+                    println!("    Node {} at ({:.2}, {:.2})",
+                             node_id.0, node.pos().0, node.pos().1);
+                }
+            }
+        }
+
+        // Example 4: Combined constraints
+        println!("\n4. Combined constraints:");
+        let combined = r#"
+            digraph {
+                n_iters = 50;
+
+                // Fix x and link y
+                mixed1 [pin="x:1.0,y:@shared_y"];
+                mixed2 [pin="x:2.0,y:@shared_y"];
+
+                // Link x and fix y
+                mixed3 [pin="x:@shared_x,y:0.0"];
+                mixed4 [pin="x:@shared_x,y:1.0"];
+
+                // Connect them
+                mixed1 -> mixed2;
+                mixed3 -> mixed4;
+                mixed1 -> mixed3;
+                mixed2 -> mixed4;
+            }
+        "#;
+
+        let mut graph4: TypstGraph = TypstGraph::parse(combined).unwrap();
+        graph4.layout();
+
+        for node_id in graph4.iter_node_ids() {
+            let node = &graph4[node_id];
+            println!("  Node {} at ({:.2}, {:.2})",
+                     node_id.0, node.pos().0, node.pos().1);
+        }
+
+        println!("\n=== Pin Constraint Syntax Summary ===");
+        println!("Traditional:     pin=\"1.0,2.0\"          - Fix both coordinates");
+        println!("Individual:      pin=\"x:1.0\"            - Fix only x coordinate");
+        println!("                 pin=\"y:2.0\"            - Fix only y coordinate");
+        println!("Link single:     pin=\"x:@group\"         - Link x with other nodes");
+        println!("                 pin=\"y:@group\"         - Link y with other nodes");
+        println!("Link both:       pin=\"@group\"           - Share both coordinates");
+        println!("Combined:        pin=\"x:1.0,y:@group\"   - Fix x, link y");
+        println!("                 pin=\"x:@g1,y:@g2\"      - Link x with g1, y with g2");
+    }
+
 
 }
