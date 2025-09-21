@@ -42,6 +42,7 @@
           "cargo"
           "rustc"
           "rust-src"
+          "rustfmt"
         ])
         fenix.packages.${system}.targets.wasm32-unknown-unknown.stable.rust-std
       ];
@@ -205,7 +206,6 @@
           # pkgs.ripgrep
           #
           # iaiCallgrindRunner
-          # valgrind
           cargo-udeps
           cargo-insta
           cargo-deny

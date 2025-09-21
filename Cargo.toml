@@ -59,6 +59,7 @@ bincode-trait-derive = "0.1.1"
 indenter = { version = "0.3.3", features = ["std"] }
 paste = "1.0.15"
 getrandom = { version = "0.2", default-features = false, features = ["custom"] }
+rand_xoshiro = "0.7.0"
 
 [features]
 serde = ["dep:serde", "bitvec/serde"]

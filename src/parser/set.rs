@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use crate::half_edge::{
-    nodestore::{NodeStorage, NodeStorageOps},
+    nodestore::{NodeStorage, NodeStorageOps, NodeStorageVec},
     HedgeGraph,
 };
 
@@ -14,6 +14,9 @@ pub struct GraphSet<E, V, H, G, S: NodeStorage<NodeData = V>> {
     pub global_data: Vec<G>,
     pub set: Vec<HedgeGraph<E, V, H, S>>,
 }
+
+pub type DotGraphSet =
+    GraphSet<DotEdgeData, DotVertexData, DotHedgeData, GlobalData, NodeStorageVec<DotVertexData>>;
 
 impl<S: NodeStorageOps<NodeData = DotVertexData>>
     GraphSet<DotEdgeData, DotVertexData, DotHedgeData, GlobalData, S>

@@ -1,13 +1,32 @@
-use dot_parser::ast::{GraphFromFileError, PestError};
+use std::fmt::Display;
 
-#[derive(Debug)]
+use dot_parser::ast::{GraphFromFileError, PestError};
+use thiserror::Error;
+
+#[derive(Debug, Error)]
 pub enum HedgeParseError<'a, E, V, H, G> {
     DotVertexDataError(V),
+
     GraphFromFile(GraphFromFileError<'a>),
+
     ParseError(PestError),
+
     DotEdgeDataError(E),
+
     HedgeDataFromStringError(H),
+
     GraphDataFromStringError(G),
+}
+
+impl<'a> Display for HedgeParseError<'a, (), (), (), ()> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            HedgeParseError::ParseError(a) => write!(f, "{a}")?,
+            HedgeParseError::GraphFromFile(a) => write!(f, "{a}")?,
+            _ => unreachable!(),
+        }
+        Ok(())
+    }
 }
 
 impl<'a, E, V, H, G> From<GraphFromFileError<'a>> for HedgeParseError<'a, E, V, H, G> {

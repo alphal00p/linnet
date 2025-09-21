@@ -5,6 +5,7 @@
 {
   "soft_wrap": "bounded",
   "preferred_line_length": 100,
+  "format_on_save": "on",
   "inlay_hints": {
     "enabled": true,
     "show_type_hints": true,
