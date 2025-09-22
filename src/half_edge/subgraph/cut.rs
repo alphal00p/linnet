@@ -9,11 +9,6 @@ use crate::half_edge::{
     involution::SignOrZero, EdgeData, Flow, Hedge, HedgeGraph, InvolutiveMapping, NodeStorage,
     Orientation, PowersetIterator,
 };
-#[cfg(feature = "drawing")]
-use crate::half_edge::{
-    layout::{LayoutEdge, LayoutIters, LayoutParams, LayoutSettings, LayoutVertex},
-    nodestore::NodeStorageVec,
-};
 use crate::parser::DotEdgeData;
 use bitvec::vec::BitVec;
 use std::cmp::Ordering;
@@ -499,68 +494,6 @@ impl SubGraph for OrientedCut {
 }
 
 impl OrientedCut {
-    #[allow(clippy::too_many_arguments, clippy::type_complexity)]
-    #[cfg(feature = "drawing")]
-    /// draws hedges in the left set on the right side of the diagram
-    /// draws hedges in the right set on the left side of the diagram (so they are on the correct side of the cut)
-    ///
-    ///
-    pub fn layout<E, V, H>(
-        self,
-        graph: &HedgeGraph<E, V, H, NodeStorageVec<V>>,
-        params: LayoutParams,
-        iters: LayoutIters,
-        edge: f64,
-    ) -> HedgeGraph<
-        LayoutEdge<PossiblyCutEdge<&'_ E>>,
-        LayoutVertex<&'_ V>,
-        &'_ H,
-        NodeStorageVec<LayoutVertex<&'_ V>>,
-    > {
-        use indexmap::IndexMap;
-
-        use crate::half_edge::involution::HedgePair;
-
-        let mut left = vec![];
-        let mut leftright_map = IndexMap::new();
-        let mut right = vec![];
-
-        let graph = self.to_owned_graph_ref(graph);
-
-        for (p, d, i) in graph.iter_edges() {
-            if let Some(flow) = i.data.flow() {
-                if let HedgePair::Unpaired { .. } = p {
-                    match flow {
-                        Flow::Sink => {
-                            leftright_map
-                                .entry(i.data.index)
-                                .or_insert_with(|| [Some(d), None])[0] = Some(d)
-                        }
-                        Flow::Source => {
-                            leftright_map
-                                .entry(i.data.index)
-                                .or_insert_with(|| [None, Some(d)])[1] = Some(d)
-                        }
-                    }
-                }
-            }
-        }
-
-        for (_, [i, j]) in leftright_map {
-            if let Some(i) = i {
-                left.push(i);
-            }
-            if let Some(j) = j {
-                right.push(j);
-            }
-        }
-
-        let settings = LayoutSettings::left_right_square(&graph, params, iters, edge, left, right);
-
-        // println!("{:?}", settings);
-        graph.layout(settings)
-    }
-
     /// Take the graph and split it along the cut, putting the cut orientation, and original edge index as additional data.
     pub fn to_owned_graph_ref<E, V, H, N: NodeStorageOps<NodeData = V>>(
         self,
@@ -1008,115 +941,5 @@ impl<E> PossiblyCutEdge<E> {
 
     pub fn cut(&mut self, flow: Flow) {
         self.flow = flow.into();
-    }
-}
-
-#[cfg(test)]
-#[cfg(feature = "drawing")]
-pub mod test {
-    use super::*;
-    use crate::{dot, parser::DotGraph};
-    // use similar_asserts::assert_eq;
-    //
-
-    #[test]
-    fn cut_assembly() {
-        let twocycle: DotGraph = dot!(
-        digraph{
-            a->b
-            a->b [dir=back]
-        })
-        .unwrap();
-
-        // println!("{}", twocycle.dot_display(&twocycle.full_filter()));
-
-        let mut cut_all_source = OrientedCut::empty(twocycle.n_hedges());
-        let mut cut_all_sink = OrientedCut::empty(twocycle.n_hedges());
-        let mut cut_sink_source = OrientedCut::empty(twocycle.n_hedges());
-        let mut cut_source_sink = OrientedCut::empty(twocycle.n_hedges());
-
-        for (p, e, _) in twocycle.iter_edges() {
-            cut_all_source.set(p, Flow::Source);
-            cut_all_sink.set(p, Flow::Sink);
-
-            if e.0 % 2 == 0 {
-                cut_sink_source.set(p, Flow::Sink);
-                cut_source_sink.set(p, Flow::Source);
-            } else {
-                cut_sink_source.set(p, Flow::Source);
-                cut_source_sink.set(p, Flow::Sink);
-            }
-        }
-
-        let cuts = vec![
-            cut_all_source,
-            cut_all_sink,
-            cut_sink_source,
-            cut_source_sink,
-        ];
-
-        for cut in cuts {
-            let mut cut_graph = cut.clone().to_owned_graph_ref(&twocycle);
-            // cut.round_trip();
-
-            let mut cut_aligned = cut_graph.clone();
-
-            cut_aligned.align_underlying_to_superficial();
-
-            let occut = cut_graph.cut();
-            let occut_aligned = cut_aligned.cut();
-
-            cut_graph.glue_back_strict();
-            cut_aligned.glue_back_strict();
-
-            let ocut = cut_graph.cut();
-            let ocut_aligned = cut_aligned.cut();
-
-            assert_eq!(ocut, ocut_aligned);
-            assert_eq!(occut, occut_aligned);
-            assert_eq!(occut, ocut);
-            assert_eq!(cut, ocut);
-
-            let a = ocut.clone().layout(
-                &cut_graph,
-                LayoutParams::default(),
-                LayoutIters {
-                    n_iters: 10,
-                    temp: 1.,
-                    seed: 1,
-                    delta: 0.1
-                },
-                10.,
-            );
-
-            for h in ocut.left.included_iter() {
-                assert!(a[[&h]].pos().x > 0.);
-            }
-
-            for h in ocut.right.included_iter() {
-                assert!(a[[&h]].pos().x < 0.);
-            }
-
-            let original = cut_graph.clone();
-            let original_aligned = cut_aligned.clone();
-
-            cut_graph.round_trip_glue();
-            cut_aligned.round_trip_glue();
-
-            assert_eq!(
-                cut_graph,
-                original,
-                "{}\n//not equal to original\n{}",
-                cut_graph.debug_cut_dot(),
-                original.debug_cut_dot()
-            );
-            assert_eq!(
-                cut_aligned,
-                original_aligned,
-                "{}\n//not equal to original\n{}",
-                cut_aligned.debug_cut_dot(),
-                original_aligned.debug_cut_dot()
-            );
-        }
     }
 }

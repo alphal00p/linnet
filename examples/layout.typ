@@ -1,32 +1,28 @@
 #import "@preview/fletcher:0.5.8" as fletcher: diagram, node, cetz,edge,hide
 #let mom_arr =(stroke:black+0.3mm,marks:((inherit:"head",rev:false,pos:1,scale:40%),))
 #let p = plugin("./linnest.wasm")
+
+
 #let layout(input,scope:(:))={
-    let a= p.layout_graph(bytes(input));
+  let a= p.layout_graph(bytes(input),cbor.encode((:)));
 
 
-  let g= cbor(a);
+  let graphs= cbor(a);
+
+  let diags = ();
+  for (g,parse) in graphs{
+
   let noed = ();
   let n =(:);
 
   for (i,v) in g.nodes.enumerate(){
     n.insert(str(i),v)
     let (x,y) = v.remove("pos")
-    let a = v.remove("pin")
     let b= v.remove("shift")
     let ev = v.remove("eval",default:"(:)")
     if ev == none{
       ev = "(:)"
     }
-
-    // let fill = v.at("fill",default:black)
-    // if not v.remove("hidden",default:false){
-    //   v.fill = fill
-    //   v.radius = 2pt
-    //   v.outset= -2pt
-    // }
-    // let xpercent = (x - shiftx)/lenx
-    // let ypercent = (y - shifty)/leny
     noed.push(node(pos:(x,y),name:label(str(i)),..eval(ev,scope: scope ,mode: "code"),layer:2))
     // v.percent=xpercent
   }
@@ -56,7 +52,7 @@
       (nodelab,n.at(str(start)).pos)
     } else{
       let lab = label("exts"+str(i))
-      noed.push(node(data.pos,name:lab,outset:-5mm,radius:5mm,fill:none))
+      noed.push(node((data.pos.x,data.pos.y),name:lab,outset:-5mm,radius:5mm,fill:none))
       (lab,data.pos)
     }
 
@@ -67,7 +63,7 @@
       (nodelab,n.at(str(end)).pos)
     } else{
       let lab = label("exte"+str(i))
-      noed.push(node(data.pos,name:lab,outset:-5mm,radius:5mm,fill:none))
+      noed.push(node((data.pos.x,data.pos.y),name:lab,outset:-5mm,radius:5mm,fill:none))
       (lab,data.pos)
     }
 
@@ -78,10 +74,10 @@
 
     let percentb = 1+calc.abs(bend/calc.pi)
 
-    let a  =  calc.sqrt(calc.pow(start-node-pos.at(0)-end-node-pos.at(0),2)+calc.pow(start-node-pos.at(1)-end-node-pos.at(1),2))*2.5mm*percentb
+    let a  =  calc.sqrt(calc.pow(start-node-pos.x - end-node-pos.x,2)+calc.pow(start-node-pos.y - end-node-pos.y,2))*2.5mm*percentb
 
-    noed.push(node(pos:start-node-pos,name:snmlab,outset:a))
-    noed.push(node(pos:end-node-pos,name:enmlab,outset:a))
+    noed.push(node(pos:(start-node-pos.x,start-node-pos.y),name:snmlab,outset:a))
+    noed.push(node(pos:(end-node-pos.x,end-node-pos.y),name:enmlab,outset:a))
 
 
     let shift = if bend < 0. {
@@ -94,7 +90,7 @@
 
     if o == "Reversed"{
 
-    noed.push(edge(vertices:(end-node,start-node),bend: bend * 1rad,..eval(ev,scope: scope ,mode: "code")))
+      noed.push(edge(vertices:(end-node,start-node),bend: bend * 1rad,..eval(ev,scope: scope ,mode: "code")))
     }else{
 
     noed.push(edge(vertices:(start-node,end-node),bend: bend * -1rad,..eval(ev,scope: scope ,mode: "code")))
@@ -105,11 +101,20 @@
 
   }
 
-  diagram(
+
+ diags.push( diagram(
  node-shape:circle,
 	node-fill: black,
  edge-stroke:0.1em,
 	spacing: 2em,
-  noed,
-)
+  ..noed,
+))
+
+// diags.push([#parse ])
+  }
+
+  grid(
+    columns: 3,
+    ..diags
+  )
   }

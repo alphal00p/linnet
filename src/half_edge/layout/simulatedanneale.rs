@@ -28,9 +28,10 @@ pub trait Schedule {
     fn max_epochs(&self) -> usize;
 }
 
-// ---------- SA Driver ----------
 pub struct SAConfig {
     pub seed: u64,
+    pub temp: f64,
+    pub step: f64,
 }
 
 pub struct SAStats {
@@ -44,9 +45,7 @@ pub struct SAStats {
 
 pub fn anneal<S: Clone, N: Neighbor<S>, E: Energy<S>, Sch: Schedule, R: SeedableRng + Rng>(
     init: S,
-    mut step: f64,
-    mut temp: f64,
-    cfg: SAConfig,
+    mut cfg: SAConfig,
     neigh: &N,
     energy: &E,
     sched: &mut Sch,
@@ -62,7 +61,7 @@ pub fn anneal<S: Clone, N: Neighbor<S>, E: Energy<S>, Sch: Schedule, R: Seedable
     let mut last_accept_ratio = 0.0;
 
     for ep in 0..sched.max_epochs() {
-        if !sched.begin_epoch(ep, last_accept_ratio, &mut step, &mut temp) {
+        if !sched.begin_epoch(ep, last_accept_ratio, &mut cfg.step, &mut cfg.temp) {
             return (
                 best,
                 SAStats {
@@ -70,8 +69,8 @@ pub fn anneal<S: Clone, N: Neighbor<S>, E: Energy<S>, Sch: Schedule, R: Seedable
                     total_steps,
                     epochs_run: ep,
                     last_accept_ratio,
-                    last_temp: temp,
-                    last_step: step,
+                    last_temp: cfg.temp,
+                    last_step: cfg.step,
                 },
             );
         }
@@ -81,11 +80,11 @@ pub fn anneal<S: Clone, N: Neighbor<S>, E: Energy<S>, Sch: Schedule, R: Seedable
 
         for _ in 0..steps {
             total_steps += 1;
-            let cand = neigh.propose(&cur, &mut rng, step, temp);
+            let cand = neigh.propose(&cur, &mut rng, cfg.step, cfg.temp);
             let candidate_energy = energy.energy(&cand);
             let delta = candidate_energy - current_energy;
 
-            let accept = delta <= 0.0 || rng.gen::<f64>() < (-delta / temp).exp();
+            let accept = delta <= 0.0 || rng.gen::<f64>() < (-delta / cfg.temp).exp();
             if accept {
                 cur = cand;
                 current_energy = candidate_energy;
@@ -107,8 +106,8 @@ pub fn anneal<S: Clone, N: Neighbor<S>, E: Energy<S>, Sch: Schedule, R: Seedable
             total_steps,
             epochs_run: sched.max_epochs(),
             last_accept_ratio,
-            last_temp: temp,
-            last_step: step,
+            last_temp: cfg.temp,
+            last_step: cfg.step,
         },
     )
 }

@@ -18,3 +18,4 @@ cetz.decorations.coil
 #let mom_arr =(stroke:black+1.1pt,marks:((inherit:"head",rev:false,pos:1,scale:40%),))
 #let initial = (thickness:0.5mm,paint:rgb(100%,0%,0%),cap:"round")
 #let final = (thickness:0.5mm,paint:rgb(0%,0%,100%),cap:"round")
+       

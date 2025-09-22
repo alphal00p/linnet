@@ -203,7 +203,8 @@
         EDITOR = "zed --wait";
         # Extra inputs can be added here; cargo and rustc are provided by default.
         packages = with pkgs; [
-          # pkgs.ripgrep
+          typst
+          typst-fmt
           #
           # iaiCallgrindRunner
           cargo-udeps

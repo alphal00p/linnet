@@ -19,9 +19,5 @@ rand = "0.8.5"
 bitvec = "1.0.1"
 rand_xoshiro = "0.7.0"
 
-
-
-
-
 [lib]
 crate-type = ["cdylib"]

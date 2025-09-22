@@ -1,5 +1,6 @@
 use std::ops::IndexMut;
 
+use bitvec::vec::BitVec;
 use cgmath::{EuclideanSpace, MetricSpace, Point2, Vector2};
 
 use rand::{distributions::Uniform, prelude::Distribution, Rng};
@@ -10,6 +11,7 @@ use crate::{
         involution::{EdgeIndex, EdgeVec},
         layout::simulatedanneale::{Energy, Neighbor},
         nodestore::NodeStorageOps,
+        subgraph::SubGraph,
         swap::Swap,
         HedgeGraph, NodeIndex, NodeVec,
     },
@@ -17,22 +19,30 @@ use crate::{
 };
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-pub enum XYorBOTH {
-    X,
-    Y,
-    Both,
+pub struct PointConstraint {
+    pub x: Constraint,
+    pub y: Constraint,
+}
+
+impl Default for PointConstraint {
+    fn default() -> Self {
+        PointConstraint {
+            x: Constraint::Free,
+            y: Constraint::Free,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-pub enum Constraints {
-    Fixed(XYorBOTH),
+pub enum Constraint {
+    Fixed,
     Free,
-    Grouped { reference: usize, axis: XYorBOTH },
+    Grouped(usize),
 }
 
-impl Default for Constraints {
+impl Default for Constraint {
     fn default() -> Self {
-        Constraints::Free
+        Constraint::Free
     }
 }
 
@@ -45,7 +55,7 @@ pub trait Shiftable {
     ) -> bool;
 }
 
-impl Shiftable for Constraints {
+impl Shiftable for PointConstraint {
     fn shift<I: From<usize> + PartialEq + Copy, R: IndexMut<I, Output = Point2<f64>>>(
         &self,
         shift: Vector2<f64>,
@@ -53,57 +63,89 @@ impl Shiftable for Constraints {
         values: &mut R,
     ) -> bool {
         let mut changed = false;
-        match self {
-            Constraints::Fixed(axis) => match axis {
-                XYorBOTH::Both => {}
-                XYorBOTH::X => {
-                    values[index].y += shift.y;
-                    changed = true;
-                }
-                XYorBOTH::Y => {
-                    values[index].x += shift.x;
-                    changed = true;
-                }
-            },
-            Constraints::Grouped { axis, reference } => {
-                let i = (*reference).into();
+
+        match (self.x, self.y) {
+            (Constraint::Fixed, Constraint::Fixed) => {}
+            (Constraint::Free, Constraint::Free) => {
+                values[index] += shift;
+                changed = true;
+            }
+            (Constraint::Fixed, Constraint::Free) => {
+                values[index].y += shift.y;
+                changed = true;
+            }
+            (Constraint::Free, Constraint::Fixed) => {
+                values[index].x += shift.x;
+                changed = true;
+            }
+            (Constraint::Grouped(r), Constraint::Fixed) => {
+                let i = r.into();
                 if i != index {
-                    match axis {
-                        XYorBOTH::Both => {
-                            values[index].x = values[i].x;
-                            values[index].y = values[i].y;
-                        }
-                        XYorBOTH::X => {
-                            values[index].x = values[i].x;
-                        }
-                        XYorBOTH::Y => {
-                            values[index].y = values[i].y;
-                        }
-                    }
+                    values[index].x = values[i].x;
                 } else {
                     values[index].x += shift.x;
+                    changed = true;
+                }
+            }
+            (Constraint::Grouped(r), Constraint::Free) => {
+                let i = r.into();
+                if i != index {
+                    values[index].x = values[i].x;
+                    values[index].y += shift.y;
+                    changed = true;
+                } else {
+                    values[index] += shift;
+                    changed = true;
+                }
+            }
+
+            (Constraint::Fixed, Constraint::Grouped(r)) => {
+                let i = r.into();
+                if i != index {
+                    values[index].y = values[i].y;
+                } else {
                     values[index].y += shift.y;
                     changed = true;
                 }
             }
-            _ => {
-                values[index].x += shift.x;
-                values[index].y += shift.y;
-                changed = true;
+            (Constraint::Free, Constraint::Grouped(r)) => {
+                let i = r.into();
+                if i != index {
+                    values[index].y = values[i].y;
+                    values[index].x += shift.x;
+                    changed = true;
+                } else {
+                    values[index] += shift;
+                    changed = true;
+                }
+            }
+            (Constraint::Grouped(xi), Constraint::Grouped(yi)) => {
+                let ix = xi.into();
+                let iy = yi.into();
+                if ix != index && iy != index {
+                    values[index].x = values[ix].x;
+                    values[index].y = values[iy].y;
+                } else if ix == index && iy != index {
+                    values[index].x += shift.x;
+                    values[index].y = values[iy].y;
+                    changed = true;
+                } else if ix != index && iy == index {
+                    values[index].x = values[ix].x;
+                    values[index].y += shift.y;
+                    changed = true;
+                } else {
+                    values[index] += shift;
+                    changed = true;
+                }
             }
         }
         changed
     }
 }
 
-#[derive(Clone, Copy)]
-pub struct Layout<E> {
-    pub data: E,
-    pub constraints: Constraints,
-}
-
 pub struct LayoutState<'a, E, V, H, N: NodeStorageOps<NodeData = V>> {
     pub graph: &'a HedgeGraph<E, V, H, N>,
+    pub ext: BitVec,
     pub vertex_points: NodeVec<Point2<f64>>,
     pub edge_points: EdgeVec<Point2<f64>>,
     pub delta: f64,
@@ -116,8 +158,10 @@ impl<'a, E, V, H, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, H, N> {
         edge_points: EdgeVec<Point2<f64>>,
         delta: f64,
     ) -> LayoutState<'_, E, V, H, N> {
+        let ext = self.external_filter();
         LayoutState {
             graph: self,
+            ext,
             vertex_points,
             edge_points,
             delta,
@@ -129,6 +173,7 @@ impl<'a, E, V, H, N: NodeStorageOps<NodeData = V>> Clone for LayoutState<'a, E, 
     fn clone(&self) -> Self {
         LayoutState {
             graph: self.graph,
+            ext: self.ext.clone(),
             vertex_points: self.vertex_points.clone(),
             edge_points: self.edge_points.clone(),
             delta: self.delta,
@@ -205,13 +250,14 @@ impl<'a, E: Shiftable, V: Shiftable, H, N: NodeStorageOps<NodeData = V> + Clone>
 
 #[derive(Clone, Copy)]
 pub struct SpringChargeEnergy {
-    pub spring_length: f64, // L
-    pub k_spring: f64,      // 1.0
-    pub c_vv: f64,          // vertex-vertex charge (≈ 0.14*L^3)
-    pub c_ev: f64,          // edge-vertex (≈ 0.028*L^3)
-    pub c_ee_local: f64,    // edge-edge local (≈ 0.014*L^3)
-    pub c_center: f64,      // central pull (≈ 0.007*L^3)
-    pub eps: f64,           // 1e-4
+    pub spring_length: f64,   // L
+    pub k_spring: f64,        // 1.0
+    pub c_vv: f64,            // vertex-vertex charge (≈ 0.14*L^3)
+    pub dangling_charge: f64, // dangling edge charge (≈ 0.14*L^3)
+    pub c_ev: f64,            // edge-vertex (≈ 0.028*L^3)
+    pub c_ee_local: f64,      // edge-edge local (≈ 0.014*L^3)
+    pub c_center: f64,        // central pull (≈ 0.007*L^3)
+    pub eps: f64,             // 1e-4
 }
 
 impl<'a, E, V, H, N: NodeStorageOps<NodeData = V> + Clone> Energy<LayoutState<'a, E, V, H, N>>
@@ -269,19 +315,34 @@ impl<'a, E, V, H, N: NodeStorageOps<NodeData = V> + Clone> Energy<LayoutState<'a
             }
         }
 
+        // 6) Dangling edge repulsion
+        for hi in s.ext.included_iter() {
+            for hj in s.ext.included_iter() {
+                if hi >= hj {
+                    continue;
+                }
+                let hi = s.graph[&hi];
+                let hj = s.graph[&hj];
+                let pi = s.edge_points[hi];
+                let pj = s.edge_points[hj];
+                energy += 0.5 * self.dangling_charge / (pi.distance(pj) + self.eps);
+            }
+        }
+
         energy
     }
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub struct ParamTuning {
-    pub length_scale: f64, // scales L: default 1.0
-    pub k_spring: f64,     // spring stiffness: default 1.0
-    pub beta: f64,         // vertex–vertex strength
-    pub gamma_ev: f64,     // edge–vertex vs vertex–vertex
-    pub gamma_ee: f64,     // local edge–edge vs vertex–vertex
-    pub g_center: f64,     // central vs vertex–vertex
-    pub eps: f64,          // softening epsilon
+    pub length_scale: f64,   // scales L: default 1.0
+    pub k_spring: f64,       // spring stiffness: default 1.0
+    pub beta: f64,           // vertex–vertex strength
+    pub gamma_dangling: f64, // dangling edge vs vertex–vertex
+    pub gamma_ev: f64,       // edge–vertex vs vertex–vertex
+    pub gamma_ee: f64,       // local edge–edge vs vertex–vertex
+    pub g_center: f64,       // central vs vertex–vertex
+    pub eps: f64,            // softening epsilon
 }
 
 impl ParamTuning {
@@ -298,6 +359,11 @@ impl ParamTuning {
         global_data
             .statements
             .insert("gamma_ev".to_string(), self.gamma_ev.to_string());
+
+        global_data.statements.insert(
+            "gamma_dangling".to_string(),
+            self.gamma_dangling.to_string(),
+        );
         global_data
             .statements
             .insert("gamma_ee".to_string(), self.gamma_ee.to_string());
@@ -316,6 +382,11 @@ impl ParamTuning {
                 "length_scale" => {
                     if let Ok(v) = value.parse::<f64>() {
                         tune.length_scale = v;
+                    }
+                }
+                "gamma_dangling" => {
+                    if let Ok(v) = value.parse::<f64>() {
+                        tune.gamma_dangling = v;
                     }
                 }
                 "k_spring" => {
@@ -361,6 +432,7 @@ impl Default for ParamTuning {
             length_scale: 1.0,
             k_spring: 1.0,
             beta: 0.14,
+            gamma_dangling: 0.14,
             gamma_ev: 0.20,
             gamma_ee: 0.10,
             g_center: 0.05,
@@ -377,10 +449,11 @@ impl SpringChargeEnergy {
         SpringChargeEnergy {
             spring_length,
             k_spring: tune.k_spring,
-            c_vv: tune.beta * spring_length.powi(3),
-            c_ev: tune.beta * tune.gamma_ev * spring_length.powi(3),
-            c_ee_local: tune.beta * tune.gamma_ee * spring_length.powi(3),
-            c_center: tune.beta * tune.g_center * spring_length.powi(3),
+            c_vv: tune.beta * spring_length.powi(2),
+            c_ev: tune.beta * tune.gamma_ev * spring_length.powi(2),
+            c_ee_local: tune.beta * tune.gamma_ee * spring_length.powi(2),
+            c_center: tune.beta * tune.g_center * spring_length.powi(2),
+            dangling_charge: tune.gamma_dangling * tune.beta * spring_length.powi(2),
             eps: tune.eps,
         }
     }

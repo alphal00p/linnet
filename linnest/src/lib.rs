@@ -7,9 +7,9 @@ use linnet::{
         layout::{
             simulatedanneale::{anneal, GeoSchedule, SAConfig},
             spring::{
-                Constraints, LayoutNeighbor, ParamTuning, Shiftable, SpringChargeEnergy, XYorBOTH,
+                Constraint, LayoutNeighbor, ParamTuning, PointConstraint, Shiftable,
+                SpringChargeEnergy,
             },
-            PositionConstraints,
         },
         nodestore::NodeStorageOps,
         subgraph::{Inclusion, SubGraph, SubGraphOps},
@@ -46,24 +46,38 @@ impl PinConstraint {
         &self,
         index: usize,
         map: &mut HashMap<String, usize>,
-    ) -> (Point2<f64>, Constraints) {
+    ) -> (Point2<f64>, PointConstraint) {
         match self {
-            PinConstraint::Fixed(x, y) => (Point2::new(*x, *y), Constraints::Fixed(XYorBOTH::Both)),
-            PinConstraint::FixX(x) => (Point2::new(*x, 0.0), Constraints::Fixed(XYorBOTH::X)),
-            PinConstraint::FixY(y) => (Point2::new(0.0, *y), Constraints::Fixed(XYorBOTH::Y)),
+            PinConstraint::Fixed(x, y) => (
+                Point2::new(*x, *y),
+                PointConstraint {
+                    x: Constraint::Fixed,
+                    y: Constraint::Fixed,
+                },
+            ),
+            PinConstraint::FixX(x) => (
+                Point2::new(*x, 0.0),
+                PointConstraint {
+                    x: Constraint::Fixed,
+                    y: Constraint::Free,
+                },
+            ),
+            PinConstraint::FixY(y) => (
+                Point2::new(0.0, *y),
+                PointConstraint {
+                    x: Constraint::Free,
+                    y: Constraint::Fixed,
+                },
+            ),
             PinConstraint::LinkX(group) => {
                 let reference = *map
                     .entry(format!("link_x_{}", group))
                     .or_insert_with(|| index);
                 (
                     Point2::new(0.0, 0.0),
-                    if reference == index {
-                        Constraints::Free
-                    } else {
-                        Constraints::Grouped {
-                            reference,
-                            axis: XYorBOTH::X,
-                        }
+                    PointConstraint {
+                        x: Constraint::Grouped(reference),
+                        y: Constraint::Free,
                     },
                 )
             }
@@ -73,13 +87,9 @@ impl PinConstraint {
                     .or_insert_with(|| index);
                 (
                     Point2::new(0.0, 0.0),
-                    if reference == index {
-                        Constraints::Free
-                    } else {
-                        Constraints::Grouped {
-                            reference,
-                            axis: XYorBOTH::Y,
-                        }
+                    PointConstraint {
+                        y: Constraint::Grouped(reference),
+                        x: Constraint::Free,
                     },
                 )
             }
@@ -89,13 +99,9 @@ impl PinConstraint {
                     .or_insert_with(|| index);
                 (
                     Point2::new(0.0, 0.0),
-                    if reference == index {
-                        Constraints::Free
-                    } else {
-                        Constraints::Grouped {
-                            reference,
-                            axis: XYorBOTH::Both,
-                        }
+                    PointConstraint {
+                        x: Constraint::Grouped(reference),
+                        y: Constraint::Grouped(reference),
                     },
                 )
             }
@@ -105,63 +111,13 @@ impl PinConstraint {
                 let (pos_y, constrainty) = y_constraint.point_constraint(index, map);
 
                 pos.y = pos_y.y;
-                match (constraintx, constrainty) {
-                    (Constraints::Free, a) => (pos, a),
-                    (a, Constraints::Free) => (pos, a),
-
-                    (Constraints::Fixed(XYorBOTH::X), Constraints::Fixed(XYorBOTH::Y)) => {
-                        (pos, Constraints::Fixed(XYorBOTH::Both))
-                    }
-                    (
-                        Constraints::Fixed(XYorBOTH::X),
-                        Constraints::Grouped {
-                            reference,
-                            axis: XYorBOTH::Y,
-                        },
-                    ) => (
-                        pos,
-                        Constraints::Grouped {
-                            reference,
-                            axis: XYorBOTH::Y,
-                        },
-                    ),
-                    (
-                        Constraints::Grouped {
-                            reference,
-                            axis: XYorBOTH::X,
-                        },
-                        Constraints::Fixed(XYorBOTH::Y),
-                    ) => (
-                        pos,
-                        Constraints::Grouped {
-                            reference,
-                            axis: XYorBOTH::X,
-                        },
-                    ),
-                    (
-                        Constraints::Grouped {
-                            reference,
-                            axis: XYorBOTH::X,
-                        },
-                        Constraints::Grouped {
-                            reference: referencey,
-                            axis: XYorBOTH::Y,
-                        },
-                    ) => {
-                        if reference == referencey {
-                            (
-                                pos,
-                                Constraints::Grouped {
-                                    reference,
-                                    axis: XYorBOTH::Both,
-                                },
-                            )
-                        } else {
-                            (pos, Constraints::Free)
-                        }
-                    }
-                    _ => unreachable!(),
-                }
+                (
+                    pos,
+                    PointConstraint {
+                        x: constraintx.x,
+                        y: constrainty.y,
+                    },
+                )
             }
         }
     }
@@ -235,61 +191,6 @@ impl PinConstraint {
             None
         }
     }
-
-    pub fn to_position_constraints<F, R>(
-        &self,
-        params: &mut Vec<f64>,
-        get_link_index: &mut F,
-        rng: &mut R,
-        is_external: bool,
-    ) -> PositionConstraints
-    where
-        F: FnMut(&str, &mut Vec<f64>, &mut R) -> usize,
-        R: Rng,
-    {
-        let range = if is_external { 2.0..4.0 } else { -1.0..1.0 };
-
-        match self {
-            PinConstraint::Fixed(x, y) => PositionConstraints::fixed(*x, *y),
-            PinConstraint::FixX(x) => {
-                let y_idx = params.len();
-                params.push(rng.gen_range(range));
-                PositionConstraints::fix_x(*x, y_idx)
-            }
-            PinConstraint::FixY(y) => {
-                let x_idx = params.len();
-                params.push(rng.gen_range(range));
-                PositionConstraints::fix_y(x_idx, *y)
-            }
-            PinConstraint::LinkX(group) => {
-                let x_idx = get_link_index(group, params, rng);
-                let y_idx = params.len();
-                params.push(rng.gen_range(range));
-                PositionConstraints::link_x(x_idx, y_idx)
-            }
-            PinConstraint::LinkY(group) => {
-                let x_idx = params.len();
-                params.push(rng.gen_range(range));
-                let y_idx = get_link_index(group, params, rng);
-                PositionConstraints::link_y(x_idx, y_idx)
-            }
-            PinConstraint::LinkBoth(group) => {
-                let x_idx = get_link_index(&format!("{}_x", group), params, rng);
-                let y_idx = get_link_index(&format!("{}_y", group), params, rng);
-                PositionConstraints::linked(x_idx, y_idx)
-            }
-            PinConstraint::Combined(x_constraint, y_constraint) => {
-                let x_pos =
-                    x_constraint.to_position_constraints(params, get_link_index, rng, is_external);
-                let y_pos =
-                    y_constraint.to_position_constraints(params, get_link_index, rng, is_external);
-                PositionConstraints {
-                    x: x_pos.x,
-                    y: y_pos.y,
-                }
-            }
-        }
-    }
 }
 
 impl std::fmt::Display for PinConstraint {
@@ -306,7 +207,7 @@ impl std::fmt::Display for PinConstraint {
     }
 }
 
-use rand::{rngs::SmallRng, Rng};
+use rand::rngs::SmallRng;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::{collections::BTreeMap, io::BufWriter};
@@ -376,6 +277,7 @@ pub fn expand_template(
 
 #[cfg(feature = "custom")]
 fn custom_getrandom(buf: &mut [u8]) -> Result<(), getrandom::Error> {
+    // panic!("HHHHH");
     // Simple deterministic implementation for WASM
     // In production, you might want a better source of entropy
     static mut COUNTER: u64 = 42;
@@ -399,7 +301,7 @@ register_custom_getrandom!(custom_getrandom);
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct TypstNode {
     pos: Point2<f64>,
-    constraints: Constraints,
+    constraints: PointConstraint,
     shift: Option<Vector2<f64>>,
     eval: Option<String>,
 }
@@ -408,7 +310,7 @@ impl Default for TypstNode {
     fn default() -> Self {
         TypstNode {
             pos: Point2::origin(),
-            constraints: Constraints::Free,
+            constraints: PointConstraint::default(),
             shift: None,
             eval: None,
         }
@@ -449,7 +351,7 @@ impl TypstNode {
         _inv: &Involution,
         nid: NodeIndex,
         data: DotVertexData,
-        init_points: &NodeVec<(Point2<f64>, Constraints)>,
+        init_points: &NodeVec<(Point2<f64>, PointConstraint)>,
     ) -> Self {
         let shift =
             Self::parse_position(&data.statements, "shift").map(|(x, y)| Vector2::new(x, y));
@@ -512,7 +414,7 @@ pub struct TypstEdge {
     eval: Option<String>,
     mom_eval: Option<String>,
     shift: Option<Vector2<f64>>,
-    pub constraints: Constraints,
+    pub constraints: PointConstraint,
 }
 impl Shiftable for TypstEdge {
     fn shift<I: From<usize> + PartialEq + Copy, R: std::ops::IndexMut<I, Output = Point2<f64>>>(
@@ -534,7 +436,7 @@ impl Default for TypstEdge {
             shift: None,
             eval: None,
             mom_eval: None,
-            constraints: Constraints::Free,
+            constraints: PointConstraint::default(),
         }
     }
 }
@@ -546,7 +448,7 @@ impl TypstEdge {
         p: HedgePair,
         eid: EdgeIndex,
         data: EdgeData<DotEdgeData>,
-        pin_constaints: &EdgeVec<(Point2<f64>, Constraints)>,
+        pin_constaints: &EdgeVec<(Point2<f64>, PointConstraint)>,
     ) -> EdgeData<Self> {
         data.map(|d| {
             let shift =
@@ -693,7 +595,7 @@ impl Deref for TypstGraph {
 impl From<DotGraph> for TypstGraph {
     fn from(dot: DotGraph) -> Self {
         let mut group_map = HashMap::new();
-        let edge_pin_constrains: EdgeVec<(Point2<f64>, Constraints)> =
+        let edge_pin_constrains: EdgeVec<(Point2<f64>, PointConstraint)> =
             dot.graph.new_edgevec(|e, eid, _| {
                 let a = e
                     .get::<_, String>("pin")
@@ -705,13 +607,13 @@ impl From<DotGraph> for TypstGraph {
                 if let Some(a) = a {
                     a.point_constraint(eid.0, &mut group_map)
                 } else {
-                    (Point2::new(0., 0.), Constraints::Free)
+                    (Point2::new(0., 0.), PointConstraint::default())
                 }
             });
 
         let mut group_map = HashMap::new();
 
-        let node_pin_constrains: NodeVec<(Point2<f64>, Constraints)> =
+        let node_pin_constrains: NodeVec<(Point2<f64>, PointConstraint)> =
             dot.graph.new_nodevec(|nid, _, n| {
                 let a = n
                     .get::<_, String>("pin")
@@ -723,7 +625,7 @@ impl From<DotGraph> for TypstGraph {
                 if let Some(a) = a {
                     a.point_constraint(nid.0, &mut group_map)
                 } else {
-                    (Point2::new(0., 0.), Constraints::Free)
+                    (Point2::new(0., 0.), PointConstraint::default())
                 }
             });
 
@@ -772,6 +674,35 @@ pub struct TreeInitCfg {
 }
 
 impl TypstGraph {
+    pub fn layout(&mut self, step: f64, seed: u64, temp: f64, cbor_map: &BTreeMap<String, String>) {
+        // println!("Tree initialize cfg:");
+        let (cfg, energy) = self.tree_init_cfg(&cbor_map);
+
+        // println!("New positions as tree");
+        let (pos_n, pos_e) = self.new_positions(cfg);
+
+        // println!("New state");
+        let state = self.graph.new_layout_state(pos_n, pos_e, 0.4);
+
+        // println!("Anneal");
+
+        let (out, _stats) = anneal::<_, _, _, _, SmallRng>(
+            state,
+            SAConfig {
+                temp: self.temp.unwrap_or(temp),
+                step: self.step.unwrap_or(step),
+                seed: self.seed.unwrap_or(seed),
+            },
+            &LayoutNeighbor,
+            &energy,
+            &mut self.schedule,
+        );
+
+        // println!("Update positions");
+
+        self.update_positions(out.vertex_points, out.edge_points);
+    }
+
     pub fn tree_init_cfg(
         &self,
         map: &BTreeMap<String, String>,
@@ -994,31 +925,11 @@ pub fn layout_graph(arg: &[u8], arg2: &[u8]) -> Result<Vec<u8>, String> {
         .and_then(|s| s.parse::<u64>().ok())
         .unwrap_or(42);
 
-    let neigh = LayoutNeighbor {};
-
     let mut graphs = Vec::new();
     for g in dots {
         let mut typst_graph = TypstGraph::from(g);
-        let (cfg, energy) = typst_graph.tree_init_cfg(&cbor_map);
 
-        let (pos_n, pos_e) = typst_graph.new_positions(cfg);
-
-        let state = typst_graph.graph.new_layout_state(pos_n, pos_e, 0.4);
-
-        let (out, _stats) = anneal::<_, _, _, _, SmallRng>(
-            state,
-            typst_graph.step.unwrap_or(step),
-            typst_graph.temp.unwrap_or(temp),
-            SAConfig {
-                seed: typst_graph.seed.unwrap_or(seed),
-            },
-            &neigh,
-            &energy,
-            &mut typst_graph.schedule,
-        );
-
-        typst_graph.update_positions(out.vertex_points, out.edge_points);
-
+        typst_graph.layout(step, seed, temp, &cbor_map);
         graphs.push((
             typst_graph.to_cbor(),
             typst_graph.to_dot_graph().debug_dot(),
@@ -1058,9 +969,9 @@ impl CBORTypstGraph {
 
 #[cfg(test)]
 mod tests {
-    use std::fs;
+    use std::{collections::BTreeMap, fs};
 
-    use linnet::dot;
+    use linnet::{dot, parser::set::DotGraphSet};
 
     use linnet::half_edge::swap::Swap;
 
@@ -1123,36 +1034,175 @@ mod tests {
 
     #[test]
     fn test_pin_parsing() {
-        let _g:TypstGraph = dot!(digraph dot_80_0_GL208 {
+        let mut g:TypstGraph = dot!( digraph dot_80_0_GL208 {
 
+           steps=1
+           step=0.4
+           beta =13.1
+           k_spring=20.3;
+           g_center=0
+           gamma_ee=0.3
+           gamma_ev=0.01
+           length_scale = 0.25
+           node[
+             eval="(stroke:blue,fill :black,
+             radius:2pt,
+             outset: -2pt)"
+           ]
 
-            node[
+           edge[
+             eval=top
+           ]
+           v0[pin="x:@initial,y:@p1", style=invis]
+           v1[pin="x:@initial,y:@p2",style=invis]
+           v2[pin="x:@final,y:@p1",style=invis]
+           v3[pin="x:@final,y:@p2",style=invis]
+           v0 -> v11 [eval=photon]
+           v1 -> v10 [eval="(..photon,label:[$gamma$],label-side: left)", mom_eval="(label:[$p_1$],label-sep:0mm)"]
+           v9 -> v2 [eval=photon]
+           v8 -> v3 [eval=photon]
+           v4 -> v10
+           v10 -> v5
+           v5 -> v11 [dir=back]
+           v11 -> v4
+           v4 -> v7 [eval=gluon]
+           v5 -> v6 [eval=gluon]
+           v6 -> v8
+           v8 -> v7
+           v7 -> v9
+           v9 -> v6
+       }).unwrap().into();
+
+        g.layout(0.0, 0, 0.8, &BTreeMap::new());
+        println!("{}", g.to_dot_graph().debug_dot())
+    }
+
+    #[test]
+    fn test_parsing() {
+        let _g: TypstGraph = dot!(digraph qqx_aaa_pentagon {
+            steps=600
+            step=.2
+            beta =3.1
+            k_spring=15.3;
+            g_center=0
+            gamma_ee=0.3
+            gamma_ev=0.01
+            length_scale = 0.2
+
+             node[
               eval="(stroke:blue,fill :black,
               radius:2pt,
               outset: -2pt)"
             ]
+            // edge[
+            //   // eval="{particle}"
+            // ]
 
-            edge[
-              eval=top
-            ]
-            v0[pin="5.2,2.2", style=invis]
-            v1[pin="5.2,-2.2",style=invis]
-            v2[pin="-5.2,2.2",style=invis]
-            v3[pin="-5.2,-2.2",style=invis]
-            v0 -> v11 [eval=photon]
-            v1 -> v10 [eval="(..photon,label:[$gamma$],label-side: left)", mom_eval="(label:[$p_1$],label-sep:0mm)"]
-            v9 -> v2 [eval=photon]
-            v8 -> v3 [eval=photon]
-            v4 -> v10
-            v10 -> v5
-            v5 -> v11 [dir=back]
-            v11 -> v4
-            v4 -> v7 [eval=gluon]
-            v5 -> v6 [eval=gluon]
-            v6 -> v8
-            v8 -> v7
-            v7 -> v9
-            v9 -> v6
-        }).unwrap().into();
+        exte0 [style=invis pin="x:-4"];
+        v3:0 -> exte0;
+         // exte1 [style=invis pin="x:4"];
+        // exte1 -> vl1 [ particle="d"];
+        // exte2 [style=invis pin="x:4"];
+        // exte2 -> vl2:2 [particle="dx"];
+        // exte3 [style=invis pin="x:-4"];
+        // v1:3 -> exte3  [particle="a"];
+        // exte4 [style=invis pin="x:-4"];
+        // v2:4 -> exte4 [particle="a"];
+        // v1:5 -> v2:6 [particle="d"];
+        // v2:7 -> v3:8 [particle="d"];
+        // vl1:11 -> v1:12 [particle="d"];
+        // v3:9 -> vl2:10  [ particle="d"];
+        // vl1:13 -> vl2:14 [particle="g"];
+        })
+        .unwrap()
+        .into();
+    }
+
+    #[test]
+    fn test_full() {
+        let input = stringify!(
+           //  digraph dot_80_0_GL208 {
+
+           //     steps=600
+           //     step=0.4
+           //     beta =13.1
+           //     k_spring=3.3;
+           //     g_center=0
+           //     gamma_dangling=50
+           //     gamma_ee=0.3
+           //     gamma_ev=0.01
+           //     length_scale = 0.25
+           //     node[
+           //       eval="(stroke:blue,fill :black,
+           //       radius:2pt,
+           //       outset: -2pt)"
+           //     ]
+
+           //     edge[
+           //       eval=top
+           //     ]
+           //     v0[pin="x:@initial,y:@p1", style=invis]
+           //     v1[pin="x:@initial,y:@p2",style=invis]
+           //     v2[pin="x:@final,y:@p1",style=invis]
+           //     v3[pin="x:@final,y:@p2",style=invis]
+           //     v0 -> v11 [eval=photon]
+           //     v1 -> v10 [eval="(..photon,label:[$gamma$],label-side: left)", mom_eval="(label:[$p_1$],label-sep:0mm)"]
+           //     v9 -> v2 [eval=photon]
+           //     v8 -> v3 [eval=photon]
+           //     v4 -> v10
+           //     v10 -> v5
+           //     v5 -> v11 [dir=back]
+           //     v11 -> v4
+           //     v4 -> v7 [eval=gluon]
+           //     v5 -> v6 [eval=gluon]
+           //     v6 -> v8
+           //     v8 -> v7
+           //     v7 -> v9
+           //     v9 -> v6
+           // }
+           digraph {
+               steps=600
+               step=0.4
+               beta =13.1
+               k_spring=3.3;
+               g_center=0
+               gamma_dangling=50
+               gamma_ee=0.3
+               gamma_ev=0.01
+               length_scale = 0.25
+               a->b
+           }
+        );
+
+        let cbor_map: BTreeMap<String, String> = BTreeMap::new();
+
+        let dots = DotGraphSet::from_string(input)
+            .map_err(|a| a.to_string())
+            .unwrap()
+            .into_iter();
+
+        let step = cbor_map
+            .get("step")
+            .and_then(|s| s.parse::<f64>().ok())
+            .unwrap_or(0.2);
+        let temp = cbor_map
+            .get("temp")
+            .and_then(|s| s.parse::<f64>().ok())
+            .unwrap_or(1.1);
+        let seed = cbor_map
+            .get("seed")
+            .and_then(|s| s.parse::<u64>().ok())
+            .unwrap_or(42);
+
+        let mut graphs = Vec::new();
+        for g in dots {
+            let mut typst_graph = TypstGraph::from(g);
+
+            typst_graph.layout(step, seed, temp, &cbor_map);
+            graphs.push((
+                typst_graph.to_cbor(),
+                typst_graph.to_dot_graph().debug_dot(),
+            ));
+        }
     }
 }

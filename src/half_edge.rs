@@ -2791,8 +2791,6 @@ pub mod tree;
 pub mod typed_vec;
 
 #[cfg(feature = "drawing")]
-pub mod drawing;
-#[cfg(feature = "drawing")]
 pub mod layout;
 #[cfg(test)]
 mod test_graphs;
