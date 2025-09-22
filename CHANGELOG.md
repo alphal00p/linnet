@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.0](https://github.com/alphal00p/linnet/compare/linnet-v0.12.0...linnet-v0.13.0) - 2025-09-22
+
+### Other
+
+- Refactor layout constraints and energy model
+- redid simulated annealing and energy  from scratch
+- linear constraints
+- allow for templates
+- working wasm typst plugin
+- Add `from_mappings` and `from_prefix_sources` constructors for `Permutation`
+- update symbolica
+- Remove symbolica default features
+
 ## [0.12.0](https://github.com/alphal00p/linnet/compare/v0.11.0...v0.12.0) - 2025-08-18
 
 ### Other
