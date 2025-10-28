@@ -411,7 +411,8 @@ pub struct TypstEdge {
     to: Option<NodeIndex>,
     bend: Result<Rad<f64>, GeomError>,
     pos: Point2<f64>,
-    eval: Option<String>,
+    eval_sink: Option<String>,
+    eval_source: Option<String>,
     mom_eval: Option<String>,
     shift: Option<Vector2<f64>>,
     pub constraints: PointConstraint,
@@ -434,7 +435,8 @@ impl Default for TypstEdge {
             bend: Err(GeomError::NotComputed),
             pos: Point2::origin(),
             shift: None,
-            eval: None,
+            eval_sink: None,
+            eval_source: None,
             mom_eval: None,
             constraints: PointConstraint::default(),
         }
@@ -454,10 +456,22 @@ impl TypstEdge {
             let shift =
                 TypstNode::parse_position(&d.statements, "shift").map(|(x, y)| Vector2::new(x, y));
 
-            let mut eval: Option<String> = d.get("eval").transpose().unwrap();
+            let mut eval_sink: Option<String> = d.get("eval_sink").transpose().unwrap();
 
             // Apply template expansion and clean quotes for eval
-            eval = eval.map(|template| {
+            eval_sink = eval_sink.map(|template| {
+                let clean_template = template
+                    .strip_prefix('"')
+                    .unwrap_or(&template)
+                    .strip_suffix('"')
+                    .unwrap_or(&template);
+                expand_template(clean_template, &d.statements)
+            });
+
+            let mut eval_source: Option<String> = d.get("eval_source").transpose().unwrap();
+
+            // Apply template expansion and clean quotes for eval
+            eval_source = eval_source.map(|template| {
                 let clean_template = template
                     .strip_prefix('"')
                     .unwrap_or(&template)
@@ -506,7 +520,8 @@ impl TypstEdge {
                 to,
                 pos,
                 constraints,
-                eval,
+                eval_sink,
+                eval_source,
                 mom_eval,
                 shift,
                 ..Default::default()
@@ -531,7 +546,7 @@ impl TypstEdge {
             statements.insert("bend".to_string(), format!("{}rad", b.0));
         }
 
-        if let Some(eval) = &self.eval {
+        if let Some(eval) = &self.eval_sink {
             statements.insert("eval".to_string(), eval.clone());
         }
 
@@ -540,6 +555,7 @@ impl TypstEdge {
         }
 
         DotEdgeData {
+            local_statements: statements.clone(),
             statements,
             edge_id: None,
         }

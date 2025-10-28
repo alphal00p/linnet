@@ -12,13 +12,14 @@ use super::{subgraph_free::Edge, DotHedgeData, GlobalData, NodeIdOrDangling};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DotEdgeData {
     pub statements: BTreeMap<String, String>,
+    pub local_statements: BTreeMap<String, String>,
     pub edge_id: Option<EdgeIndex>,
 }
 
 impl FromIterator<(String, String)> for DotEdgeData {
     fn from_iter<T: IntoIterator<Item = (String, String)>>(iter: T) -> Self {
         let mut edge_id = None;
-        let statements = iter
+        let statements: BTreeMap<String, String> = iter
             .into_iter()
             .filter_map(|(k, v)| match k.as_str() {
                 "id" => {
@@ -30,7 +31,9 @@ impl FromIterator<(String, String)> for DotEdgeData {
             .collect();
 
         DotEdgeData {
+            local_statements: BTreeMap::new(),
             statements,
+
             edge_id,
         }
     }
@@ -68,6 +71,7 @@ impl DotEdgeData {
     pub fn empty() -> Self {
         DotEdgeData {
             statements: BTreeMap::new(),
+            local_statements: BTreeMap::new(),
             edge_id: None,
         }
     }
@@ -122,6 +126,7 @@ impl DotEdgeData {
         let mut orientation = is_digraph.into();
         let mut source_data = DotHedgeData::from(edge.source_port());
         let mut sink_data = DotHedgeData::from(edge.sink_port());
+        let local_statements = edge.attr.clone().into_iter().collect();
         let mut statements = global_data.edge_statements.clone();
         statements.extend(edge.attr.into_iter().filter_map(|(key, value)| {
             match key.as_str() {
@@ -151,7 +156,8 @@ impl DotEdgeData {
         let (edge, source, target) = match (source, target) {
             (NodeIdOrDangling::Id(source), NodeIdOrDangling::Id(target)) => {
                 //Full edge
-                let dot_edge: DotEdgeData = statements.into_iter().collect();
+                let mut dot_edge: DotEdgeData = statements.into_iter().collect();
+                dot_edge.local_statements = local_statements;
                 (
                     dot_edge,
                     source.add_data(source_data),
@@ -164,12 +170,11 @@ impl DotEdgeData {
                         .into_iter()
                         .filter(|(a, _)| !(a.as_str() == "shape" || a.as_str() == "label")),
                 );
-                let dot_edge = statements.into_iter().collect();
-
+                let mut dot_edge: DotEdgeData = statements.into_iter().collect();
+                dot_edge.local_statements = local_statements;
                 if !sink_data.is_none() {
                     panic!("Sink edge cannot have data:{sink_data}");
                 }
-
                 (
                     dot_edge,
                     source.add_data(source_data),
@@ -182,8 +187,8 @@ impl DotEdgeData {
                         .into_iter()
                         .filter(|(a, _)| !(a.as_str() == "shape" || a.as_str() == "label")),
                 );
-                let dot_edge = statements.into_iter().collect();
-
+                let mut dot_edge: DotEdgeData = statements.into_iter().collect();
+                dot_edge.local_statements = local_statements;
                 if !source_data.is_none() {
                     panic!("Source edge cannot have data:{source_data}");
                 }
