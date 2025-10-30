@@ -66,12 +66,12 @@ use std::{
     ops::{Index, IndexMut},
 };
 
-use bitvec::vec::BitVec;
 use thiserror::Error;
 
 use crate::half_edge::{
     involution::Hedge,
-    subgraph::{Inclusion, SubGraph, SubGraphOps},
+    subgraph::{subset::SubSet, Inclusion, SubSetLike, SubSetOps},
+    typed_vec::IndexLike,
 };
 
 /// A newtype for a node (index into `self.nodes`).
@@ -369,15 +369,17 @@ impl<U> UnionFind<U> {
             .map(|(i, d)| (SetIndex(i), d.data.unwrap()))
     }
 
-    pub fn from_bitvec_partition(bitvec_part: Vec<(U, BitVec)>) -> Result<Self, UnionFindError> {
+    pub fn from_partition<ID: IndexLike>(
+        bitvec_part: Vec<(U, SubSet<ID>)>,
+    ) -> Result<Self, UnionFindError> {
         let mut nodes = vec![];
         let mut set_data = vec![];
-        let mut cover: Option<BitVec> = None;
+        let mut cover: Option<SubSet<ID>> = None;
 
         for (d, set) in bitvec_part {
-            let len = set.len();
+            let len = set.size();
             if let Some(c) = &mut cover {
-                if c.len() != len {
+                if c.size() != len {
                     return Err(UnionFindError::LengthMismatch);
                 }
                 if c.intersects(&set) {
@@ -385,18 +387,18 @@ impl<U> UnionFind<U> {
                 }
                 c.union_with(&set);
             } else {
-                cover = Some(BitVec::empty(len));
+                cover = Some(SubSet::empty(len));
                 nodes = vec![None; len];
             }
             let mut first = None;
             for i in set.included_iter() {
                 if let Some(root) = first {
-                    nodes[i.0] = Some(Cell::new(UFNode::Child(root)))
+                    nodes[i.into()] = Some(Cell::new(UFNode::Child(root)))
                 } else {
-                    first = Some(i);
-                    nodes[i.0] = Some(Cell::new(UFNode::Root {
+                    first = Some(Hedge(i.into()));
+                    nodes[i.into()] = Some(Cell::new(UFNode::Root {
                         set_data_idx: SetIndex(set_data.len()),
-                        rank: set.count_ones(),
+                        rank: set.n_included(),
                     }))
                 }
             }

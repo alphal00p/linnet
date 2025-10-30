@@ -93,7 +93,7 @@ use crate::{
         builder::HedgeGraphBuilder,
         involution::{EdgeIndex, Hedge},
         nodestore::{NodeStorage, NodeStorageOps, NodeStorageVec},
-        subgraph::{ModifySubgraph, SubGraph},
+        subgraph::{ModifySubSet, SubGraphLike, SubSetLike},
         swap::Swap,
         GVEdgeAttrs, HedgeGraph, NodeIndex,
     },
@@ -146,7 +146,7 @@ pub enum NodeIdOrDangling {
 mod subgraph_free;
 
 impl<S: NodeStorageOps<NodeData = DotVertexData>> DotGraph<S> {
-    pub fn compass_subgraph<Sub: ModifySubgraph<Hedge> + SubGraph>(
+    pub fn compass_subgraph<Sub: ModifySubSet<Hedge> + SubSetLike>(
         &self,
         cps: Option<CompassPt>,
     ) -> Sub {
@@ -286,7 +286,7 @@ impl<S: NodeStorageOps<NodeData = DotVertexData>> DotGraph<S> {
         out
     }
 
-    pub fn dot_of<Sub: SubGraph>(&self, subgraph: &Sub) -> String {
+    pub fn dot_of<Sub: SubGraphLike>(&self, subgraph: &Sub) -> String {
         let mut output = String::new();
         self.dot_impl_fmt(
             &mut output,
@@ -456,7 +456,7 @@ macro_rules! dot {
 }
 
 impl<E, V, H, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, H, N> {
-    pub fn dot_serialize_of<S: SubGraph>(
+    pub fn dot_serialize_of<S: SubGraphLike>(
         &self,
         subgraph: &S,
         global: impl Into<GlobalData>,
@@ -531,10 +531,9 @@ impl<E, V, H, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, H, N> {
 
 #[cfg(test)]
 pub mod test {
-    use bitvec::vec::BitVec;
 
     use crate::{
-        half_edge::nodestore::NodeStorageVec,
+        half_edge::{nodestore::NodeStorageVec, subgraph::SuBitGraph},
         parser::{DotGraph, DotVertexData},
     };
 
@@ -757,7 +756,7 @@ pub mod test {
         })
         .unwrap();
 
-        let sub: BitVec = aligned.compass_subgraph(Some(dot_parser::ast::CompassPt::S));
+        let sub: SuBitGraph = aligned.compass_subgraph(Some(dot_parser::ast::CompassPt::S));
 
         println!("{}", aligned.dot_of(&sub));
     }

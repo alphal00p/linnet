@@ -1,12 +1,8 @@
 use std::fmt::Write;
 
-use bitvec::vec::BitVec;
 use itertools::Itertools;
 
-use crate::half_edge::{
-    involution::Hedge,
-    subgraph::{Inclusion, ModifySubgraph, SubGraph},
-};
+use crate::half_edge::subgraph::{subset::SubSet, Inclusion, ModifySubSet, SubSetLike};
 
 use super::{
     child_pointer::{PCNode, ParentChildStore},
@@ -113,7 +109,7 @@ impl<V> ForestNodeStore for ChildVecStore<V> {
             prefix: &str,        // Current line prefix (e.g., "  │   ")
             is_last_child: bool, // Is this the last child of its parent?
             format_node: &mut impl FnMut(Option<&V>) -> Option<String>, // Mutable reference to node formatter closure
-            seen: &mut BitVec,
+            seen: &mut SubSet<TreeNodeId>,
         ) -> Result<(), std::fmt::Error> {
             // Determine the connector shape based on whether it's the last child
             let connector = if is_last_child {
@@ -125,14 +121,14 @@ impl<V> ForestNodeStore for ChildVecStore<V> {
             write!(f, "{prefix}{connector}{node_id}:")?;
             nodes.nodes[node_id.0].debug_display(f, format_node);
 
-            seen.add(Hedge::from(node_id));
+            seen.sub(node_id);
             // Prepare the prefix for the children of this node
             let child_prefix = format!("{}{}", prefix, if is_last_child { "    " } else { "│   " });
 
             let children: Vec<_> = nodes.iter_children(node_id).collect();
             let num_children = children.len();
             for (i, child_id) in children.into_iter().enumerate() {
-                seen.add(Hedge::from(child_id));
+                seen.sub(child_id);
                 // Recurse: pass the new prefix and whether this child is the last one
                 draw_subtree_recursive(
                     f,
@@ -147,15 +143,15 @@ impl<V> ForestNodeStore for ChildVecStore<V> {
             Ok(())
         } // End of helper fn definition
 
-        let mut seen = BitVec::empty(self.n_nodes());
+        let mut seen: SubSet<TreeNodeId> = !SubSet::empty(self.n_nodes());
 
-        while let Some(next) = seen.iter_zeros().next() {
-            let root_id = self.root_node(TreeNodeId(next));
+        while let Some(next) = seen.included_iter().next() {
+            let root_id = self.root_node(next);
             // println!("{}", root_id);
 
-            seen.add(Hedge::from(root_id));
+            seen.sub(root_id);
 
-            seen.add(Hedge(next));
+            seen.sub(next);
 
             let node_line_prefix = "  ";
 
@@ -165,13 +161,13 @@ impl<V> ForestNodeStore for ChildVecStore<V> {
             let children: Vec<_> = self
                 .iter_children(root_id)
                 .inspect(|a| {
-                    seen.add(Hedge::from(*a));
+                    seen.sub(*a);
                 })
                 .collect();
             let num_children = children.len();
 
             for (i, child_id) in children.into_iter().enumerate() {
-                seen.add(Hedge::from(child_id));
+                seen.sub(child_id);
                 let _ = draw_subtree_recursive(
                     &mut output,
                     self,
@@ -191,11 +187,11 @@ impl<V> ForestNodeStore for ChildVecStore<V> {
 
     fn validate(&self) -> Result<Vec<(RootId, TreeNodeId)>, super::ForestError> {
         let mut roots = vec![];
-        let mut seen = BitVec::empty(self.n_nodes());
+        let mut seen: SubSet<TreeNodeId> = SubSet::full(self.n_nodes());
 
-        while let Some(next) = seen.iter_zeros().next() {
-            let current = TreeNodeId(next);
-            seen.add(Hedge(next));
+        while let Some(next) = seen.included_iter().next() {
+            let current = next;
+            seen.sub(next);
 
             if ParentId::Node(current) == self.parent(current) {
                 return Err(ForestError::SelfLoopPP(current));
@@ -203,23 +199,20 @@ impl<V> ForestNodeStore for ChildVecStore<V> {
             if ParentId::PointingRoot(current) == self.parent(current) {
                 return Err(ForestError::SelfLoopPP(current));
             }
-            let mut parents: BitVec = BitVec::empty(self.n_nodes());
+            let mut parents: SubSet<TreeNodeId> = SubSet::empty(self.n_nodes());
             for p in self.iter_ancestors(current) {
-                let h = Hedge::from(p);
-                // seen.add(h);
-                if parents.includes(&h) {
+                if parents.includes(&p) {
                     return Err(ForestError::CyclicPP);
                 }
-                parents.add(h);
+                parents.add(p);
             }
-            let mut children: BitVec = BitVec::empty(self.n_nodes());
+            let mut children: SubSet<TreeNodeId> = SubSet::empty(self.n_nodes());
 
             for c in self.iter_preorder(current) {
-                let h = Hedge::from(c);
-                if children.includes(&h) {
+                if children.includes(&c) {
                     return Err(ForestError::CyclicCP);
                 }
-                children.add(h);
+                children.add(c);
             }
             for c in self.iter_children(current) {
                 if let ParentId::Node(n) = self[&c] {
@@ -380,6 +373,7 @@ impl<V> ForestNodeStore for ChildVecStore<V> {
     }
 
     fn swap(&mut self, a: TreeNodeId, b: TreeNodeId) {
+        println!("Swapping {a} <-> {b}");
         if a == b {
             return;
         }
@@ -437,6 +431,8 @@ impl<V> ForestNodeStore for ChildVecStore<V> {
             }
         }
 
+        println!("SS");
+
         //Now we modify the child pointers of the parents. Here a swap is dangerous as we could have that parent(a) = parent(b)
         if parent_b == parent_a {
             let dummya = TreeNodeId(self.n_nodes());
@@ -478,6 +474,7 @@ impl<V> ForestNodeStore for ChildVecStore<V> {
             }
         }
 
+        println!("SSSS");
         self.nodes.swap(a.0, b.0);
         #[cfg(test)]
         self.panicing_validate();

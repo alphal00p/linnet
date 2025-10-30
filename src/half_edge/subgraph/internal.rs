@@ -1,17 +1,15 @@
-use bitvec::vec::BitVec;
 use std::hash::Hash;
 use std::ops::Index;
 use std::ops::{Range, RangeFrom, RangeInclusive, RangeTo, RangeToInclusive};
 
 use crate::half_edge::involution::Flow;
+use crate::half_edge::subgraph::{SuBitGraph, SubGraphLike, SubGraphOps};
 use crate::half_edge::{
     hedgevec::Accessors, involution::HedgePair, tree::SimpleTraversalTree, Hedge, HedgeGraph,
     NodeStorageOps,
 };
 
-use super::{
-    node::HedgeNode, Cycle, Inclusion, ModifySubgraph, SubGraph, SubGraphHedgeIter, SubGraphOps,
-};
+use super::{node::HedgeNode, Cycle, Inclusion, ModifySubSet, SubSetIter, SubSetLike, SubSetOps};
 
 #[derive(Clone, Debug, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -33,7 +31,7 @@ pub struct InternalSubGraph {
     /// For every half-edge `h` included in this filter, its opposite `inv(h)` must also
     /// be included.
     #[cfg_attr(feature = "bincode", bincode(with_serde))]
-    pub filter: BitVec,
+    pub filter: SuBitGraph,
     /// An optional field, often used to cache the cyclomatic number (number of
     /// independent cycles) within this subgraph once computed.
     pub loopcount: Option<usize>,
@@ -45,7 +43,7 @@ impl InternalSubGraph {
     /// # Safety
     ///
     /// The filter must be valid, i.e. it must always have paired hedges.
-    pub unsafe fn new_unchecked(filter: BitVec) -> Self {
+    pub unsafe fn new_unchecked(filter: SuBitGraph) -> Self {
         InternalSubGraph {
             filter,
             loopcount: None,
@@ -65,10 +63,10 @@ impl PartialEq for InternalSubGraph {
     }
 }
 
-impl Index<usize> for InternalSubGraph {
+impl Index<Hedge> for InternalSubGraph {
     type Output = bool;
 
-    fn index(&self, index: usize) -> &Self::Output {
+    fn index(&self, index: Hedge) -> &Self::Output {
         self.filter.index(index)
     }
 }
@@ -77,9 +75,9 @@ impl PartialOrd for InternalSubGraph {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         if self == other {
             Some(std::cmp::Ordering::Equal)
-        } else if self.filter.clone() | &other.filter == self.filter {
+        } else if self.union(other).filter == self.filter {
             Some(std::cmp::Ordering::Greater)
-        } else if self.filter.clone() | &other.filter == other.filter {
+        } else if self.union(other).filter == other.filter {
             Some(std::cmp::Ordering::Less)
         } else {
             None
@@ -89,7 +87,7 @@ impl PartialOrd for InternalSubGraph {
 
 impl Inclusion<Hedge> for InternalSubGraph {
     fn includes(&self, hedge_id: &Hedge) -> bool {
-        self.filter[hedge_id.0]
+        self.filter[*hedge_id]
     }
 
     fn intersects(&self, other: &Hedge) -> bool {
@@ -135,17 +133,17 @@ impl Inclusion<InternalSubGraph> for InternalSubGraph {
     }
 
     fn intersects(&self, other: &InternalSubGraph) -> bool {
-        self.filter.intersection(&other.filter).count_ones() > 0
+        !(self.filter.intersection(&other.filter).is_empty())
     }
 }
 
-impl Inclusion<BitVec> for InternalSubGraph {
-    fn includes(&self, other: &BitVec) -> bool {
+impl Inclusion<SuBitGraph> for InternalSubGraph {
+    fn includes(&self, other: &SuBitGraph) -> bool {
         &self.filter.intersection(other) == other
     }
 
-    fn intersects(&self, other: &BitVec) -> bool {
-        self.filter.intersection(other).count_ones() > 0
+    fn intersects(&self, other: &SuBitGraph) -> bool {
+        !(self.filter.intersection(other).is_empty())
     }
 }
 
@@ -199,15 +197,18 @@ impl Inclusion<RangeInclusive<Hedge>> for InternalSubGraph {
     }
 }
 
-impl SubGraph for InternalSubGraph {
-    type Base = BitVec;
-    type BaseIter<'a> = SubGraphHedgeIter<'a>;
+impl SubGraphLike for InternalSubGraph {
     fn nedges<E, V, H, N: NodeStorageOps<NodeData = V>>(
         &self,
         _graph: &HedgeGraph<E, V, H, N>,
     ) -> usize {
-        self.nhedges() / 2
+        self.n_included() / 2
     }
+}
+
+impl SubSetLike<Hedge> for InternalSubGraph {
+    type Base = SuBitGraph;
+    type BaseIter<'a> = SubSetIter<'a, Hedge>;
 
     fn has_greater(&self, hedge: Hedge) -> bool {
         self.filter.has_greater(hedge)
@@ -232,18 +233,18 @@ impl SubGraph for InternalSubGraph {
         self.filter.included_iter()
     }
 
-    fn nhedges(&self) -> usize {
-        self.filter.count_ones()
+    fn n_included(&self) -> usize {
+        self.filter.n_included()
     }
 
     fn empty(size: usize) -> Self {
         InternalSubGraph {
-            filter: BitVec::empty(size),
+            filter: SuBitGraph::empty(size),
             loopcount: Some(0),
         }
     }
 
-    fn included(&self) -> &BitVec {
+    fn included(&self) -> &SuBitGraph {
         self.filter.included()
     }
 
@@ -251,13 +252,13 @@ impl SubGraph for InternalSubGraph {
         self.filter.string_label()
     }
     fn is_empty(&self) -> bool {
-        self.filter.count_ones() == 0
+        self.filter.is_empty()
     }
 }
 
-impl SubGraphOps for InternalSubGraph {
+impl SubSetOps<Hedge> for InternalSubGraph {
     fn intersect_with(&mut self, other: &InternalSubGraph) {
-        self.filter &= &other.filter;
+        self.filter.intersect_with(&other.filter);
         self.loopcount = None;
     }
 
@@ -268,42 +269,44 @@ impl SubGraphOps for InternalSubGraph {
     }
 
     fn union_with(&mut self, other: &InternalSubGraph) {
-        self.filter |= &other.filter;
+        self.filter.union_with(&other.filter);
         self.loopcount = None;
     }
 
     fn sym_diff_with(&mut self, other: &InternalSubGraph) {
-        self.filter ^= &other.filter;
+        self.filter.sym_diff_with(&other.filter);
         self.loopcount = None;
     }
 
     fn empty_intersection(&self, other: &InternalSubGraph) -> bool {
-        (self.filter.clone() & &other.filter).count_ones() == 0
+        self.filter.empty_intersection(&other.filter)
     }
 
     fn empty_union(&self, other: &InternalSubGraph) -> bool {
-        (self.filter.clone() | &other.filter).count_ones() == 0
+        self.filter.empty_union(&other.filter)
     }
 
+    fn subtract_with(&mut self, other: &Self) {
+        self.filter = (!other.filter.clone()).intersection(&self.filter);
+        self.loopcount = None;
+    }
+}
+
+impl SubGraphOps for InternalSubGraph {
     fn complement<E, V, H, N: NodeStorageOps<NodeData = V>>(
         &self,
         graph: &HedgeGraph<E, V, H, N>,
     ) -> Self {
         InternalSubGraph {
-            filter: !self.filter.clone() & !graph.external_filter(),
+            filter: (!self.filter.clone()).intersection(&!graph.external_filter::<SuBitGraph>()),
             loopcount: None,
         }
-    }
-
-    fn subtract_with(&mut self, other: &Self) {
-        self.filter = !other.filter.clone() & &self.filter;
-        self.loopcount = None;
     }
 }
 
 impl InternalSubGraph {
     fn valid_filter<E, V, H, N: NodeStorageOps<NodeData = V>>(
-        filter: &BitVec,
+        filter: &SuBitGraph,
         graph: &HedgeGraph<E, V, H, N>,
     ) -> bool {
         for i in filter.included_iter() {
@@ -320,8 +323,8 @@ impl InternalSubGraph {
         graph: &HedgeGraph<E, V, H, N>,
     ) {
         if !graph.edge_store.pair(hedge).is_unpaired() {
-            self.filter.set(hedge.0, true);
-            self.filter.set(graph.inv(hedge).0, true);
+            self.filter.add(hedge);
+            self.filter.add(graph.inv(hedge));
         }
     }
 
@@ -331,16 +334,16 @@ impl InternalSubGraph {
         graph: &HedgeGraph<E, V, H, N>,
     ) {
         if !graph.edge_store.pair(hedge).is_unpaired() {
-            self.filter.set(hedge.0, false);
-            self.filter.set(graph.inv(hedge).0, false);
+            self.filter.sub(hedge);
+            self.filter.sub(graph.inv(hedge));
         }
     }
 
     pub fn try_new<E, V, H, N: NodeStorageOps<NodeData = V>>(
-        filter: BitVec,
+        filter: SuBitGraph,
         graph: &HedgeGraph<E, V, H, N>,
     ) -> Option<Self> {
-        if filter.len() != graph.n_hedges() {
+        if filter.size() != graph.n_hedges() {
             return None;
         }
         if !Self::valid_filter(&filter, graph) {
@@ -354,18 +357,18 @@ impl InternalSubGraph {
     }
 
     pub fn cleaned_filter_optimist<E, V, H, N: NodeStorageOps<NodeData = V>>(
-        mut filter: BitVec,
+        mut filter: SuBitGraph,
         graph: &HedgeGraph<E, V, H, N>,
     ) -> Self {
         for (j, _, _) in graph.iter_edges() {
             match j {
                 HedgePair::Paired { source, sink } => {
                     if filter.includes(&source) || filter.includes(&sink) {
-                        filter.set(source.0, true);
-                        filter.set(sink.0, true);
+                        filter.add(source);
+                        filter.add(sink);
                     }
                 }
-                HedgePair::Unpaired { hedge, .. } => filter.set(hedge.0, false),
+                HedgePair::Unpaired { hedge, .. } => filter.sub(hedge),
                 _ => {}
             }
         }
@@ -376,18 +379,18 @@ impl InternalSubGraph {
     }
 
     pub fn cleaned_filter_pessimist<E, V, H, N: NodeStorageOps<NodeData = V>>(
-        mut filter: BitVec,
+        mut filter: SuBitGraph,
         graph: &HedgeGraph<E, V, H, N>,
     ) -> Self {
         for (j, _, _) in graph.iter_edges() {
             match j {
                 HedgePair::Paired { source, sink } => {
                     if filter.includes(&source) && filter.includes(&sink) {
-                        filter.set(source.0, true);
-                        filter.set(sink.0, true);
+                        filter.add(source);
+                        filter.add(sink);
                     }
                 }
-                HedgePair::Unpaired { hedge, .. } => filter.set(hedge.0, false),
+                HedgePair::Unpaired { hedge, .. } => filter.sub(hedge),
                 _ => {}
             }
         }

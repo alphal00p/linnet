@@ -1,3 +1,14 @@
+use std::hash::Hash;
+pub trait IndexLike:
+    Copy + PartialEq + Eq + PartialOrd + Ord + Hash + From<usize> + Into<usize>
+{
+}
+
+impl<ID: Copy + PartialEq + Eq + PartialOrd + Ord + Hash + From<usize> + Into<usize>> IndexLike
+    for ID
+{
+}
+
 #[macro_export]
 macro_rules! define_indexed_vec {
     (
@@ -20,6 +31,8 @@ macro_rules! define_indexed_vec {
                 $Idx(value)
             }
         }
+
+
 
         impl ::std::ops::Add<$Idx> for $Idx {
             type Output = $Idx;
@@ -97,7 +110,7 @@ macro_rules! define_indexed_vec {
             fn len(&self) -> $Idx {
                 $Idx(self.0.len())
             }
-            #[inline] fn is_empty(&self) -> bool { self.0.is_empty() }
+            #[inline] fn is_zero_length(&self) -> bool { self.0.is_empty() }
 
         }
 

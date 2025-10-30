@@ -1,6 +1,4 @@
-use bitvec::vec::BitVec;
-
-use crate::half_edge::subgraph::{ModifySubgraph, SubGraph};
+use crate::half_edge::subgraph::{ModifySubSet, SuBitGraph, SubSetLike};
 
 use super::{Flow, Involution};
 
@@ -21,7 +19,7 @@ fn invextract() {
 
     a.connect_identities(h3, h4, |f, d, _, _| (f, d)).unwrap();
 
-    let mut subgraph = BitVec::empty(8);
+    let mut subgraph = SuBitGraph::empty(8);
     subgraph.add(s4);
     subgraph.add(h2);
     subgraph.add(h3);

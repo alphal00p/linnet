@@ -1,9 +1,8 @@
-use bitvec::vec::BitVec;
-
 use crate::{
     half_edge::{
         involution::Hedge,
         nodestore::{BitVecNeighborIter, NodeStorage, NodeStorageOps, NodeStorageVec},
+        subgraph::SuBitGraph,
         swap::Swap,
         NodeIndex, NodeVec,
     },
@@ -28,8 +27,7 @@ pub struct HedgeNodeStore<V> {
     data: V,
     /// A bitmask representing the set of half-edges incident to this node.
     /// Each bit position corresponds to a [`Hedge`] index.
-    #[cfg_attr(feature = "bincode", bincode(with_serde))]
-    node: BitVec,
+    node: SuBitGraph,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -69,8 +67,7 @@ impl<V> From<NodeStorageVec<V>> for UnionFindNodeStore<V> {
         let hairs: Vec<_> = node_data.iter().map(|a| a.node.clone()).collect();
 
         UnionFindNodeStore {
-            nodes: UnionFind::from_bitvec_partition(node_data.into_iter().zip(hairs).collect())
-                .unwrap(),
+            nodes: UnionFind::from_partition(node_data.into_iter().zip(hairs).collect()).unwrap(),
         }
     }
 }
@@ -84,7 +81,7 @@ impl SetIndex {
 impl<V> NodeStorage for UnionFindNodeStore<V> {
     type Storage<N> = UnionFindNodeStore<N>;
     type NodeData = V;
-    type Neighbors = BitVec;
+    type Neighbors = SuBitGraph;
     type NeighborsIter<'a>
         = BitVecNeighborIter<'a>
     where
@@ -98,7 +95,7 @@ impl<V> UnionFindNodeStore<V> {
 }
 
 impl<V> Swap<Hedge> for UnionFindNodeStore<V> {
-    fn is_empty(&self) -> bool {
+    fn is_zero_length(&self) -> bool {
         todo!()
     }
     fn len(&self) -> Hedge {
@@ -109,7 +106,7 @@ impl<V> Swap<Hedge> for UnionFindNodeStore<V> {
     }
 }
 impl<V> Swap<NodeIndex> for UnionFindNodeStore<V> {
-    fn is_empty(&self) -> bool {
+    fn is_zero_length(&self) -> bool {
         todo!()
     }
     fn len(&self) -> NodeIndex {
@@ -122,19 +119,19 @@ impl<V> Swap<NodeIndex> for UnionFindNodeStore<V> {
 
 impl<V> NodeStorageOps for UnionFindNodeStore<V> {
     type OpStorage<A> = Self::Storage<A>;
-    type Base = BitVec;
+    type Base = SuBitGraph;
 
     fn check_nodes(&self) -> Result<(), crate::half_edge::HedgeGraphError> {
         todo!()
     }
-    fn extract_nodes(&mut self, _nodes: impl IntoIterator<Item = NodeIndex>) -> (BitVec, Self) {
+    fn extract_nodes(&mut self, _nodes: impl IntoIterator<Item = NodeIndex>) -> (SuBitGraph, Self) {
         todo!()
     }
     fn forget_identification_history(&mut self) -> NodeVec<Self::NodeData> {
         todo!()
     }
 
-    fn delete<S: crate::half_edge::subgraph::SubGraph<Base = Self::Base>>(
+    fn delete<S: crate::half_edge::subgraph::SubSetLike<Base = Self::Base>>(
         &mut self,
         _subgraph: &S,
     ) {
@@ -148,7 +145,7 @@ impl<V> NodeStorageOps for UnionFindNodeStore<V> {
         todo!()
     }
 
-    fn extract<S: crate::half_edge::subgraph::SubGraph<Base = Self::Base>, V2>(
+    fn extract<S: crate::half_edge::subgraph::SubSetLike<Base = Self::Base>, V2>(
         &mut self,
         _subgraph: &S,
         _spit_node: impl FnMut(&Self::NodeData) -> V2,

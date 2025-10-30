@@ -1,6 +1,5 @@
 use std::ops::IndexMut;
 
-use bitvec::vec::BitVec;
 use cgmath::{EuclideanSpace, MetricSpace, Point2, Vector2};
 
 use rand::{distributions::Uniform, prelude::Distribution, Rng};
@@ -11,7 +10,7 @@ use crate::{
         involution::{EdgeIndex, EdgeVec},
         layout::simulatedanneale::{Energy, Neighbor},
         nodestore::NodeStorageOps,
-        subgraph::SubGraph,
+        subgraph::{SuBitGraph, SubSetLike},
         swap::Swap,
         HedgeGraph, NodeIndex, NodeVec,
     },
@@ -145,7 +144,7 @@ impl Shiftable for PointConstraint {
 
 pub struct LayoutState<'a, E, V, H, N: NodeStorageOps<NodeData = V>> {
     pub graph: &'a HedgeGraph<E, V, H, N>,
-    pub ext: BitVec,
+    pub ext: SuBitGraph,
     pub vertex_points: NodeVec<Point2<f64>>,
     pub edge_points: EdgeVec<Point2<f64>>,
     pub delta: f64,

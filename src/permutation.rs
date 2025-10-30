@@ -46,11 +46,10 @@ use std::{
 
 use crate::half_edge::{
     involution::Hedge,
-    subgraph::{BaseSubgraph, InternalSubGraph, SubGraph, SubGraphOps},
+    subgraph::{BaseSubgraph, InternalSubGraph, ModifySubSet, SuBitGraph, SubSetLike, SubSetOps},
     HedgeGraph, NodeIndex,
 };
 use ahash::AHashSet;
-use bitvec::vec::BitVec;
 use thiserror::Error;
 
 use crate::half_edge::involution::Flow;
@@ -1118,9 +1117,10 @@ pub enum PermutationError {
 }
 
 pub trait HedgeGraphExt {
-    fn hedges_between(&self, a: NodeIndex, b: NodeIndex) -> BitVec;
+    fn hedges_between(&self, a: NodeIndex, b: NodeIndex) -> SuBitGraph;
 
-    fn permute_subgraph<S: SubGraph>(&self, subgraph: &S, hedge_perm: &Permutation) -> BitVec;
+    fn permute_subgraph<S: SubSetLike>(&self, subgraph: &S, hedge_perm: &Permutation)
+        -> SuBitGraph;
 
     fn orientation_ord(&self, hedge: Hedge) -> u8;
 }
@@ -1148,25 +1148,29 @@ pub trait PermutationExt<Orderer: Ord = ()> {
 }
 
 impl<E, V, H> HedgeGraphExt for HedgeGraph<E, V, H> {
-    fn hedges_between(&self, a: NodeIndex, b: NodeIndex) -> BitVec {
+    fn hedges_between(&self, a: NodeIndex, b: NodeIndex) -> SuBitGraph {
         let a_ext = InternalSubGraph::cleaned_filter_optimist(
-            BitVec::from_hedge_iter(self.iter_crown(a), self.n_hedges()),
+            SuBitGraph::from_hedge_iter(self.iter_crown(a), self.n_hedges()),
             self,
         )
         .filter;
         let b_ext = InternalSubGraph::cleaned_filter_optimist(
-            BitVec::from_hedge_iter(self.iter_crown(b), self.n_hedges()),
+            SuBitGraph::from_hedge_iter(self.iter_crown(b), self.n_hedges()),
             self,
         )
         .filter;
         a_ext.intersection(&b_ext)
     }
 
-    fn permute_subgraph<S: SubGraph>(&self, subgraph: &S, hedge_perm: &Permutation) -> BitVec {
-        let mut permuted_subgraph: BitVec = self.empty_subgraph();
+    fn permute_subgraph<S: SubSetLike>(
+        &self,
+        subgraph: &S,
+        hedge_perm: &Permutation,
+    ) -> SuBitGraph {
+        let mut permuted_subgraph: SuBitGraph = self.empty_subgraph();
 
         for h in subgraph.included_iter() {
-            permuted_subgraph.set(hedge_perm[h.0], true);
+            permuted_subgraph.add(Hedge(hedge_perm[h.0]));
         }
         permuted_subgraph
     }
@@ -2095,8 +2099,8 @@ mod tests {
         let perm = Permutation::from_cycles(&[vec![0, 1]]); //permutes a and b
 
         let h = Hedge(0);
-        let mut h_sub: BitVec = graph.empty_subgraph();
-        h_sub.set(h.0, true);
+        let mut h_sub: SuBitGraph = graph.empty_subgraph();
+        h_sub.add(h);
 
         let hedge_perm = graph.permute_vertices(&perm, &|_| ());
         let permuted_h = graph.permute_subgraph(&h_sub, &hedge_perm[0]);
@@ -2122,8 +2126,8 @@ mod tests {
         let perm = Permutation::from_cycles(&[vec![0, 1]]); //permutes a and b
 
         let h = Hedge(0);
-        let mut h_sub: BitVec = graph.empty_subgraph();
-        h_sub.set(h.0, true);
+        let mut h_sub: SuBitGraph = graph.empty_subgraph();
+        h_sub.add(h);
 
         let hedge_perm = graph.permute_vertices(&perm, &|_| ());
         let permuted_h = graph.permute_subgraph(&h_sub, &hedge_perm[0]);

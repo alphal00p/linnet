@@ -3,7 +3,7 @@ use crate::tree::{parent_pointer::ParentPointerStore, Forest};
 use super::{
     builder::HedgeNodeBuilder,
     involution::{EdgeIndex, Hedge, Involution},
-    subgraph::{BaseSubgraph, SubGraph},
+    subgraph::{BaseSubgraph, SubSetLike},
     swap::Swap,
     HedgeGraph, HedgeGraphError, NodeIndex, NodeVec,
 };
@@ -29,7 +29,7 @@ pub trait NodeStorageOps: NodeStorage + Swap<Hedge> + Swap<NodeIndex> {
     ) -> NodeVec<V2>;
 
     fn extend_mut(&mut self, other: Self);
-    fn extract<S: SubGraph<Base = Self::Base>, V2>(
+    fn extract<S: SubSetLike<Base = Self::Base>, V2>(
         &mut self,
         subgraph: &S,
         split_node: impl FnMut(&Self::NodeData) -> V2,
@@ -38,7 +38,7 @@ pub trait NodeStorageOps: NodeStorage + Swap<Hedge> + Swap<NodeIndex> {
 
     fn extract_nodes(&mut self, nodes: impl IntoIterator<Item = NodeIndex>) -> (Self::Base, Self);
 
-    fn delete<S: SubGraph<Base = Self::Base>>(&mut self, subgraph: &S);
+    fn delete<S: SubSetLike<Base = Self::Base>>(&mut self, subgraph: &S);
 
     // fn add_node(&mut self, node_data: Self::NodeData) -> NodeIndex;
 
@@ -143,7 +143,7 @@ pub trait NodeStorage: Sized {
 
     /// The type used to represent the collection of half-edges incident to a single node.
     /// This must implement the [`SubGraph`] trait.
-    type Neighbors: SubGraph;
+    type Neighbors: SubSetLike;
     /// An iterator that yields the [`Hedge`] identifiers incident to a node.
     /// It must be cloneable and provide an exact size hint.
     type NeighborsIter<'a>: ExactSizeIterator<Item = Hedge> + Clone

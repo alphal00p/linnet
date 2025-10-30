@@ -5,12 +5,7 @@ use std::{
     ops::{Index, IndexMut},
 };
 
-use bitvec::vec::BitVec;
-
-use crate::half_edge::{
-    involution::Hedge,
-    subgraph::{ModifySubgraph, SubGraph},
-};
+use crate::half_edge::subgraph::{subset::SubSet, ModifySubSet, SubSetLike};
 
 use super::{Forest, ForestNodeStore, ForestNodeStoreAncestors, RootId, TreeNodeId};
 
@@ -254,13 +249,13 @@ impl<V> ForestNodeStore for ParentPointerStore<V> {
 
     fn validate(&self) -> Result<Vec<(RootId, TreeNodeId)>, super::ForestError> {
         let mut roots = vec![];
-        let mut seen = BitVec::empty(self.n_nodes());
+        let mut seen: SubSet<usize> = !SubSet::empty(self.n_nodes());
 
-        while let Some(next) = seen.iter_zeros().next() {
+        while let Some(next) = seen.included_iter().next() {
             let current = TreeNodeId(next);
-            seen.add(Hedge(next));
+            seen.sub(next);
             self.iter_ancestors(current).for_each(|a| {
-                seen.add(Hedge::from(a));
+                seen.sub(a.0);
             });
             let root_id = self.root_node(current);
             let root = self.root(root_id);
@@ -365,6 +360,7 @@ impl<V> ForestNodeStore for ParentPointerStore<V> {
     }
 
     fn swap(&mut self, a: TreeNodeId, b: TreeNodeId) {
+        println!("Swap PP");
         for n in &mut self.nodes {
             if let ParentId::Node(pp) = &mut n.parent {
                 if *pp == a {

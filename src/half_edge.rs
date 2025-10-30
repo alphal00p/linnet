@@ -91,7 +91,7 @@ use std::ops::{Index, IndexMut};
 use ahash::{AHashMap, AHashSet};
 
 use bitvec::prelude::*;
-use bitvec::{slice::IterOnes, vec::BitVec};
+use bitvec::slice::IterOnes;
 use builder::{HedgeData, HedgeGraphBuilder};
 use hedgevec::{Accessors, SmartEdgeVec};
 use indexmap::IndexSet;
@@ -136,7 +136,7 @@ impl std::fmt::Display for NodeIndex {
 /// Iterator over the powerset of a bitvec, of size n < 64.
 ///
 /// Generates all possible subsets of a set of up to 63 elements.
-/// The subsets are represented as `BitVec`s.
+/// The subsets are represented as `SuBitGraph`s.
 ///
 /// **Note:** The maximum number of elements is limited due to the `usize`
 /// representation of the current subset index. On a 64-bit system, this
@@ -160,11 +160,11 @@ impl PowersetIterator {
 }
 
 impl Iterator for PowersetIterator {
-    type Item = BitVec;
+    type Item = SuBitGraph;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.current < self.size {
-            let out = BitVec::<_, Lsb0>::from_element(self.current);
+            let out = SuBitGraph::from_usize(self.current);
             self.current += 1;
             Some(out)
         } else {
@@ -299,7 +299,8 @@ impl<E, V: Default, H: Default, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V
     /// to `nodes`) attempts to operate on empty or insufficiently small `sources` or `sinks` lists.
     pub fn random(nodes: usize, edges: usize, seed: u64) -> HedgeGraph<(), V, H, N>
     where
-        N::Neighbors: BaseSubgraph + SubGraphOps,
+        N::Neighbors: BaseSubgraph + SubSetOps + ModifySubSet<Hedge>,
+        <<N as NodeStorage>::Neighbors as SubSetLike>::Base: SubSetOps,
     {
         let inv: Involution<()> = Involution::<()>::random(edges, seed);
 
@@ -402,7 +403,7 @@ impl<E, V, H, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, H, N> {
     /// # Parameters
     /// - `subgraph`: A subgraph specifying the set of half-edges to delete.
     ///   `S` must implement `SubGraph` with `Base = N::Base`.
-    pub fn delete_hedges<S: SubGraph<Base = N::Base>>(&mut self, subgraph: &S) {
+    pub fn delete_hedges<S: SubSetLike<Base = N::Base>>(&mut self, subgraph: &S) {
         let mut left = Hedge(0);
         let mut extracted: Hedge = self.len();
         while left < extracted {
@@ -441,7 +442,7 @@ impl<E, V, H, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, H, N> {
     /// # Returns
     /// A new `HedgeGraph` containing only the elements of the `subgraph`.
     /// The node storage type of the new graph is `N::OpStorage<&'a V>`.
-    pub fn concretize<'a, S: SubGraph>(
+    pub fn concretize<'a, S: SubSetLike>(
         &'a self,
         subgraph: &'a S,
     ) -> HedgeGraph<&'a E, &'a V, &'a H, N::OpStorage<&'a V>> {
@@ -510,7 +511,7 @@ impl<E, V, H, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, H, N> {
     ///
     /// # Returns
     /// A new `HedgeGraph<O, V2, N::OpStorage<V2>>` representing the extracted and transformed subgraph.
-    pub fn extract<O, V2, S: SubGraph<Base = N::Base>>(
+    pub fn extract<O, V2, S: SubSetLike<Base = N::Base>>(
         &mut self,
         subgraph: &S,
         split_edge_fn: impl FnMut(EdgeData<&E>) -> EdgeData<O>,
@@ -556,7 +557,7 @@ impl<E, V, H, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, H, N> {
         internal_data: impl FnMut(EdgeData<E>) -> EdgeData<O>,
     ) -> HedgeGraph<O, V, H, N>
     where
-        N: NodeStorageOps<Base = BitVec>,
+        N: NodeStorageOps<Base = SuBitGraph>,
     {
         let (extracted, nodes) = self.node_store.extract_nodes(nodes);
 
@@ -803,7 +804,7 @@ impl<E, V, H, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, H, N> {
     /// # Panics
     /// Panics if the traversal (used internally) fails, which can happen if the
     /// starting node for traversal is not part of the `subgraph`.
-    pub fn is_connected<S: SubGraph>(&self, subgraph: &S) -> bool {
+    pub fn is_connected<S: SubGraphLike>(&self, subgraph: &S) -> bool {
         let n_edges = subgraph.nedges(self);
         if let Some(start) = subgraph.included_iter().next() {
             SimpleTraversalTree::depth_first_traverse(self, subgraph, &self.node_id(start), None)
@@ -849,11 +850,8 @@ impl<E, V, H, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, H, N> {
 
                 if let Some(first) = first {
                     if next.is_none() {
-                        subgraph.internal_graph.filter.set(first.0, false);
-                        subgraph
-                            .internal_graph
-                            .filter
-                            .set(self.inv(*first).0, false);
+                        subgraph.internal_graph.filter.sub(*first);
+                        subgraph.internal_graph.filter.sub(self.inv(*first));
                         has_branch = true;
                     }
                 }
@@ -883,9 +881,9 @@ impl<E, V, H, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, H, N> {
     /// # Returns
     /// A new subgraph of type `S::Base` containing the internal crown half-edges.
     /// `S::Base` must implement `ModifySubgraph<HedgePair>`.
-    pub fn internal_crown<S: SubGraph>(&self, subgraph: &S) -> S::Base
+    pub fn internal_crown<S: SubSetLike>(&self, subgraph: &S) -> S::Base
     where
-        S::Base: ModifySubgraph<HedgePair>,
+        S::Base: ModifySubSet<HedgePair>,
     {
         let mut crown = S::Base::empty(self.n_hedges());
 
@@ -914,9 +912,9 @@ impl<E, V, H, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, H, N> {
     /// # Returns
     /// A new subgraph of type `S::Base` containing the full crown half-edges.
     /// `S::Base` must implement `ModifySubgraph<Hedge>`.
-    pub fn full_crown<S: SubGraph>(&self, subgraph: &S) -> S::Base
+    pub fn full_crown<S: SubSetLike>(&self, subgraph: &S) -> S::Base
     where
-        S::Base: ModifySubgraph<Hedge>,
+        S::Base: ModifySubSet<Hedge>,
     {
         let mut crown = S::Base::empty(self.n_hedges());
 
@@ -932,40 +930,29 @@ impl<E, V, H, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, H, N> {
         crown
     }
 
-    pub fn paired_filter_from_pos(&self, pos: &[Hedge]) -> BitVec {
-        let mut filter = bitvec![usize, Lsb0; 0; self.n_hedges()];
-
-        for &i in pos {
-            filter.set(i.0, true);
-            filter.set(self.inv(i).0, true);
-        }
-
-        filter
-    }
-
-    /// Creates a `BitVec` representing a subgraph containing all external (identity/dangling)
+    /// Creates a `SuBitGraph` representing a subgraph containing all external (identity/dangling)
     /// half-edges in the entire graph.
     ///
     /// # Returns
-    /// A `BitVec` where bits corresponding to external half-edges are set to true.
-    pub fn external_filter(&self) -> BitVec {
-        let mut filter = bitvec![usize, Lsb0; 0; self.n_hedges()];
+    /// A `SuBitGraph` where bits corresponding to external half-edges are set to true.
+    pub fn external_filter<S: ModifySubSet<Hedge> + SubSetLike>(&self) -> S {
+        let mut filter: S = self.empty_subgraph();
 
         for (i, _, _) in self.iter_edges() {
             if i.is_unpaired() {
-                filter.set(i.any_hedge().0, true);
+                filter.add(i.any_hedge());
             }
         }
 
         filter
     }
 
-    /// Creates a `BitVec` representing a subgraph containing all half-edges in the graph.
+    /// Creates a `SuBitGraph` representing a subgraph containing all half-edges in the graph.
     ///
     /// # Returns
-    /// A `BitVec` of length `self.n_hedges()` with all bits set to true.
-    pub fn full_filter(&self) -> BitVec {
-        bitvec![usize, Lsb0; 1; self.n_hedges()]
+    /// A `SuBitGraph` of length `self.n_hedges()` with all bits set to true.
+    pub fn full_filter(&self) -> SuBitGraph {
+        SuBitGraph::full(self.n_hedges())
     }
 
     /// Returns a [`FullOrEmpty`] subgraph representing the entire graph (all hedges included).
@@ -978,17 +965,17 @@ impl<E, V, H, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, H, N> {
         FullOrEmpty::empty(self.n_hedges())
     }
 
-    /// Creates an [`InternalSubGraph`] from a `BitVec` filter, ensuring it has no "hairs".
+    /// Creates an [`InternalSubGraph`] from a `SuBitGraph` filter, ensuring it has no "hairs".
     ///
     /// This uses a "pessimistic" approach: an edge is included only if both its
     /// half-edges are set in the input `filter`. Dangling edges are removed.
     ///
     /// # Parameters
-    /// - `filter`: A `BitVec` representing the desired set of half-edges.
+    /// - `filter`: A `SuBitGraph` representing the desired set of half-edges.
     ///
     /// # Returns
     /// A new `InternalSubGraph`.
-    pub fn clean_subgraph(&self, filter: BitVec) -> InternalSubGraph {
+    pub fn clean_subgraph(&self, filter: SuBitGraph) -> InternalSubGraph {
         InternalSubGraph::cleaned_filter_pessimist(filter, self)
     }
 
@@ -1012,7 +999,7 @@ impl<E, V, H, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, H, N> {
     ///
     /// # Returns
     /// A new, empty subgraph of type `S`, sized for this graph.
-    pub fn empty_subgraph<S: SubGraph>(&self) -> S {
+    pub fn empty_subgraph<S: SubSetLike>(&self) -> S {
         S::empty(self.n_hedges())
     }
 
@@ -1027,7 +1014,10 @@ impl<E, V, H, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, H, N> {
     ///
     /// # Returns
     /// A new subgraph of type `S`.
-    pub fn from_filter<S: BaseSubgraph>(&self, filter: impl FnMut(&E) -> bool) -> S {
+    pub fn from_filter<S: BaseSubgraph>(&self, filter: impl FnMut(&E) -> bool) -> S
+    where
+        S::Base: SubSetOps<Hedge>,
+    {
         S::from_filter(self, filter)
     }
 
@@ -1044,7 +1034,7 @@ impl<E, V, H, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, H, N> {
     /// Panics if the provided `internal_graph` is not valid for this graph (e.g.,
     /// if it refers to hedges outside the graph's bounds or is not truly internal).
     pub fn nesting_node_from_subgraph(&self, internal_graph: InternalSubGraph) -> HedgeNode {
-        let mut hairs = bitvec![usize, Lsb0; 0; self.n_hedges()];
+        let mut hairs: SuBitGraph = self.empty_subgraph();
 
         if !internal_graph.valid::<E, V, H, N>(self) {
             panic!("Invalid subgraph")
@@ -1054,18 +1044,20 @@ impl<E, V, H, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, H, N> {
             hairs.union_with_iter(self.neighbors(i));
         }
 
+        let mut nh = !hairs;
+        nh.union_with(&internal_graph.filter);
         HedgeNode {
-            hairs: !(!hairs | &internal_graph.filter),
+            hairs: !nh,
             internal_graph,
         }
     }
 
-    pub fn remove_internal_hedges(&self, subgraph: &BitVec) -> BitVec {
+    pub fn remove_internal_hedges(&self, subgraph: &SuBitGraph) -> SuBitGraph {
         let mut hairs = subgraph.clone();
         for i in subgraph.included_iter() {
             if subgraph.includes(&self.inv(i)) {
-                hairs.set(i.0, false);
-                hairs.set(self.inv(i).0, false);
+                hairs.sub(i);
+                hairs.sub(self.inv(i));
             }
         }
         hairs
@@ -1073,18 +1065,18 @@ impl<E, V, H, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, H, N> {
 
     pub(crate) fn split_hairs_and_internal_hedges(
         &self,
-        mut subgraph: BitVec,
-    ) -> (BitVec, InternalSubGraph) {
+        mut subgraph: SuBitGraph,
+    ) -> (SuBitGraph, InternalSubGraph) {
         let mut internal: InternalSubGraph = self.empty_subgraph();
         for i in subgraph.included_iter() {
             let invh = self.inv(i);
             if subgraph.includes(&invh) {
-                internal.filter.set(i.0, true);
-                internal.filter.set(invh.0, true);
+                internal.filter.add(i);
+                internal.filter.add(invh);
             }
         }
         for i in internal.filter.included_iter() {
-            subgraph.set(i.0, false);
+            subgraph.sub(i);
         }
         (subgraph, internal)
     }
@@ -1098,19 +1090,22 @@ impl<E, V, H, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, H, N> {
     /// # Parameters
     /// - `node`: A mutable reference to the `HedgeNode` to fix.
     fn nesting_node_fix(&self, node: &mut HedgeNode) {
-        let mut externalhedges = bitvec![usize, Lsb0; 0; self.n_hedges()];
+        let mut externalhedges: SuBitGraph = self.empty_subgraph();
 
         for i in node.internal_graph.filter.included_iter() {
             externalhedges.union_with_iter(self.neighbors(i));
         }
 
-        node.hairs = !(!externalhedges | &node.internal_graph.filter);
+        let mut ne = !externalhedges;
+        ne.union_with(&node.internal_graph.filter);
+
+        node.hairs = !ne;
     }
 
     fn remove_externals(&self, subgraph: &mut HedgeNode) {
-        let externals = self.external_filter();
+        let externals: SuBitGraph = self.external_filter();
 
-        subgraph.internal_graph.filter &= !externals;
+        subgraph.internal_graph.filter.subtract_with(&externals);
     }
 }
 
@@ -1126,7 +1121,7 @@ impl<E, V, H, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, H, N> {
     ///
     /// # Returns
     /// The number of full internal edges.
-    pub fn count_internal_edges<S: SubGraph>(&self, subgraph: &S) -> usize {
+    pub fn count_internal_edges<S: SubSetLike>(&self, subgraph: &S) -> usize {
         let mut internal_edge_count = 0;
         // Iterate over all half-edges in the subgraph
         for hedge_index in subgraph.included_iter() {
@@ -1183,7 +1178,7 @@ impl<E, V, H, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, H, N> {
     ///
     /// # Returns
     /// The number of unique nodes touched by the `subgraph`.
-    pub fn number_of_nodes_in_subgraph<S: SubGraph>(&self, subgraph: &S) -> usize {
+    pub fn number_of_nodes_in_subgraph<S: SubSetLike>(&self, subgraph: &S) -> usize {
         self.iter_nodes_of(subgraph).count()
     }
 
@@ -1208,9 +1203,11 @@ impl<E, V, H, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, H, N> {
             let node_pos = self.id_from_crown(node).unwrap();
 
             // Count the number of edges in the subgraph incident to this node
-            let incident_edges =
-                BitVec::from_hedge_iter(self.sub_iter_crown(node_pos, subgraph), subgraph.size());
-            let degree = incident_edges.count_ones();
+            let incident_edges = SuBitGraph::from_hedge_iter(
+                self.sub_iter_crown(node_pos, subgraph),
+                subgraph.size(),
+            );
+            let degree = incident_edges.n_included();
 
             degrees.insert(node_pos, degree);
         }
@@ -1258,11 +1255,15 @@ impl<E, V, H, N: NodeStorageOps<NodeData = V>> EdgeAccessors<EdgeIndex> for Hedg
 // Accessors
 impl<E, V, H, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, H, N> {
     /// including pos
-    pub fn owned_neighbors<S: SubGraph>(&self, subgraph: &S, pos: Hedge) -> BitVec {
+    pub fn owned_neighbors<S: SubGraphLike>(&self, subgraph: &S, pos: Hedge) -> SuBitGraph {
         subgraph.hairs(self.neighbors(pos))
     }
 
-    pub fn connected_neighbors<S: SubGraph>(&self, subgraph: &S, pos: Hedge) -> Option<BitVec> {
+    pub fn connected_neighbors<S: SubGraphLike>(
+        &self,
+        subgraph: &S,
+        pos: Hedge,
+    ) -> Option<SuBitGraph> {
         Some(subgraph.hairs(self.involved_node_crown(pos)?))
     }
     pub fn get_edge_data(&self, edge: Hedge) -> &E {
@@ -1299,7 +1300,7 @@ impl<E, V, H, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, H, N> {
         self.node_store.get_neighbor_iterator(id)
     }
 
-    pub fn sub_iter_crown<'a, S: SubGraph>(
+    pub fn sub_iter_crown<'a, S: SubSetLike>(
         &'a self,
         id: NodeIndex,
         subgraph: &'a S,
@@ -1337,7 +1338,7 @@ impl<E, V, H, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, H, N> {
     }
 
     /// Collect all nodes in the subgraph (all nodes that the hedges are connected to)
-    pub fn nodes<S: SubGraph>(&self, subgraph: &S) -> Vec<NodeIndex> {
+    pub fn nodes<S: SubSetLike>(&self, subgraph: &S) -> Vec<NodeIndex> {
         let mut nodes = IndexSet::new();
         for i in subgraph.included_iter() {
             let node = self.node_id(i);
@@ -1364,7 +1365,7 @@ impl<E, V, H, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, H, N> {
     ///Identifies all nodes in this subgraph and gives value node_data_merge to identified node.
     ///Deletes all edges in the subgraph.
     ///This invalidates both hedge indices and node indices
-    pub fn contract_subgraph<S: SubGraph<Base = N::Base>>(
+    pub fn contract_subgraph<S: SubSetLike<Base = N::Base>>(
         &mut self,
         subgraph: &S,
         node_data_merge: V,
@@ -1383,7 +1384,7 @@ impl<E, V, H, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, H, N> {
         node_data_merge: V,
     ) -> (NodeIndex, S)
     where
-        S: ModifySubgraph<Hedge> + SubGraph,
+        S: ModifySubSet<Hedge> + SubSetLike,
     {
         let mut self_edges: S = self.empty_subgraph();
         for n in nodes {
@@ -1412,7 +1413,7 @@ impl<E, V, H, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, H, N> {
 
     /// Collect all edges in the subgraph
     /// (This is without double counting, i.e. if two half-edges are part of the same edge, only one `EdgeIndex` will be collected)
-    pub fn edges<S: SubGraph>(&self, subgraph: &S) -> Vec<EdgeIndex> {
+    pub fn edges<S: SubSetLike>(&self, subgraph: &S) -> Vec<EdgeIndex> {
         self.iter_edges_of(subgraph).map(|(_, i, _)| i).collect()
     }
 }
@@ -1463,7 +1464,7 @@ impl<E, V, H, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, H, N> {
         mut dangling_map: impl FnMut(&Involution, &N, Hedge, Flow, EdgeData<&E>) -> (V2, H),
     ) -> HedgeGraph<E, V2, H, <<N as NodeStorageOps>::OpStorage<V2> as NodeStorageOps>::OpStorage<V2>>
     {
-        let ext = self.external_filter();
+        let ext: SuBitGraph = self.external_filter();
 
         let mut saturator = HedgeGraphBuilder::new();
         for i in ext.included_iter() {
@@ -1648,18 +1649,18 @@ impl<E, V, H, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, H, N> {
         connected_components: usize,
         cyclotomatic_number: usize,
         start: Hedge,
-        current: &mut BitVec,
-        set: &mut AHashSet<BitVec>,
+        current: &mut SuBitGraph,
+        set: &mut AHashSet<SuBitGraph>,
     ) {
-        if current.count_ones() > 2 * cyclotomatic_number {
+        if current.n_included() > 2 * cyclotomatic_number {
             return;
         }
 
         let complement = current.complement(self);
 
-        if current.count_ones() > 0
+        if current.n_included() > 0
             && self.count_connected_components(&complement) == connected_components
-            && complement.covers(self) == self.full_filter()
+            && complement.covers::<_, _, _, _, SuBitGraph>(self) == self.full_filter()
         {
             // println!("//inserted with {con_comp}");
             set.insert(current.clone());
@@ -1668,8 +1669,8 @@ impl<E, V, H, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, H, N> {
         for i in (start.0..self.n_hedges()).map(Hedge) {
             let j = self.inv(i);
             if i > j {
-                current.set(i.0, true);
-                current.set(j.0, true);
+                current.add(i);
+                current.add(j);
                 self.non_cut_edges_impl(
                     connected_components,
                     cyclotomatic_number,
@@ -1677,19 +1678,19 @@ impl<E, V, H, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, H, N> {
                     current,
                     set,
                 );
-                current.set(i.0, false);
-                current.set(j.0, false);
+                current.sub(i);
+                current.sub(j);
             }
         }
     }
 
     /// all sets of full edges that do not disconnect the graph/ increase its connected components
-    pub fn non_cut_edges(&self) -> AHashSet<BitVec> {
+    pub fn non_cut_edges(&self) -> AHashSet<SuBitGraph> {
         let connected_components = self.count_connected_components(&self.full_filter());
 
         let cyclotomatic_number = self.cyclotomatic_number(&self.full_node().internal_graph);
 
-        let mut current = self.empty_subgraph::<BitVec>();
+        let mut current = self.empty_subgraph::<SuBitGraph>();
         let mut set = AHashSet::new();
 
         self.non_cut_edges_impl(
@@ -1710,9 +1711,9 @@ impl<E, V, H, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, H, N> {
     // ) -> Vec<InternalSubGraph> {
     // }
 
-    pub fn non_bridges(&self) -> BitVec {
+    pub fn non_bridges(&self) -> SuBitGraph {
         let (c, _) = self.cycle_basis();
-        let mut cycle_cover: BitVec = self.empty_subgraph();
+        let mut cycle_cover: SuBitGraph = self.empty_subgraph();
         for cycle in c {
             cycle_cover.union_with(&cycle.filter);
         }
@@ -1720,12 +1721,12 @@ impl<E, V, H, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, H, N> {
         cycle_cover
     }
 
-    pub fn bridges(&self) -> BitVec {
+    pub fn bridges(&self) -> SuBitGraph {
         self.non_bridges().complement(self)
     }
 
     pub fn combine_to_single_hedgenode(&self, source: &[NodeIndex]) -> HedgeNode {
-        let s: BitVec =
+        let s: SuBitGraph =
             source
                 .iter()
                 .map(|a| self.iter_crown(*a))
@@ -1746,7 +1747,7 @@ impl<E, V, H, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, H, N> {
         &self,
         source: &[NodeIndex],
         target: &[NodeIndex],
-    ) -> Vec<(BitVec, OrientedCut, BitVec)>
+    ) -> Vec<(SuBitGraph, OrientedCut, SuBitGraph)>
     where
         N: NodeStorageOps,
     {
@@ -1755,7 +1756,7 @@ impl<E, V, H, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, H, N> {
         self.all_cuts(source, target)
     }
 
-    pub fn tadpoles(&self, externals: &[NodeIndex]) -> Vec<BitVec> {
+    pub fn tadpoles(&self, externals: &[NodeIndex]) -> Vec<SuBitGraph> {
         let mut identified: HedgeGraph<(), (), (), N::OpStorage<()>> = self.just_structure();
 
         let n = identified.identify_nodes(externals, ());
@@ -1767,11 +1768,11 @@ impl<E, V, H, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, H, N> {
             .into_iter()
             .filter_map(|mut a| {
                 if !a.includes(&hairs) {
-                    let full = a.covers(self);
+                    let full: SuBitGraph = a.covers(self);
 
                     for i in full.included_iter() {
-                        a.set(i.0, true);
-                        a.set(self.inv(i).0, true);
+                        a.add(i);
+                        a.add(self.inv(i));
                     }
                     Some(a)
                 } else {
@@ -1785,7 +1786,7 @@ impl<E, V, H, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, H, N> {
         &self,
         source: HedgeNode,
         target: HedgeNode,
-    ) -> Vec<(BitVec, OrientedCut, BitVec)>
+    ) -> Vec<(SuBitGraph, OrientedCut, SuBitGraph)>
     where
         N: NodeStorageOps,
     {
@@ -1867,7 +1868,7 @@ impl<E, V, H, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, H, N> {
             let mut s_side_covers = r.internal_and_hairs();
             for i in bridges.included_iter() {
                 if s_side_covers.includes(&self.inv(i)) {
-                    s_side_covers.set(i.0, true);
+                    s_side_covers.add(i);
                 }
             }
 
@@ -1884,7 +1885,7 @@ impl<E, V, H, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, H, N> {
         cuts
     }
 
-    pub fn all_s_t_cuts_impl<S: SubGraph<Base = BitVec>>(
+    pub fn all_s_t_cuts_impl<S: SubSetLike<Base = SuBitGraph>>(
         &self,
         subgraph: &S,
         s_connectivity: usize,
@@ -1936,14 +1937,14 @@ impl<E, V, H, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, H, N> {
 impl<E, V, H, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, H, N> {
     ///Gives all subgraphs corresponding to all the spanning trees of the graph
     ///Winter, Pawel. “An Algorithm for the Enumeration of Spanning Trees.” BIT Numerical Mathematics 26, no. 1 (March 1, 1986): 44–62. https://doi.org/10.1007/BF01939361.
-    pub fn all_spanning_trees<S: SubGraph>(&self, subgraph: &S) -> Vec<S::Base>
+    pub fn all_spanning_trees<S: SubGraphLike>(&self, subgraph: &S) -> Vec<S::Base>
     where
         for<'a> N::OpStorage<&'a V>: Clone,
-        S::Base: SubGraph<Base = S::Base>
-            + SubGraphOps
+        S::Base: SubSetLike<Base = S::Base>
+            + SubSetOps
             + Clone
-            + ModifySubgraph<HedgePair>
-            + ModifySubgraph<Hedge>,
+            + ModifySubSet<HedgePair>
+            + ModifySubSet<Hedge>,
     {
         let ref_self = self.to_ref();
 
@@ -1972,11 +1973,7 @@ impl<E, V, H, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, H, N> {
         E: Clone,
         H: Clone,
         N: Clone,
-        S: SubGraphOps
-            + Clone
-            + SubGraph<Base = S>
-            + ModifySubgraph<HedgePair>
-            + ModifySubgraph<Hedge>,
+        S: SubSetOps + Clone + SubSetLike<Base = S> + ModifySubSet<HedgePair> + ModifySubSet<Hedge>,
     {
         let mut trees = vec![];
         if let Some(node) = nodes.pop() {
@@ -2033,7 +2030,7 @@ impl<E, V, H, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, H, N> {
 
 // Cycles
 impl<E, V, H, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, H, N> {
-    pub fn cyclotomatic_number<S: SubGraph>(&self, subgraph: &S) -> usize {
+    pub fn cyclotomatic_number<S: SubGraphLike>(&self, subgraph: &S) -> usize {
         let n_hedges = self.count_internal_edges(subgraph);
         // println!("n_hedges: {}", n_hedges);
         let n_nodes = self.number_of_nodes_in_subgraph(subgraph);
@@ -2105,7 +2102,7 @@ impl<E, V, H, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, H, N> {
         Ok(self.edge_store.n_internals(&cuts))
     }
 
-    pub fn paton_cycle_basis<S: SubGraph<Base = BitVec>>(
+    pub fn paton_cycle_basis<S: SubSetLike<Base = SuBitGraph> + SubGraphLike>(
         &self,
         subgraph: &S,
         start: &NodeIndex,
@@ -2189,8 +2186,8 @@ impl<E, V, H, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, H, N> {
         for p in all_combinations {
             let mut base_cycle: InternalSubGraph = self.empty_subgraph();
 
-            for i in p.iter_ones() {
-                base_cycle.sym_diff_with(&basis_cycles[i].clone().internal_graph(self));
+            for i in p.included_iter() {
+                base_cycle.sym_diff_with(&basis_cycles[i.0].clone().internal_graph(self));
             }
 
             cycles.push(base_cycle);
@@ -2222,8 +2219,8 @@ impl<E, V, H, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, H, N> {
         for p in pset {
             let mut union: InternalSubGraph = self.empty_subgraph();
 
-            for i in p.iter_ones() {
-                union.union_with(&cycles[i].clone().internal_graph(self));
+            for i in p.included_iter() {
+                union.union_with(&cycles[i.0].clone().internal_graph(self));
             }
 
             spinneys.insert(union);
@@ -2238,12 +2235,12 @@ impl<E, V, H, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, H, N> {
 
 // Traversal Trees
 impl<E, V, H, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, H, N> {
-    pub fn count_connected_components<S: SubGraph>(&self, subgraph: &S) -> usize {
+    pub fn count_connected_components<S: SubGraphLike>(&self, subgraph: &S) -> usize {
         self.connected_components(subgraph).len()
     }
 
-    pub fn connected_components<S: SubGraph>(&self, subgraph: &S) -> Vec<BitVec> {
-        let mut visited_edges: BitVec = self.empty_subgraph();
+    pub fn connected_components<S: SubGraphLike>(&self, subgraph: &S) -> Vec<SuBitGraph> {
+        let mut visited_edges: SuBitGraph = self.empty_subgraph();
 
         let mut components = vec![];
 
@@ -2430,14 +2427,14 @@ impl<E, V, H, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, H, N> {
         self.node_store.iter_node_id()
     }
 
-    pub fn iter_edge_ids_of<'a, S: SubGraph>(
+    pub fn iter_edge_ids_of<'a, S: SubSetLike>(
         &'a self,
         subgraph: &'a S,
     ) -> EdgeIter<'a, E, V, H, S, N, S::BaseIter<'a>> {
         EdgeIter::new(self, subgraph)
     }
 
-    pub fn iter_edges_of<'a, S: SubGraph>(
+    pub fn iter_edges_of<'a, S: SubSetLike>(
         &'a self,
         subgraph: &'a S,
     ) -> impl Iterator<Item = (HedgePair, EdgeIndex, EdgeData<&'a E>)> + 'a {
@@ -2448,7 +2445,7 @@ impl<E, V, H, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, H, N> {
         self.edge_store.iter_edges()
     }
 
-    pub fn iter_nodes_of<'a, S: SubGraph>(
+    pub fn iter_nodes_of<'a, S: SubSetLike>(
         &'a self,
         subgraph: &'a S,
     ) -> impl Iterator<Item = (NodeIndex, N::NeighborsIter<'a>, &'a V)>
@@ -2458,14 +2455,14 @@ impl<E, V, H, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, H, N> {
         NodeIterator {
             graph: self,
             edges: subgraph.included_iter(),
-            seen: bitvec![usize, Lsb0; 0; self.n_nodes()],
+            seen: SubSet::empty(self.n_nodes()),
         }
     }
 }
 
 // Display
 impl<E, V, H, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, H, N> {
-    pub fn dot_impl_fmt<S: SubGraph, Str1: AsRef<str>>(
+    pub fn dot_impl_fmt<S: SubGraphLike, Str1: AsRef<str>>(
         &self,
         writer: &mut impl std::fmt::Write,
         subgraph: &S,
@@ -2476,7 +2473,7 @@ impl<E, V, H, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, H, N> {
     ) -> Result<(), std::fmt::Error> {
         subgraph.dot_fmt(writer, self, graph_info, hedge_attr, edge_attr, node_attr)
     }
-    pub fn dot_impl_io<S: SubGraph, Str1: AsRef<str>>(
+    pub fn dot_impl_io<S: SubGraphLike, Str1: AsRef<str>>(
         &self,
         writer: &mut impl std::io::Write,
         subgraph: &S,
@@ -2488,7 +2485,7 @@ impl<E, V, H, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, H, N> {
         subgraph.dot_io(writer, self, graph_info, hedge_attr, edge_attr, node_attr)
     }
 
-    pub fn dot_impl<S: SubGraph, Str1: AsRef<str>>(
+    pub fn dot_impl<S: SubGraphLike, Str1: AsRef<str>>(
         &self,
         subgraph: &S,
         graph_info: Str1,
@@ -2510,7 +2507,7 @@ impl<E, V, H, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, H, N> {
         output
     }
 
-    pub fn dot<S: SubGraph>(&self, node_as_graph: &S) -> String {
+    pub fn dot<S: SubGraphLike>(&self, node_as_graph: &S) -> String {
         let mut output = String::new();
         self.dot_impl_fmt(
             &mut output,
@@ -2524,7 +2521,7 @@ impl<E, V, H, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, H, N> {
         output
     }
 
-    pub fn dot_display<S: SubGraph>(&self, node_as_graph: &S) -> String
+    pub fn dot_display<S: SubGraphLike>(&self, node_as_graph: &S) -> String
     where
         E: Display,
         V: Display,
@@ -2543,7 +2540,7 @@ impl<E, V, H, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, H, N> {
         output
     }
 
-    pub fn dot_label<S: SubGraph>(&self, node_as_graph: &S) -> String
+    pub fn dot_label<S: SubGraphLike>(&self, node_as_graph: &S) -> String
     where
         E: Display,
         V: Display,
@@ -2662,7 +2659,7 @@ impl<E, V, H, N: NodeStorage<NodeData = V>> IndexMut<&EdgeIndex> for HedgeGraph<
 pub struct NodeIterator<'a, E, V, H, N: NodeStorage<NodeData = V>, I = IterOnes<'a, usize, Lsb0>> {
     graph: &'a HedgeGraph<E, V, H, N>,
     edges: I,
-    seen: BitVec,
+    seen: SubSet<NodeIndex>,
 }
 
 impl<'a, E, V, H, I: Iterator<Item = Hedge>, N: NodeStorageOps<NodeData = V>> Iterator
@@ -2677,10 +2674,10 @@ where
             let node = self.graph.neighbors(next);
             let node_pos = self.graph.id_from_crown(node.clone()).unwrap();
 
-            if self.seen[node_pos.0] {
+            if self.seen[node_pos] {
                 self.next()
             } else {
-                self.seen.set(node_pos.0, true);
+                self.seen.add(node_pos);
                 Some((node_pos, node, &self.graph[node_pos]))
             }
         } else {
@@ -2693,14 +2690,16 @@ where
 pub mod symbolica_interop;
 
 use subgraph::{
-    BaseSubgraph, Cycle, FullOrEmpty, HedgeNode, Inclusion, InternalSubGraph, ModifySubgraph,
-    OrientedCut, SubGraph, SubGraphOps,
+    BaseSubgraph, Cycle, FullOrEmpty, HedgeNode, Inclusion, InternalSubGraph, ModifySubSet,
+    OrientedCut, SubSetLike, SubSetOps,
 };
 
 use thiserror::Error;
 use tree::SimpleTraversalTree;
 
 use crate::define_indexed_vec;
+use crate::half_edge::subgraph::subset::SubSet;
+use crate::half_edge::subgraph::{SuBitGraph, SubGraphLike, SubGraphOps};
 use crate::tree::ForestNodeStore;
 
 #[derive(Error, Debug)]
@@ -2716,7 +2715,7 @@ pub struct EdgeIter<'a, E, V, H, S, N: NodeStorage<NodeData = V>, I: Iterator<It
 }
 impl<'a, E, V, H, S, N: NodeStorage<NodeData = V>> EdgeIter<'a, E, V, H, S, N, S::BaseIter<'a>>
 where
-    S: SubGraph,
+    S: SubSetLike,
 {
     pub fn new(graph: &'a HedgeGraph<E, V, H, N>, subgraph: &'a S) -> Self {
         EdgeIter {
@@ -2730,7 +2729,7 @@ where
 impl<'a, E, V, H, S, N: NodeStorage<NodeData = V>> Iterator
     for EdgeIter<'a, E, V, H, S, N, S::BaseIter<'a>>
 where
-    S: SubGraph,
+    S: SubSetLike,
 {
     type Item = (HedgePair, EdgeData<&'a E>);
 

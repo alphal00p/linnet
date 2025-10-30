@@ -12,7 +12,7 @@ use thiserror::Error;
 use super::{
     builder::HedgeData,
     nodestore::{NodeStorage, NodeStorageOps},
-    subgraph::SubGraph,
+    subgraph::SubSetLike,
     swap::Swap,
     GVEdgeAttrs, HedgeGraph, NodeIndex,
 };
@@ -66,7 +66,7 @@ impl Hedge {
         HedgePair::from_half_edge(self, involution)
     }
 
-    pub fn to_edge_id_with_subgraph<E, S: SubGraph>(
+    pub fn to_edge_id_with_subgraph<E, S: SubSetLike>(
         self,
         involution: &Involution<E>,
         subgraph: &S,
@@ -504,7 +504,7 @@ impl Display for HedgePair {
 }
 
 impl HedgePair {
-    pub fn add_data_of<'a, S: SubGraph, V, E, H, N: NodeStorage<NodeData = V>>(
+    pub fn add_data_of<'a, S: SubSetLike, V, E, H, N: NodeStorage<NodeData = V>>(
         self,
         graph: &'a HedgeGraph<E, V, H, N>,
         subgraph: &S,
@@ -649,7 +649,7 @@ impl HedgePair {
         }
     }
 
-    pub fn from_source_with_subgraph<E, S: SubGraph, I: AsRef<Involution<E>>>(
+    pub fn from_source_with_subgraph<E, S: SubSetLike, I: AsRef<Involution<E>>>(
         hedge: Hedge,
         involution: I,
         subgraph: &S,
@@ -737,7 +737,7 @@ impl HedgePair {
         }
     }
 
-    pub fn with_subgraph<S: SubGraph>(self, subgraph: &S) -> Option<Self> {
+    pub fn with_subgraph<S: SubSetLike>(self, subgraph: &S) -> Option<Self> {
         match self {
             HedgePair::Paired { source, sink } => {
                 match (subgraph.includes(&source), subgraph.includes(&sink)) {
@@ -781,7 +781,7 @@ impl HedgePair {
         }
     }
 
-    pub fn from_half_edge_with_subgraph<E, S: SubGraph>(
+    pub fn from_half_edge_with_subgraph<E, S: SubSetLike>(
         hedge: Hedge,
         involution: &Involution<E>,
         subgraph: &S,
@@ -1555,7 +1555,7 @@ impl<E> Involution<E> {
     // }
 
     pub fn is_empty(&self) -> bool {
-        self.inv.is_empty()
+        self.inv.is_zero_length()
     }
 
     pub fn new() -> Self {
@@ -1786,7 +1786,7 @@ impl<E> Involution<E> {
     // fn put_at_end(&mut self,)
 
     /// Extracts the edges included in the subgraph into a separate involution. If the involution maps edges across the splitting boundary, i.e. if i in graph but inv(i) not in graph, then the edge involution is modified on each side, to turn this into a dangling edge. The data assigned to a fully owned edge is mapped by the internal_data closure, whilst those that get split, are assigned the data gotten from the split_edge_fn closure. The new dangling edges retain the old underlying orientation.
-    pub fn extract<S: SubGraph, O>(
+    pub fn extract<S: SubSetLike, O>(
         &mut self,
         graph: &S,
         mut split_edge_fn: impl FnMut(EdgeData<&E>) -> EdgeData<O>,
@@ -1825,11 +1825,11 @@ impl<E> Involution<E> {
         Involution { inv: extracted_inv }
     }
 
-    pub fn delete<S: SubGraph>(&mut self, graph: &S) {
+    pub fn delete<S: SubSetLike>(&mut self, graph: &S) {
         self.delete_impl(graph);
     }
 
-    fn delete_impl<S: SubGraph>(&mut self, graph: &S) -> (HedgeVec<InvolutiveMapping<E>>, Hedge) {
+    fn delete_impl<S: SubSetLike>(&mut self, graph: &S) -> (HedgeVec<InvolutiveMapping<E>>, Hedge) {
         let mut left = Hedge(0);
         let mut extracted = self.inv.len();
         while left < extracted {
@@ -1865,7 +1865,7 @@ impl<E> Involution<E> {
         HedgePair::from_half_edge(hedge, self)
     }
 
-    pub(crate) fn smart_data<S: SubGraph>(
+    pub(crate) fn smart_data<S: SubSetLike>(
         &self,
         hedge: Hedge,
         subgraph: &S,
@@ -1887,7 +1887,7 @@ impl<E> Involution<E> {
         }
     }
 
-    fn _smart_data_mut<S: SubGraph>(
+    fn _smart_data_mut<S: SubSetLike>(
         &mut self,
         hedge: Hedge,
         subgraph: &S,
@@ -1909,11 +1909,11 @@ impl<E> Involution<E> {
         }
     }
 
-    pub fn first_internal<S: SubGraph>(&self, subgraph: &S) -> Option<Hedge> {
+    pub fn first_internal<S: SubSetLike>(&self, subgraph: &S) -> Option<Hedge> {
         self.iter_idx().find(|e| self.is_internal(*e, subgraph))
     }
 
-    pub fn n_internals<S: SubGraph>(&self, subgraph: &S) -> usize {
+    pub fn n_internals<S: SubSetLike>(&self, subgraph: &S) -> usize {
         subgraph
             .included_iter()
             .filter(|i| self.is_internal(*i, subgraph))
@@ -1922,7 +1922,7 @@ impl<E> Involution<E> {
     }
 
     /// check if the edge is internal and totally included in the subgraph
-    pub fn is_internal<S: SubGraph>(&self, index: Hedge, subgraph: &S) -> bool {
+    pub fn is_internal<S: SubSetLike>(&self, index: Hedge, subgraph: &S) -> bool {
         if !subgraph.includes(&index) {
             return false;
         }
@@ -2204,7 +2204,7 @@ impl<E> Involution<E> {
         }
     }
 
-    pub fn print<S: SubGraph>(
+    pub fn print<S: SubSetLike>(
         &self,
         subgraph: &S,
         h_label: &impl Fn(&E) -> Option<String>,
@@ -2454,8 +2454,8 @@ impl<E> Display for Involution<E> {
 }
 
 impl<E> Swap<Hedge> for Involution<E> {
-    fn is_empty(&self) -> bool {
-        self.inv.is_empty()
+    fn is_zero_length(&self) -> bool {
+        self.inv.is_zero_length()
     }
 
     // type Item = InvolutiveMapping<E>;

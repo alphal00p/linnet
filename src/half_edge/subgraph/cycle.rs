@@ -1,9 +1,12 @@
 use std::{num::TryFromIntError, ops::Add};
 
 use ahash::AHashSet;
-use bitvec::vec::BitVec;
 
-use crate::half_edge::{nodestore::NodeStorageOps, Hedge, HedgeGraph, PowersetIterator};
+use crate::half_edge::{
+    nodestore::NodeStorageOps,
+    subgraph::{ModifySubSet, SuBitGraph, SubSetLike, SubSetOps},
+    Hedge, HedgeGraph, PowersetIterator,
+};
 
 use super::{Inclusion, InternalSubGraph};
 
@@ -18,8 +21,7 @@ use super::{Inclusion, InternalSubGraph};
 pub struct SignedCycle {
     /// A bitmask indicating the set of half-edges that constitute this signed cycle,
     /// potentially implying a specific order or direction of traversal.
-    #[cfg_attr(feature = "bincode", bincode(with_serde))]
-    pub filter: BitVec,
+    pub filter: SuBitGraph,
     /// An optional count, possibly representing the number of times the cycle
     /// traverses its edges or some other property related to its structure.
     pub loop_count: Option<usize>,
@@ -39,7 +41,7 @@ impl SignedCycle {
             return None;
         }
 
-        let mut filter = graph.empty_subgraph::<BitVec>();
+        let mut filter = graph.empty_subgraph::<SuBitGraph>();
 
         let mut current_hedge = according_to;
 
@@ -47,7 +49,7 @@ impl SignedCycle {
             if filter.includes(&current_hedge) {
                 break;
             }
-            filter.set(current_hedge.0, true);
+            filter.add(current_hedge);
 
             current_hedge = graph.inv(
                 graph
@@ -77,8 +79,7 @@ impl SignedCycle {
 pub struct Cycle {
     /// A bitmask representing the set of half-edges that form this cycle.
     /// The specific half-edges included define the path of the cycle.
-    #[cfg_attr(feature = "bincode", bincode(with_serde))]
-    pub filter: BitVec,
+    pub filter: SuBitGraph,
     /// An optional count, which might represent properties like the number of
     /// times the cycle traverses its edges (e.g., for fundamental cycles, this
     /// would often be 1).
@@ -91,7 +92,7 @@ impl Cycle {
     ) -> InternalSubGraph {
         InternalSubGraph::cleaned_filter_pessimist(self.filter, graph)
     }
-    pub fn new_unchecked(filter: BitVec) -> Self {
+    pub fn new_unchecked(filter: SuBitGraph) -> Self {
         Self {
             filter,
             loop_count: None,
@@ -113,7 +114,7 @@ impl Cycle {
         true
     }
     pub fn new_circuit<E, V, H, N: NodeStorageOps<NodeData = V>>(
-        filter: BitVec,
+        filter: SuBitGraph,
         graph: &HedgeGraph<E, V, H, N>,
     ) -> Option<Self> {
         let circuit = Self {
@@ -127,7 +128,7 @@ impl Cycle {
         }
     }
     pub fn new<E, V, H, N: NodeStorageOps<NodeData = V>>(
-        filter: BitVec,
+        filter: SuBitGraph,
         graph: &HedgeGraph<E, V, H, N>,
     ) -> Option<Self> {
         for (_, c, _) in graph.iter_nodes_of(&filter) {
@@ -153,12 +154,12 @@ impl Cycle {
         pset.next().unwrap(); //Skip the empty set
 
         for i in pset {
-            let mut ones = i.iter_ones();
+            let mut ones = i.included_iter();
 
-            let mut union = set[ones.next().unwrap()].clone();
+            let mut union = set[ones.next().unwrap().0].clone();
 
             for o in ones {
-                union = &union + &set[o];
+                union = &union + &set[o.0];
             }
 
             if let Some(union) = filter_map(union) {
@@ -176,7 +177,7 @@ impl Add<&Cycle> for &Cycle {
     #[allow(clippy::suspicious_arithmetic_impl)]
     fn add(self, other: &Cycle) -> Cycle {
         Cycle {
-            filter: self.filter.clone() ^ other.filter.clone(),
+            filter: self.filter.sym_diff(&other.filter),
             loop_count: None,
         }
     }

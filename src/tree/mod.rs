@@ -26,7 +26,6 @@ use std::{
     ops::{Index, IndexMut, Range},
 };
 
-use bitvec::vec::BitVec;
 use child_pointer::ParentChildStore;
 use child_vec::ChildVecStore;
 use parent_pointer::{PPNode, ParentId, ParentPointerStore};
@@ -34,7 +33,7 @@ use thiserror::Error;
 
 use crate::half_edge::{
     involution::Hedge,
-    subgraph::{Inclusion, SubGraph, SubGraphOps},
+    subgraph::{Inclusion, SuBitGraph, SubSetLike, SubSetOps},
     NodeIndex,
 };
 
@@ -58,6 +57,12 @@ impl Display for TreeNodeId {
 impl From<usize> for TreeNodeId {
     fn from(i: usize) -> Self {
         TreeNodeId(i)
+    }
+}
+
+impl From<TreeNodeId> for usize {
+    fn from(i: TreeNodeId) -> Self {
+        i.0
     }
 }
 
@@ -532,7 +537,7 @@ impl<U, P: ForestNodeStore> Forest<U, P> {
         self.roots.swap(a.0, b.0);
     }
 
-    pub fn from_bitvec_partition<I: IntoIterator<Item = (U, bitvec::prelude::BitVec)>>(
+    pub fn from_bitvec_partition<I: IntoIterator<Item = (U, SuBitGraph)>>(
         bitvec_part: I,
     ) -> Result<Self, ForestError> {
         Forest::<U, ParentPointerStore<P::NodeData>>::from_bitvec_partition_impl(bitvec_part).map(
@@ -552,17 +557,17 @@ impl<U, V> Forest<U, ParentPointerStore<V>> {
     /// Node data is set to `()`.
     ///
     /// Returns `Err(ForestError)` if the BitVecs have different lengths or overlap.
-    fn from_bitvec_partition_impl<I: IntoIterator<Item = (U, bitvec::prelude::BitVec)>>(
+    fn from_bitvec_partition_impl<I: IntoIterator<Item = (U, SuBitGraph)>>(
         bitvec_part: I,
     ) -> Result<Self, ForestError> {
         let mut nodes = vec![];
         let mut roots = vec![];
-        let mut cover: Option<BitVec> = None;
+        let mut cover: Option<SuBitGraph> = None;
 
         for (d, set) in bitvec_part {
-            let len = set.len();
+            let len = set.size();
             if let Some(c) = &mut cover {
-                if c.len() != len {
+                if c.size() != len {
                     return Err(ForestError::LengthMismatch);
                 }
                 if c.intersects(&set) {
@@ -570,7 +575,7 @@ impl<U, V> Forest<U, ParentPointerStore<V>> {
                 }
                 c.union_with(&set);
             } else {
-                cover = Some(BitVec::empty(len));
+                cover = Some(SuBitGraph::empty(len));
 
                 nodes.resize_with(len, || None);
                 // nodes = vec![None; len];

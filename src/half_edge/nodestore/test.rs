@@ -1,12 +1,10 @@
-use bitvec::vec::BitVec;
-
 use crate::{
     dot,
     half_edge::{
         builder::HedgeGraphBuilder,
         involution::{Flow, Hedge},
         nodestore::NodeStorageOps,
-        subgraph::ModifySubgraph,
+        subgraph::{ModifySubSet, SuBitGraph},
         HedgeGraph, NodeIndex,
     },
     parser::{DotGraph, DotVertexData},
@@ -29,7 +27,7 @@ fn extract_forest() {
     })
     .unwrap();
 
-    let mut subgraph: BitVec = aligned.empty_subgraph();
+    let mut subgraph: SuBitGraph = aligned.empty_subgraph();
     subgraph.add(Hedge(0));
     subgraph.add(Hedge(7));
     subgraph.add(Hedge(3));
@@ -80,7 +78,7 @@ fn extact_single_dangling() {
     simple.add_external_edge(n2, (), false, Flow::Sink);
     let mut simple: HedgeGraph<(), (), ()> = simple.build();
 
-    let mut single_hair: BitVec = simple.empty_subgraph();
+    let mut single_hair: SuBitGraph = simple.empty_subgraph();
     if let Some(s) = simple.iter_edges().find(|a| a.0.is_unpaired()) {
         single_hair.add(s.0);
     }
@@ -114,7 +112,7 @@ fn extract_buggy() {
     })
     .unwrap();
 
-    let mut subgraph: BitVec = aligned.empty_subgraph();
+    let mut subgraph: SuBitGraph = aligned.empty_subgraph();
 
     let nodes = [1, 2, 3, 4];
 
@@ -180,7 +178,7 @@ fn extract_normal() {
     })
     .unwrap();
 
-    let mut subgraph: BitVec = aligned.empty_subgraph();
+    let mut subgraph: SuBitGraph = aligned.empty_subgraph();
     subgraph.add(Hedge(0));
     subgraph.add(Hedge(7));
     subgraph.add(Hedge(3));
@@ -200,7 +198,7 @@ fn extract_normal() {
 
     println!("{}", aligned.dot(&subgraph));
 
-    let (_, s): (_, BitVec) = aligned
+    let (_, s): (_, SuBitGraph) = aligned
         .identify_nodes_without_self_edges(&[NodeIndex(1), NodeIndex(2)], DotVertexData::empty());
 
     aligned.forget_identification_history();

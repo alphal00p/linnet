@@ -1495,7 +1495,7 @@ fn extracting_network() {
     // return;
     println!(
         "{}",
-        graph.dot_of(&graph.compass_subgraph::<BitVec>(Some(CompassPt::S)))
+        graph.dot_of(&graph.compass_subgraph::<SuBitGraph>(Some(CompassPt::S)))
     );
 
     let a = graph.clone().extract_nodes(
@@ -1511,7 +1511,7 @@ fn extracting_network() {
     //     .unwrap();
     println!("{}", a.base_dot());
 
-    let sub: BitVec = graph.compass_subgraph::<BitVec>(Some(CompassPt::S));
+    let sub: SuBitGraph = graph.compass_subgraph::<SuBitGraph>(Some(CompassPt::S));
     let node: NodeIndex = graph.len();
     println!("{node}");
     let a = graph.extract(

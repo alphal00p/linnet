@@ -1,15 +1,13 @@
 use std::ops::{Index, IndexMut, Neg};
 
-use bitvec::vec::BitVec;
-
-use crate::permutation::Permutation;
+use crate::{half_edge::subgraph::SuBitGraph, permutation::Permutation};
 
 use super::{
     involution::{
         EdgeData, EdgeIndex, EdgeVec, EdgeVecIntoIter, EdgeVecIter, Flow, Hedge, HedgePair,
         Involution, InvolutionError, InvolutiveMapping, Orientation,
     },
-    subgraph::SubGraph,
+    subgraph::SubSetLike,
     swap::Swap,
     HedgeGraph, HedgeGraphError, NodeStorage,
 };
@@ -593,7 +591,7 @@ impl<T> SmartEdgeVec<T> {
         Ok(())
     }
 
-    pub fn delete<S: SubGraph>(&mut self, graph: &S) {
+    pub fn delete<S: SubSetLike>(&mut self, graph: &S) {
         let mut left = Hedge(0);
         let mut extracted = self.involution.len();
 
@@ -665,7 +663,7 @@ impl<T> SmartEdgeVec<T> {
         // self.fix_hedge_pairs();
     }
 
-    pub fn extract<S: SubGraph, O>(
+    pub fn extract<S: SubSetLike, O>(
         &mut self,
         graph: &S,
         mut split_edge_fn: impl FnMut(EdgeData<&T>) -> EdgeData<O>,
@@ -766,14 +764,14 @@ impl<T> SmartEdgeVec<T> {
         merge_fn: impl Fn(Flow, EdgeData<T>, Flow, EdgeData<T>) -> (Flow, EdgeData<T>),
     ) -> Result<(), HedgeGraphError> {
         let self_n_h: Hedge = self.len();
-        let self_empty_filter = BitVec::empty(self_n_h.0);
+        let self_empty_filter = SuBitGraph::empty(self_n_h.0);
         let mut full_self = !self_empty_filter.clone();
 
         let other_n_h: Hedge = other.len();
-        let other_empty_filter = BitVec::empty(other_n_h.0);
+        let other_empty_filter = SuBitGraph::empty(other_n_h.0);
         let mut full_other = self_empty_filter.clone();
-        full_self.extend(other_empty_filter.clone());
-        full_other.extend(!other_empty_filter.clone());
+        full_self.join_mut(other_empty_filter.clone());
+        full_other.join_mut(!other_empty_filter.clone());
 
         let self_inv_shift: Hedge = self.len();
         let edge_data = &mut self.data;
@@ -851,13 +849,13 @@ impl<T> SmartEdgeVec<T> {
         merge_fn: impl Fn(Flow, EdgeData<T>, Flow, EdgeData<T>) -> (Flow, EdgeData<T>),
     ) -> Result<Self, HedgeGraphError> {
         let self_n_h: Hedge = self.len();
-        let self_empty_filter = BitVec::empty(self_n_h.0);
+        let self_empty_filter = SuBitGraph::empty(self_n_h.0);
         let mut full_self = !self_empty_filter.clone();
         let other_n_h: Hedge = other.len();
-        let other_empty_filter = BitVec::empty(other_n_h.0);
+        let other_empty_filter = SuBitGraph::empty(other_n_h.0);
         let mut full_other = self_empty_filter.clone();
-        full_self.extend(other_empty_filter.clone());
-        full_other.extend(!other_empty_filter.clone());
+        full_self.join_mut(other_empty_filter.clone());
+        full_other.join_mut(!other_empty_filter.clone());
 
         let self_inv_shift: Hedge = self.len();
         let mut edge_data = self.data;
@@ -1009,7 +1007,7 @@ impl<T> SmartEdgeVec<T> {
         self.involution.hedge_data(hedge)
     }
 
-    pub fn iter_edges_of<'a, S: SubGraph>(
+    pub fn iter_edges_of<'a, S: SubSetLike>(
         &'a self,
         subgraph: &'a S,
     ) -> impl Iterator<Item = (HedgePair, EdgeIndex, EdgeData<&'a T>)> + 'a {
@@ -1030,7 +1028,7 @@ impl<T> SmartEdgeVec<T> {
             .map(|(i, (d, p))| (*p, i, self.involution[p].as_ref().map(|_| d)))
     }
 
-    pub fn n_internals<S: SubGraph>(&self, subgraph: &S) -> usize {
+    pub fn n_internals<S: SubSetLike>(&self, subgraph: &S) -> usize {
         self.involution.n_internals(subgraph)
     }
 
@@ -1146,7 +1144,7 @@ impl<T> Swap<Hedge> for SmartEdgeVec<T> {
     //     filter(id, &self.involution[*id])
     // }
 
-    fn is_empty(&self) -> bool {
+    fn is_zero_length(&self) -> bool {
         self.involution.is_empty()
     }
 
@@ -1217,8 +1215,8 @@ impl<T> Swap<EdgeIndex> for SmartEdgeVec<T> {
     //     filter(id, &self.data[*id])
     // }
 
-    fn is_empty(&self) -> bool {
-        self.data.is_empty()
+    fn is_zero_length(&self) -> bool {
+        self.data.is_zero_length()
     }
 
     fn swap(&mut self, e1: EdgeIndex, e2: EdgeIndex) {

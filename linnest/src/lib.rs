@@ -1,5 +1,4 @@
 pub mod geom;
-use bitvec::vec::BitVec;
 use cgmath::{EuclideanSpace, Point2, Rad, Vector2, Zero};
 use linnet::{
     half_edge::{
@@ -12,7 +11,7 @@ use linnet::{
             },
         },
         nodestore::NodeStorageOps,
-        subgraph::{Inclusion, SubGraph, SubGraphOps},
+        subgraph::{Inclusion, SuBitGraph, SubSetLike, SubSetOps},
         tree::SimpleTraversalTree,
         EdgeAccessors, HedgeGraph, NodeIndex, NodeVec,
     },
@@ -786,8 +785,8 @@ impl TypstGraph {
         let mut pos_v = self.new_nodevec(|_, _, n| n.pos);
         let mut pos_e = self.new_edgevec(|e, _, _| e.pos);
 
-        let mut visited_edges: BitVec = self.empty_subgraph();
-        let all: BitVec = self.full_filter();
+        let mut visited_edges: SuBitGraph = self.empty_subgraph();
+        let all: SuBitGraph = self.full_filter();
 
         let mut comps = vec![];
 

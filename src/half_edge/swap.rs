@@ -16,7 +16,7 @@ pub trait Swap<Id> {
 
     fn len(&self) -> Id;
 
-    fn is_empty(&self) -> bool;
+    fn is_zero_length(&self) -> bool;
 
     fn permute(&mut self, perm: &Permutation)
     where
@@ -70,8 +70,8 @@ impl<E, V, H, N: NodeStorageOps<NodeData = V>> Swap<Hedge> for HedgeGraph<E, V, 
     //     filter(id, &self[*id])
     // }
 
-    fn is_empty(&self) -> bool {
-        self.hedge_data.is_empty()
+    fn is_zero_length(&self) -> bool {
+        self.hedge_data.is_zero_length()
     }
 
     fn swap(&mut self, i: Hedge, j: Hedge) {
@@ -95,8 +95,8 @@ impl<E, V, H, N: NodeStorageOps<NodeData = V>> Swap<EdgeIndex> for HedgeGraph<E,
         self.edge_store.swap(i, j);
     }
 
-    fn is_empty(&self) -> bool {
-        <SmartEdgeVec<E> as Swap<EdgeIndex>>::is_empty(&self.edge_store)
+    fn is_zero_length(&self) -> bool {
+        <SmartEdgeVec<E> as Swap<EdgeIndex>>::is_zero_length(&self.edge_store)
     }
 
     fn len(&self) -> EdgeIndex {
@@ -115,8 +115,8 @@ impl<E, V, H, N: NodeStorageOps<NodeData = V>> Swap<NodeIndex> for HedgeGraph<E,
     //     <N as Swap<NodeIndex>>::filter(&self.node_store, id, filter)
     // }
 
-    fn is_empty(&self) -> bool {
-        <N as Swap<NodeIndex>>::is_empty(&self.node_store)
+    fn is_zero_length(&self) -> bool {
+        <N as Swap<NodeIndex>>::is_zero_length(&self.node_store)
     }
 
     fn len(&self) -> NodeIndex {

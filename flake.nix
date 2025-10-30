@@ -110,6 +110,21 @@
         ])
         fenix.packages.${system}.targets.wasm32-unknown-unknown.stable.rust-std
       ];
+      customCargoNextest = lib.optionalAttrs pkgs.stdenv.isDarwin (
+        pkgs.cargo-nextest.overrideAttrs (prev: {
+          preConfigure = ''
+            export PATH="$PATH:/usr/sbin"
+          '';
+        })
+      );
+
+      craneLibWithCustomNextest =
+        if pkgs.stdenv.isDarwin
+        then
+          craneLib.overrideScope (final: prev: {
+            cargo-nextest = customCargoNextest;
+          })
+        else craneLib;
 
       craneLibLLvmTools =
         craneLib.overrideToolchain
@@ -167,7 +182,7 @@
         # Run tests with cargo-nextest
         # Consider setting `doCheck = false` on `my-crate` if you do not want
         # the tests to run twice
-        my-crate-nextest = craneLib.cargoNextest (commonArgs
+        my-crate-nextest = craneLibWithCustomNextest.cargoNextest (commonArgs
           // {
             inherit cargoArtifacts;
             partitions = 1;
@@ -204,7 +219,7 @@
         # Extra inputs can be added here; cargo and rustc are provided by default.
         packages = with pkgs; [
           typst
-          typst-fmt
+          typstfmt
           #
           # iaiCallgrindRunner
           cargo-udeps

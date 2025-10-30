@@ -1,15 +1,13 @@
 use std::ops::{Range, RangeFrom, RangeInclusive, RangeTo, RangeToInclusive};
 
-use bitvec::vec::BitVec;
-use bitvec::{bitvec, order::Lsb0};
-
 use crate::half_edge::builder::HedgeNodeBuilder;
 use crate::half_edge::involution::HedgePair;
 use crate::half_edge::nodestore::NodeStorageOps;
+use crate::half_edge::subgraph::{SuBitGraph, SubGraphLike, SubGraphOps};
 use crate::half_edge::{Hedge, HedgeGraph};
 
-use super::{internal::InternalSubGraph, SubGraph, SubGraphOps};
-use super::{Inclusion, ModifySubgraph, SubGraphHedgeIter};
+use super::{internal::InternalSubGraph, SubSetLike, SubSetOps};
+use super::{Inclusion, ModifySubSet, SubSetIter};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -31,8 +29,7 @@ pub struct ContractedSubGraph {
     /// A bitmask representing all half-edges associated with this `ContractedSubGraph`.
     /// This includes all hedges in `internal_graph` plus any "hairs" or external
     /// half-edges that connect this contracted region to the rest of the main graph.
-    #[cfg_attr(feature = "bincode", bincode(with_serde))]
-    pub allhedges: BitVec, // all hedges , including that are in the internal graph.
+    pub allhedges: SuBitGraph, // all hedges , including that are in the internal graph.
 }
 
 impl Inclusion<Hedge> for ContractedSubGraph {
@@ -65,12 +62,12 @@ impl Inclusion<ContractedSubGraph> for ContractedSubGraph {
     }
 }
 
-impl Inclusion<BitVec> for ContractedSubGraph {
-    fn includes(&self, other: &BitVec) -> bool {
+impl Inclusion<SuBitGraph> for ContractedSubGraph {
+    fn includes(&self, other: &SuBitGraph) -> bool {
         self.internal_graph.includes(other) || self.allhedges.includes(other)
     }
 
-    fn intersects(&self, other: &BitVec) -> bool {
+    fn intersects(&self, other: &SuBitGraph) -> bool {
         self.allhedges.intersects(other)
     }
 }
@@ -124,16 +121,23 @@ impl Inclusion<RangeInclusive<Hedge>> for ContractedSubGraph {
         (other.start().0..=other.end().0).any(|a| self.includes(&Hedge(a)))
     }
 }
-
-impl SubGraph for ContractedSubGraph {
-    type Base = BitVec;
-    type BaseIter<'a> = SubGraphHedgeIter<'a>;
-    fn nhedges(&self) -> usize {
-        self.allhedges.nhedges()
+impl SubGraphLike for ContractedSubGraph {
+    fn nedges<E, V, H, N: NodeStorageOps<NodeData = V>>(
+        &self,
+        graph: &HedgeGraph<E, V, H, N>,
+    ) -> usize {
+        self.allhedges.nedges(graph)
+    }
+}
+impl SubSetLike for ContractedSubGraph {
+    type Base = SuBitGraph;
+    type BaseIter<'a> = SubSetIter<'a>;
+    fn n_included(&self) -> usize {
+        self.allhedges.n_included()
     }
 
     fn size(&self) -> usize {
-        self.allhedges.len()
+        self.allhedges.size()
     }
 
     fn has_greater(&self, hedge: Hedge) -> bool {
@@ -145,7 +149,7 @@ impl SubGraph for ContractedSubGraph {
         self.allhedges.join_mut(other.allhedges);
     }
 
-    fn included(&self) -> &BitVec {
+    fn included(&self) -> &SuBitGraph {
         self.allhedges.included()
     }
 
@@ -153,14 +157,7 @@ impl SubGraph for ContractedSubGraph {
         self.allhedges.included_iter()
     }
 
-    fn nedges<E, V, H, N: NodeStorageOps<NodeData = V>>(
-        &self,
-        graph: &HedgeGraph<E, V, H, N>,
-    ) -> usize {
-        self.allhedges.nedges(graph)
-    }
-
-    // fn hairs(&self, node: &HedgeNode) -> BitVec {
+    // fn hairs(&self, node: &HedgeNode) -> SuBitGraph {
     //     let mut hairs = self.allhedges.intersection(&node.hairs);
     //     hairs.subtract_with(&self.internal_graph.filter);
     //     hairs
@@ -176,7 +173,7 @@ impl SubGraph for ContractedSubGraph {
     fn empty(size: usize) -> Self {
         Self {
             internal_graph: InternalSubGraph::empty(size),
-            allhedges: BitVec::empty(size),
+            allhedges: SuBitGraph::empty(size),
         }
     }
 }
@@ -186,14 +183,16 @@ impl SubGraphOps for ContractedSubGraph {
         &self,
         graph: &HedgeGraph<E, V, H, N>,
     ) -> Self {
-        let externalhedges = !self.allhedges.clone() & !self.internal_graph.filter.clone();
+        let externalhedges =
+            (!self.allhedges.clone()).intersection(&!self.internal_graph.filter.clone());
 
         Self {
             internal_graph: InternalSubGraph::empty(graph.n_hedges()),
             allhedges: externalhedges,
         }
     }
-
+}
+impl SubSetOps for ContractedSubGraph {
     fn union_with_iter(&mut self, other: impl Iterator<Item = Hedge>) {
         for h in other {
             self.allhedges.add(h);
@@ -234,58 +233,47 @@ impl SubGraphOps for ContractedSubGraph {
 }
 
 impl ContractedSubGraph {
-    pub fn all_edges(&self) -> BitVec {
-        self.internal_graph.filter.clone() | &self.allhedges
+    pub fn all_edges(&self) -> SuBitGraph {
+        self.internal_graph.filter.union(&self.allhedges)
     }
 
     pub fn weakly_disjoint(&self, other: &ContractedSubGraph) -> bool {
-        let internals = self.internal_graph.filter.clone() & &other.internal_graph.filter;
+        let internals = self
+            .internal_graph
+            .filter
+            .intersection(&other.internal_graph.filter);
 
-        internals.count_ones() == 0
+        internals.is_empty()
     }
 
     pub fn strongly_disjoint(&self, other: &ContractedSubGraph) -> bool {
-        let internals = self.internal_graph.filter.clone() & &other.internal_graph.filter;
+        let internals = self
+            .internal_graph
+            .filter
+            .intersection(&other.internal_graph.filter);
 
-        let externals_in_self = self.internal_graph.filter.clone() & &other.allhedges;
-        let externals_in_other = self.allhedges.clone() & &other.internal_graph.filter;
+        let externals_in_self = self.internal_graph.filter.intersection(&other.allhedges);
+        let externals_in_other = self.allhedges.intersection(&other.internal_graph.filter);
 
-        internals.count_ones() == 0
-            && externals_in_self.count_ones() == 0
-            && externals_in_other.count_ones() == 0
-    }
-
-    pub fn node_from_pos(pos: &[usize], len: usize) -> ContractedSubGraph {
-        ContractedSubGraph {
-            allhedges: ContractedSubGraph::filter_from_pos(pos, len),
-            internal_graph: InternalSubGraph::empty(len),
-        }
-    }
-
-    pub fn filter_from_pos(pos: &[usize], len: usize) -> BitVec {
-        let mut filter = bitvec![usize, Lsb0; 0; len];
-
-        for &i in pos {
-            filter.set(i, true);
-        }
-
-        filter
+        internals.is_empty() && externals_in_self.is_empty() && externals_in_other.is_empty()
     }
 
     pub fn internal_graph_union(&self, other: &ContractedSubGraph) -> InternalSubGraph {
         InternalSubGraph {
-            filter: self.internal_graph.filter.clone() | &other.internal_graph.filter,
+            filter: self
+                .internal_graph
+                .filter
+                .union(&other.internal_graph.filter),
             loopcount: None,
         }
     }
 
     pub fn from_builder<V>(builder: &HedgeNodeBuilder<V>, len: usize) -> Self {
         let internal_graph = InternalSubGraph::empty(len);
-        let mut externalhedges = bitvec![usize, Lsb0; 0; len];
+        let mut externalhedges = SuBitGraph::empty(len);
 
         for hedge in &builder.hedges {
-            let mut bit = externalhedges.get_mut(hedge.0).unwrap();
-            *bit = true;
+            externalhedges.add(*hedge);
         }
 
         ContractedSubGraph {

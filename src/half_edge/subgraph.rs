@@ -1,21 +1,13 @@
-use std::{
-    hash::Hash,
-    num::TryFromIntError,
-    ops::{
-        BitAndAssign, BitOrAssign, BitXorAssign, Range, RangeFrom, RangeInclusive, RangeTo,
-        RangeToInclusive,
-    },
-};
+use std::{hash::Hash, num::TryFromIntError};
 
 use ahash::AHashSet;
-use bitvec::{bitvec, order::Lsb0, vec::BitVec};
+use bitvec::order::Lsb0;
 use indenter::CodeFormatter;
 use std::fmt::Write;
 
 use super::{
-    involution::{Flow, HedgePair},
-    nodestore::NodeStorageOps,
-    GVEdgeAttrs, Hedge, HedgeGraph, NodeStorage, PowersetIterator,
+    involution::HedgePair, nodestore::NodeStorageOps, GVEdgeAttrs, Hedge, HedgeGraph,
+    PowersetIterator,
 };
 
 const BASE62_ALPHABET: &[u8; 62] =
@@ -29,7 +21,7 @@ const BASE62_ALPHABET: &[u8; 62] =
 ///
 /// # Type Parameters
 /// - `Other`: The type of the other subgraph to perform operations with. Defaults to `Self`.
-pub trait SubGraphOps<Other: SubGraph = Self>: SubGraph {
+pub trait SubSetOps<ID = Hedge, Other: SubSetLike<ID> = Self>: SubSetLike<ID> {
     // type Other = Self; // Potentially for future use if more varied inter-type operations are needed.
 
     /// Applies a pairwise operation `op` between all elements of `left` (a mutable set)
@@ -103,12 +95,12 @@ pub trait SubGraphOps<Other: SubGraph = Self>: SubGraph {
         pset.next().unwrap(); //Skip the empty set
 
         for i in pset {
-            let mut ones = i.iter_ones();
+            let mut ones = i.included_iter();
 
-            let mut union = set[ones.next().unwrap()].clone();
+            let mut union = set[ones.next().unwrap().0].clone();
 
             for o in ones {
-                op(&mut union, &set[o]);
+                op(&mut union, &set[o.0]);
             }
 
             if let Some(union) = filter_map(union) {
@@ -145,7 +137,7 @@ pub trait SubGraphOps<Other: SubGraph = Self>: SubGraph {
 
     fn intersect_with(&mut self, other: &Self);
     fn union_with(&mut self, other: &Self);
-    fn union_with_iter(&mut self, other: impl Iterator<Item = Hedge>);
+    fn union_with_iter(&mut self, other: impl Iterator<Item = ID>);
     fn sym_diff_with(&mut self, other: &Self);
     fn empty_intersection(&self, other: &Self) -> bool;
     fn empty_union(&self, other: &Self) -> bool;
@@ -172,7 +164,9 @@ pub trait SubGraphOps<Other: SubGraph = Self>: SubGraph {
         new.subtract_with(other);
         new
     }
+}
 
+pub trait SubGraphOps {
     fn complement<E, V, H, N: NodeStorageOps<NodeData = V>>(
         &self,
         graph: &HedgeGraph<E, V, H, N>,
@@ -198,19 +192,38 @@ pub trait Inclusion<T> {
 ///
 /// This struct typically wraps an iterator over set bits in a `BitVec`
 /// (like `bitvec::slice::IterOnes`) and maps the `usize` indices to `Hedge` types.
-pub struct SubGraphHedgeIter<'a> {
+#[derive(Clone, Debug)]
+pub struct SubSetIter<'a, ID = Hedge> {
     /// The underlying iterator that yields `usize` indices, which are then mapped to `Hedge`.
-    iter: std::iter::Map<bitvec::slice::IterOnes<'a, usize, Lsb0>, fn(usize) -> Hedge>,
+    iter: std::iter::Map<bitvec::slice::IterOnes<'a, usize, Lsb0>, fn(usize) -> ID>,
 }
 
-impl Iterator for SubGraphHedgeIter<'_> {
-    type Item = Hedge;
-    fn next(&mut self) -> Option<Self::Item> {
-        self.iter.next()
+impl<ID> DoubleEndedIterator for SubSetIter<'_, ID> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        self.iter.next_back()
     }
 }
 
-pub trait BaseSubgraph: SubGraph + ModifySubgraph<Hedge> + ModifySubgraph<HedgePair> {
+impl<ID> ExactSizeIterator for SubSetIter<'_, ID> {
+    fn len(&self) -> usize {
+        self.iter.len()
+    }
+}
+
+impl<ID> Iterator for SubSetIter<'_, ID> {
+    type Item = ID;
+    fn next(&mut self) -> Option<Self::Item> {
+        self.iter.next()
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.iter.size_hint()
+    }
+}
+
+pub trait BaseSubgraph:
+    SubGraphLike + ModifySubSet<HedgePair> + ModifySubSet<Hedge> + SubSetOps<Hedge>
+{
     fn from_filter<E, V, H, N: NodeStorageOps<NodeData = V>, F: FnMut(&E) -> bool>(
         graph: &HedgeGraph<E, V, H, N>,
         filter: F,
@@ -225,7 +238,7 @@ pub trait BaseSubgraph: SubGraph + ModifySubgraph<Hedge> + ModifySubgraph<HedgeP
 ///
 /// # Type Parameters
 /// - `Index`: The type of element to add or remove (e.g., [`Hedge`], [`HedgePair`]).
-pub trait ModifySubgraph<Index> {
+pub trait ModifySubSet<Index> {
     /// Adds an element `index` to the subgraph.
     fn add(&mut self, index: Index);
 
@@ -233,61 +246,18 @@ pub trait ModifySubgraph<Index> {
     fn sub(&mut self, index: Index);
 }
 
-/// The core trait defining the properties and behaviors of a subgraph representation.
-///
-/// A subgraph is fundamentally a selection of half-edges from a larger [`HedgeGraph`].
-/// This trait provides methods for querying the subgraph's contents, its relationship
-/// to the parent graph, and performing common operations.
-///
-/// Implementors must also satisfy `Clone`, `Eq`, `Hash`, and various [`Inclusion`] bounds.
-pub trait SubGraph:
-    Clone
-    + Eq
-    + Hash
-    + Inclusion<Self>
-    + Inclusion<HedgePair>
-    + Inclusion<Self::Base>
-    + Inclusion<std::ops::Range<Hedge>>
-    + Inclusion<std::ops::RangeToInclusive<Hedge>>
-    + Inclusion<std::ops::RangeInclusive<Hedge>>
-    + Inclusion<std::ops::RangeTo<Hedge>>
-    + Inclusion<std::ops::RangeFrom<Hedge>>
-    + Inclusion<Hedge>
-{
-    type Base: SubGraph;
-    type BaseIter<'a>: Iterator<Item = Hedge>
-    where
-        Self: 'a;
+pub trait SubGraphLike: SubSetLike<Hedge> + Inclusion<HedgePair> {
     /// maximal graph that contains all nodes of the subgraph
-    fn covers<E, V, H, N: NodeStorageOps<NodeData = V>>(
+    fn covers<E, V, H, N: NodeStorageOps<NodeData = V>, S: SubSetOps<Hedge> + SubSetLike<Hedge>>(
         &self,
         graph: &HedgeGraph<E, V, H, N>,
-    ) -> BitVec {
-        let mut covering = graph.empty_subgraph::<BitVec>();
+    ) -> S {
+        let mut covering = graph.empty_subgraph::<S>();
         for i in self.included_iter() {
             covering.union_with_iter(graph.neighbors(i))
         }
         covering
     }
-
-    /// Contains a half-edge with index >= hedge
-    fn has_greater(&self, hedge: Hedge) -> bool {
-        self.intersects(&(hedge..))
-    }
-
-    /// Contains a half-edge with index < hedge
-    fn has_lesser(&self, hedge: Hedge) -> bool {
-        self.intersects(&(..hedge))
-    }
-
-    ///joins two subgraphs into one, (this is not union)
-    fn join(mut self, other: Self) -> Self {
-        self.join_mut(other);
-        self
-    }
-
-    /// Appends all incuded half-edges at the end of other
-    fn join_mut(&mut self, other: Self);
 
     fn background_color(&self, hedge_pair: Option<HedgePair>) -> Option<String> {
         let color = "gray".to_string();
@@ -303,20 +273,6 @@ pub trait SubGraph:
         }
     }
 
-    fn string_label(&self) -> String;
-    fn included_iter(&self) -> Self::BaseIter<'_>;
-    // SubGraphHedgeIter {
-    //     SubGraphHedgeIter {
-    //         iter: self.included().iter_ones().map(Hedge),
-    //     }
-    // }
-    /// Returns a simple Self::Base of all included hedges
-    fn included(&self) -> &Self::Base;
-
-    /// Number of half-edges in the graph this is a subgraph of
-    fn size(&self) -> usize;
-    /// Number of half-edges included in the subgraph
-    fn nhedges(&self) -> usize;
     /// Number of full edges included in the subgraph
     fn nedges<E, V, H, N: NodeStorageOps<NodeData = V>>(
         &self,
@@ -445,8 +401,8 @@ pub trait SubGraph:
         Ok(())
     }
 
-    fn hairs(&self, node: impl Iterator<Item = Hedge>) -> BitVec {
-        let mut hairs = BitVec::empty(self.size());
+    fn hairs(&self, node: impl Iterator<Item = Hedge>) -> SuBitGraph {
+        let mut hairs = SuBitGraph::empty(self.size());
         for h in node {
             if self.includes(&h) {
                 hairs.add(h)
@@ -454,351 +410,70 @@ pub trait SubGraph:
         }
         hairs
     }
-    fn empty(size: usize) -> Self;
-    fn is_empty(&self) -> bool;
 }
 
-impl Inclusion<HedgePair> for BitVec {
-    fn includes(&self, other: &HedgePair) -> bool {
-        match other {
-            HedgePair::Unpaired { hedge, .. } => self.includes(hedge),
-            HedgePair::Split {
-                source,
-                sink,
-                split,
-            } => match split {
-                Flow::Sink => self.includes(sink),
-                Flow::Source => self.includes(source),
-            },
-            HedgePair::Paired { source, sink } => self.includes(source) && self.includes(sink),
-        }
+/// The core trait defining the properties and behaviors of a subgraph representation.
+///
+/// A subgraph is fundamentally a selection of half-edges from a larger [`HedgeGraph`].
+/// This trait provides methods for querying the subgraph's contents, its relationship
+/// to the parent graph, and performing common operations.
+///
+/// Implementors must also satisfy `Clone`, `Eq`, `Hash`, and various [`Inclusion`] bounds.
+pub trait SubSetLike<ID = Hedge>:
+    Clone
+    + Eq
+    + Hash
+    + Inclusion<Self>
+    + Inclusion<Self::Base>
+    + Inclusion<std::ops::Range<ID>>
+    + Inclusion<std::ops::RangeToInclusive<ID>>
+    + Inclusion<std::ops::RangeInclusive<ID>>
+    + Inclusion<std::ops::RangeTo<ID>>
+    + Inclusion<std::ops::RangeFrom<ID>>
+    + Inclusion<ID>
+{
+    type Base: SubSetLike<ID>;
+    type BaseIter<'a>: Iterator<Item = ID>
+    where
+        Self: 'a,
+        ID: 'a;
+
+    /// Contains an id with index >= hedge
+    fn has_greater(&self, hedge: ID) -> bool {
+        self.intersects(&(hedge..))
     }
 
-    fn intersects(&self, other: &HedgePair) -> bool {
-        match other {
-            HedgePair::Unpaired { hedge, .. } => self.includes(hedge),
-            HedgePair::Split {
-                source,
-                sink,
-                split,
-            } => match split {
-                Flow::Sink => self.includes(sink),
-                Flow::Source => self.includes(source),
-            },
-            HedgePair::Paired { source, sink } => self.includes(source) || self.includes(sink),
-        }
-    }
-}
-
-impl Inclusion<BitVec> for BitVec {
-    fn includes(&self, other: &BitVec) -> bool {
-        &self.intersection(other) == other
+    /// Contains an id with index < hedge
+    fn has_lesser(&self, hedge: ID) -> bool {
+        self.intersects(&(..hedge))
     }
 
-    fn intersects(&self, other: &BitVec) -> bool {
-        self.intersection(other).count_ones() > 0
-    }
-}
-
-impl Inclusion<Range<Hedge>> for BitVec {
-    fn includes(&self, other: &Range<Hedge>) -> bool {
-        (other.start.0..other.end.0).all(|a| self.includes(&Hedge(a)))
-    }
-
-    fn intersects(&self, other: &Range<Hedge>) -> bool {
-        (other.start.0..other.end.0).any(|a| self.includes(&Hedge(a)))
-    }
-}
-
-impl Inclusion<RangeTo<Hedge>> for BitVec {
-    fn includes(&self, other: &RangeTo<Hedge>) -> bool {
-        (0..other.end.0).all(|a| self.includes(&Hedge(a)))
-    }
-
-    fn intersects(&self, other: &RangeTo<Hedge>) -> bool {
-        (0..other.end.0).any(|a| self.includes(&Hedge(a)))
-    }
-}
-
-impl Inclusion<RangeToInclusive<Hedge>> for BitVec {
-    fn includes(&self, other: &RangeToInclusive<Hedge>) -> bool {
-        (0..=other.end.0).all(|a| self.includes(&Hedge(a)))
-    }
-
-    fn intersects(&self, other: &RangeToInclusive<Hedge>) -> bool {
-        (0..=other.end.0).any(|a| self.includes(&Hedge(a)))
-    }
-}
-
-impl Inclusion<RangeFrom<Hedge>> for BitVec {
-    fn includes(&self, other: &RangeFrom<Hedge>) -> bool {
-        (other.start.0..).all(|a| self.includes(&Hedge(a)))
-    }
-
-    fn intersects(&self, other: &RangeFrom<Hedge>) -> bool {
-        (other.start.0..).any(|a| self.includes(&Hedge(a)))
-    }
-}
-
-impl Inclusion<RangeInclusive<Hedge>> for BitVec {
-    fn includes(&self, other: &RangeInclusive<Hedge>) -> bool {
-        (other.start().0..=other.end().0).all(|a| self.includes(&Hedge(a)))
-    }
-
-    fn intersects(&self, other: &RangeInclusive<Hedge>) -> bool {
-        (other.start().0..=other.end().0).any(|a| self.includes(&Hedge(a)))
-    }
-}
-
-impl Inclusion<Hedge> for BitVec {
-    fn includes(&self, other: &Hedge) -> bool {
-        self[other.0]
-    }
-
-    fn intersects(&self, other: &Hedge) -> bool {
-        self[other.0]
-    }
-}
-
-impl ModifySubgraph<Hedge> for BitVec {
-    fn add(&mut self, hedge: Hedge) {
-        self.set(hedge.0, true);
-    }
-
-    fn sub(&mut self, hedge: Hedge) {
-        self.set(hedge.0, false);
-    }
-}
-
-impl ModifySubgraph<HedgePair> for BitVec {
-    fn add(&mut self, index: HedgePair) {
-        match index {
-            HedgePair::Paired { source, sink } => {
-                self.add(source);
-                self.add(sink);
-            }
-            HedgePair::Split {
-                source,
-                sink,
-                split,
-            } => match split {
-                Flow::Source => {
-                    self.add(source);
-                    self.sub(sink);
-                }
-                Flow::Sink => {
-                    self.add(sink);
-                    self.sub(source);
-                }
-            },
-            HedgePair::Unpaired { hedge, .. } => {
-                self.add(hedge);
-            }
-        }
-    }
-
-    fn sub(&mut self, index: HedgePair) {
-        match index {
-            HedgePair::Paired { source, sink } => {
-                self.sub(source);
-                self.sub(sink);
-            }
-            HedgePair::Split {
-                source,
-                sink,
-                split,
-            } => match split {
-                Flow::Source => {
-                    self.sub(source);
-                    // self.sub(sink);
-                }
-                Flow::Sink => {
-                    self.sub(sink);
-                    // self.sub(source);
-                }
-            },
-            HedgePair::Unpaired { hedge, .. } => {
-                self.sub(hedge);
-            }
-        }
-    }
-}
-
-impl BaseSubgraph for BitVec {
-    fn from_filter<E, V, H, N: NodeStorageOps<NodeData = V>, F: FnMut(&E) -> bool>(
-        graph: &HedgeGraph<E, V, H, N>,
-        mut filter: F,
-    ) -> Self {
-        let mut empty: BitVec = graph.empty_subgraph();
-
-        for (p, _, d) in graph.iter_edges() {
-            if filter(d.data) {
-                empty.add(p);
-            }
-        }
-
-        empty
-    }
-
-    fn from_hedge_iter<I: Iterator<Item = Hedge>>(iter: I, len: usize) -> Self {
-        let mut subgraph = BitVec::empty(len);
-
-        for h in iter {
-            subgraph.add(h);
-        }
-
-        subgraph
-    }
-}
-
-impl SubGraph for BitVec {
-    type Base = BitVec;
-    type BaseIter<'a> = SubGraphHedgeIter<'a>;
-    fn included(&self) -> &BitVec {
+    ///joins two subsets into one, (this is not union)
+    fn join(mut self, other: Self) -> Self {
+        self.join_mut(other);
         self
     }
 
-    fn size(&self) -> usize {
-        self.len()
-    }
+    /// Appends all incuded half-edges at the end of other
+    fn join_mut(&mut self, other: Self);
 
-    fn has_greater(&self, hedge: Hedge) -> bool {
-        (hedge.0..self.len()).any(|h| self.includes(&Hedge(h)))
-    }
+    fn string_label(&self) -> String;
+    fn included_iter(&self) -> Self::BaseIter<'_>;
+    // SubGraphHedgeIter {
+    //     SubGraphHedgeIter {
+    //         iter: self.included().iter_ones().map(Hedge),
+    //     }
+    // }
+    /// Returns a simple Self::Base of all included hedges
+    fn included(&self) -> &Self::Base;
 
-    fn hairs(&self, node: impl Iterator<Item = Hedge>) -> BitVec {
-        let mut hairs = BitVec::empty(self.size());
+    /// Number of half-edges in the graph this is a subgraph of
+    fn size(&self) -> usize;
+    /// Number of half-edges included in the subgraph
+    fn n_included(&self) -> usize;
 
-        for h in node {
-            if self.includes(&h) {
-                hairs.add(h);
-            }
-        }
-
-        hairs
-    }
-
-    fn join_mut(&mut self, other: Self) {
-        self.extend(other);
-    }
-    fn included_iter(&self) -> Self::BaseIter<'_> {
-        SubGraphHedgeIter {
-            iter: self.iter_ones().map(Hedge),
-        }
-    }
-    fn nedges<E, V, H, N: NodeStorageOps<NodeData = V>>(
-        &self,
-        graph: &HedgeGraph<E, V, H, N>,
-    ) -> usize {
-        let mut count = 0;
-        for i in self.included_iter() {
-            if i != graph.inv(i) && self.includes(&graph.inv(i)) {
-                count += 1;
-            }
-        }
-        count / 2
-    }
-
-    fn nhedges(&self) -> usize {
-        self.count_ones()
-    }
-
-    fn empty(size: usize) -> Self {
-        bitvec![usize, Lsb0; 0; size]
-    }
-
-    fn string_label(&self) -> String {
-        if self.is_empty() {
-            return "0".to_string();
-        }
-
-        let mut digits = vec![0u8]; // Initialize with a single zero digit
-
-        // Iterate over the bits from MSB to LSB
-        for bit in self.iter().by_vals().rev() {
-            let mut carry = 0u8;
-
-            // Multiply existing digits by 2 (shift left)
-            for digit in &mut digits {
-                let temp = (*digit as u16) * 2 + carry as u16;
-                *digit = (temp % 62) as u8;
-                carry = (temp / 62) as u8;
-            }
-
-            if carry > 0 {
-                digits.push(carry);
-            }
-
-            // Add the current bit (if it's 1)
-            if bit {
-                let mut carry = 1u8;
-                for digit in &mut digits {
-                    let temp = *digit as u16 + carry as u16;
-                    *digit = (temp % 62) as u8;
-                    carry = (temp / 62) as u8;
-
-                    if carry == 0 {
-                        break;
-                    }
-                }
-                if carry > 0 {
-                    digits.push(carry);
-                }
-            }
-        }
-
-        // Map digits to base62 characters and reverse the result
-        let base62_string: String = digits
-            .iter()
-            .rev()
-            .map(|&d| BASE62_ALPHABET[d as usize] as char)
-            .collect();
-
-        base62_string
-    }
-
-    fn is_empty(&self) -> bool {
-        self.count_ones() == 0
-    }
-}
-
-impl SubGraphOps for BitVec {
-    fn intersect_with(&mut self, other: &Self) {
-        self.bitand_assign(other)
-    }
-
-    fn union_with_iter(&mut self, other: impl Iterator<Item = Hedge>) {
-        for h in other {
-            self.add(h)
-        }
-    }
-
-    fn union_with(&mut self, other: &Self) {
-        self.bitor_assign(other)
-    }
-
-    fn sym_diff_with(&mut self, other: &Self) {
-        self.bitxor_assign(other)
-    }
-
-    fn empty_union(&self, other: &Self) -> bool {
-        self.union(other).count_ones() == 0
-    }
-
-    fn empty_intersection(&self, other: &Self) -> bool {
-        self.intersection(other).count_ones() == 0
-    }
-
-    fn complement<E, V, H, N: NodeStorage<NodeData = V>>(
-        &self,
-        _graph: &HedgeGraph<E, V, H, N>,
-    ) -> Self {
-        !self.clone()
-    }
-
-    fn subtract_with(&mut self, other: &Self) {
-        self.bitand_assign(!other.clone());
-    }
+    fn empty(size: usize) -> Self;
+    fn is_empty(&self) -> bool;
 }
 
 pub mod contracted;
@@ -815,3 +490,5 @@ pub mod empty;
 pub use empty::Empty;
 pub mod full;
 pub use full::FullOrEmpty;
+pub mod subset;
+pub use subset::SuBitGraph;

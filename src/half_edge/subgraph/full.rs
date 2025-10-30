@@ -1,14 +1,13 @@
 use std::ops::{Range, RangeFrom, RangeInclusive, RangeTo, RangeToInclusive};
 
-use bitvec::vec::BitVec;
-
 use crate::half_edge::{
     involution::{Hedge, HedgePair},
     nodestore::NodeStorageOps,
+    subgraph::{SuBitGraph, SubGraphLike},
     HedgeGraph,
 };
 
-use super::{Inclusion, SubGraph};
+use super::{Inclusion, SubSetLike};
 
 #[derive(Clone, Debug, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
 /// Represents a subgraph that is either completely full (contains all possible half-edges
@@ -80,12 +79,12 @@ impl Inclusion<FullOrEmpty> for FullOrEmpty {
     }
 }
 
-impl Inclusion<BitVec> for FullOrEmpty {
-    fn includes(&self, other: &BitVec) -> bool {
+impl Inclusion<SuBitGraph> for FullOrEmpty {
+    fn includes(&self, other: &SuBitGraph) -> bool {
         self.size == other.size() as isize
     }
 
-    fn intersects(&self, other: &BitVec) -> bool {
+    fn intersects(&self, other: &SuBitGraph) -> bool {
         self.size == other.size() as isize
     }
 }
@@ -205,9 +204,7 @@ impl Iterator for RangeHedgeIter {
     }
 }
 
-impl SubGraph for FullOrEmpty {
-    type Base = FullOrEmpty;
-    type BaseIter<'a> = RangeHedgeIter;
+impl SubGraphLike for FullOrEmpty {
     fn nedges<E, V, H, N: NodeStorageOps<NodeData = V>>(
         &self,
         graph: &HedgeGraph<E, V, H, N>,
@@ -220,6 +217,10 @@ impl SubGraph for FullOrEmpty {
         }
         count / 2
     }
+}
+impl SubSetLike<Hedge> for FullOrEmpty {
+    type Base = FullOrEmpty;
+    type BaseIter<'a> = RangeHedgeIter;
 
     fn has_greater(&self, _hedge: Hedge) -> bool {
         false
@@ -245,7 +246,7 @@ impl SubGraph for FullOrEmpty {
         }
     }
 
-    fn nhedges(&self) -> usize {
+    fn n_included(&self) -> usize {
         self.size.try_into().unwrap_or(0)
     }
 

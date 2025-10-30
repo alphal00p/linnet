@@ -1,12 +1,16 @@
 use super::{NodeStorage, NodeStorageOps, NodeStorageVec};
 use crate::{
-    half_edge::{involution::Hedge, subgraph::BaseSubgraph, swap::Swap, NodeIndex, NodeVec},
+    half_edge::{
+        involution::Hedge,
+        subgraph::{BaseSubgraph, SuBitGraph},
+        swap::Swap,
+        NodeIndex, NodeVec,
+    },
     tree::{
         parent_pointer::ParentPointerStore, Forest, ForestNodeStore, ForestNodeStorePreorder,
         RootData, RootId,
     },
 };
-use bitvec::vec::BitVec;
 
 // pub struct ForestNodeStore<Tree, N> {
 //     forest: Forest<N, Tree>,
@@ -53,7 +57,7 @@ impl<'a, P: ForestNodeStorePreorder + 'a> ExactSizeIterator for ForestNeighborIt
 impl<V, P: ForestNodeStore + ForestNodeStorePreorder + Clone> NodeStorage for Forest<V, P> {
     type Storage<N> = Forest<N, P>;
     type NodeData = V;
-    type Neighbors = BitVec;
+    type Neighbors = SuBitGraph;
     type NeighborsIter<'a>
         = ForestNeighborIter<'a, P>
     where
@@ -71,7 +75,7 @@ impl<V, P: ForestNodeStore> Swap<Hedge> for Forest<V, P> {
         Hedge(self.nodes.n_nodes())
     }
 
-    fn is_empty(&self) -> bool {
+    fn is_zero_length(&self) -> bool {
         self.nodes.n_nodes() == 0
     }
 
@@ -97,7 +101,7 @@ impl<V, P: ForestNodeStore> Swap<NodeIndex> for Forest<V, P> {
         NodeIndex(self.roots.len())
     }
 
-    fn is_empty(&self) -> bool {
+    fn is_zero_length(&self) -> bool {
         self.roots.is_empty()
     }
     fn swap(&mut self, _i: NodeIndex, _j: NodeIndex) {
@@ -106,13 +110,13 @@ impl<V, P: ForestNodeStore> Swap<NodeIndex> for Forest<V, P> {
 }
 
 impl<V, P: ForestNodeStore + ForestNodeStorePreorder + Clone> NodeStorageOps for Forest<V, P> {
-    type Base = BitVec;
+    type Base = SuBitGraph;
     type OpStorage<N> = Forest<N, P>;
 
     fn check_nodes(&self) -> Result<(), crate::half_edge::HedgeGraphError> {
         todo!()
     }
-    fn extract_nodes(&mut self, _nodes: impl IntoIterator<Item = NodeIndex>) -> (BitVec, Self) {
+    fn extract_nodes(&mut self, _nodes: impl IntoIterator<Item = NodeIndex>) -> (SuBitGraph, Self) {
         todo!()
     }
 
@@ -131,7 +135,7 @@ impl<V, P: ForestNodeStore + ForestNodeStorePreorder + Clone> NodeStorageOps for
         Forest::from_bitvec_partition(nodes.into_iter().map(|n| {
             (
                 n.data,
-                BitVec::from_hedge_iter(n.hedges.into_iter(), n_hedges),
+                SuBitGraph::from_hedge_iter(n.hedges.into_iter(), n_hedges),
             )
         }))
         .unwrap()
@@ -211,7 +215,10 @@ impl<V, P: ForestNodeStore + ForestNodeStorePreorder + Clone> NodeStorageOps for
         }
     }
 
-    fn delete<S: crate::half_edge::subgraph::SubGraph<Base = Self::Base>>(&mut self, subgraph: &S) {
+    fn delete<S: crate::half_edge::subgraph::SubSetLike<Base = Self::Base>>(
+        &mut self,
+        subgraph: &S,
+    ) {
         let mut left = Hedge(0);
         let mut extracted = self.len();
         // println!("{}", self.nodes.debug_draw(|_| None));
@@ -320,7 +327,7 @@ impl<V, P: ForestNodeStore + ForestNodeStorePreorder + Clone> NodeStorageOps for
         self.nodes.validate().unwrap();
     }
 
-    fn extract<S: crate::half_edge::subgraph::SubGraph<Base = Self::Base>, V2>(
+    fn extract<S: crate::half_edge::subgraph::SubSetLike<Base = Self::Base>, V2>(
         &mut self,
         subgraph: &S,
         mut split_node: impl FnMut(&Self::NodeData) -> V2,
@@ -328,10 +335,10 @@ impl<V, P: ForestNodeStore + ForestNodeStorePreorder + Clone> NodeStorageOps for
     ) -> Self::OpStorage<V2> {
         let mut left = Hedge(0);
         let mut extracted = self.len();
-        // println!("{}", self.nodes.debug_draw(|_| None));
+        println!("{}", self.nodes.debug_draw(|_| None));
         // Do the same swapping as for the edge store, so that they line up
         while left < extracted {
-            // println!("{left},{extracted}");
+            println!("{left},{extracted}");
             if !subgraph.includes(&left) {
                 //left is in the right place
                 left.0 += 1;
@@ -340,13 +347,13 @@ impl<V, P: ForestNodeStore + ForestNodeStorePreorder + Clone> NodeStorageOps for
                 extracted.0 -= 1;
                 if !subgraph.includes(&extracted) {
                     //only with an extracted that is in the wrong spot
-                    // println!("{left}<->{extracted}");
+                    println!("{left}<->{extracted}");
                     self.swap(left, extracted);
                     left.0 += 1;
                 }
             }
         }
-        // println!("{}", self.nodes.debug_draw(|_| None));
+        println!("{}", self.nodes.debug_draw(|_| None));
 
         // Now need to partition the nodes into 3 ranges,
         // - 0..left_nodes do not contain any half edges in the subgraph,

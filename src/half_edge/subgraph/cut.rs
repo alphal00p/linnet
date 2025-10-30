@@ -1,16 +1,16 @@
 use std::ops::{Range, RangeFrom, RangeInclusive, RangeTo, RangeToInclusive};
 
-use super::{Cycle, Inclusion, SubGraph, SubGraphHedgeIter, SubGraphOps};
+use super::{Cycle, Inclusion, SubSetIter, SubSetLike, SubSetOps};
 use crate::half_edge::hedgevec::Accessors;
 use crate::half_edge::involution::{EdgeIndex, HedgePair};
 use crate::half_edge::nodestore::NodeStorageOps;
+use crate::half_edge::subgraph::{ModifySubSet, SuBitGraph, SubGraphLike};
 use crate::half_edge::EdgeAccessors;
 use crate::half_edge::{
     involution::SignOrZero, EdgeData, Flow, Hedge, HedgeGraph, InvolutiveMapping, NodeStorage,
     Orientation, PowersetIterator,
 };
 use crate::parser::DotEdgeData;
-use bitvec::vec::BitVec;
 use std::cmp::Ordering;
 use std::{
     fmt::{Display, Formatter},
@@ -35,28 +35,27 @@ pub struct OrientedCut {
     /// A bitmask representing the set of half-edges on the "left" side of the cut.
     /// In a scattering diagram context, these might be the edges one would drag
     /// to the right to pass through the cut.
-    #[cfg_attr(feature = "bincode", bincode(with_serde))]
-    pub left: BitVec,
+    pub left: SuBitGraph,
     /// A bitmask representing the set of half-edges on the "right" side of the cut.
     /// These are typically theinvolutional pairs of the half-edges in the `left` set.
     /// In a scattering diagram context, these might be the edges one would drag
     /// to the left.
     ///
     /// It's generally expected that `right` contains `inv(h)` for every `h` in `left`.
-    #[cfg_attr(feature = "bincode", bincode(with_serde))]
-    pub right: BitVec,
+    pub right: SuBitGraph,
 }
 
 impl Display for OrientedCut {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        for (i, c) in self.left.iter().enumerate() {
-            if *c {
-                write!(f, "+{i}")?;
+        for h in self.left.union(&self.right).included_iter() {
+            if self.left.includes(&h) {
+                write!(f, "+{}", h.0)?;
             }
-            if self.right[i] {
-                write!(f, "-{i}")?;
+            if self.right.includes(&h) {
+                write!(f, "-{}", h.0)?;
             }
         }
+
         Ok(())
     }
 }
@@ -81,19 +80,19 @@ pub enum CutError {
 impl OrientedCut {
     /// disregards identity edges
     pub fn from_underlying_coerce<E, V, H, N: NodeStorageOps<NodeData = V>>(
-        cut: BitVec,
+        cut: SuBitGraph,
         graph: &HedgeGraph<E, V, H, N>,
     ) -> Result<Self, CutError> {
-        let mut right = graph.empty_subgraph::<BitVec>();
+        let mut right = graph.empty_subgraph::<SuBitGraph>();
 
         for i in cut.included_iter() {
             let invh = graph.inv(i);
             if cut.includes(&invh) {
                 return Err(CutError::CutEdgeAlreadySet);
             } else if invh == i {
-                right.set(i.0, false);
+                right.sub(i);
             }
-            right.set(invh.0, true);
+            right.add(invh);
         }
 
         cut.subtract(&right);
@@ -102,10 +101,10 @@ impl OrientedCut {
 
     /// Errors for identity edges
     pub fn from_underlying_strict<E, V, H, N: NodeStorageOps<NodeData = V>>(
-        cut: BitVec,
+        cut: SuBitGraph,
         graph: &HedgeGraph<E, V, H, N>,
     ) -> Result<Self, CutError> {
-        let mut right = graph.empty_subgraph::<BitVec>();
+        let mut right = graph.empty_subgraph::<SuBitGraph>();
 
         for i in cut.included_iter() {
             let invh = graph.inv(i);
@@ -114,7 +113,7 @@ impl OrientedCut {
             } else if invh == i {
                 return Err(CutError::CutEdgeIsIdentity);
             }
-            right.set(invh.0, true);
+            right.add(invh);
         }
         Ok(OrientedCut { left: cut, right })
     }
@@ -141,10 +140,10 @@ impl OrientedCut {
         let mut all_cuts = Vec::new();
 
         for c in graph.non_cut_edges() {
-            if c.count_ones() == 0 {
+            if c.is_empty() {
                 continue;
             }
-            let mut all_sources = graph.empty_subgraph::<BitVec>();
+            let mut all_sources = graph.empty_subgraph::<SuBitGraph>();
 
             for h in c.included_iter() {
                 match graph.edge_store.inv_full(h) {
@@ -152,24 +151,24 @@ impl OrientedCut {
                         panic!("cut edge is identity")
                     }
                     InvolutiveMapping::Source { .. } => {
-                        all_sources.set(h.0, true);
+                        all_sources.add(h);
                     }
                     InvolutiveMapping::Sink { .. } => {}
                 }
             }
 
-            let n_cut_edges: u8 = all_sources.count_ones().try_into().unwrap();
+            let n_cut_edges: u8 = all_sources.n_included().try_into().unwrap();
 
             let pset = PowersetIterator::new(n_cut_edges); //.unchecked_sub(1)
 
             for i in pset {
-                let mut left = graph.empty_subgraph::<BitVec>();
+                let mut left = graph.empty_subgraph::<SuBitGraph>();
                 for (j, h) in all_sources.included_iter().enumerate() {
                     // if let Some(j) = j.checked_sub(1) {
-                    if i[j] {
-                        left.set(h.0, true);
+                    if i[Hedge(j)] {
+                        left.add(h);
                     } else {
-                        left.set(graph.inv(h).0, true);
+                        left.add(graph.inv(h));
                     }
                 }
                 all_cuts.push(Self::from_underlying_strict(left, graph).unwrap());
@@ -291,26 +290,26 @@ impl OrientedCut {
         match pair {
             HedgePair::Paired { source, sink } => match flow {
                 Flow::Source => {
-                    self.left.set(source.0, true);
-                    self.right.set(source.0, false);
-                    self.left.set(sink.0, false);
-                    self.right.set(sink.0, true);
+                    self.left.add(source);
+                    self.right.sub(source);
+                    self.left.sub(sink);
+                    self.right.add(sink);
                 }
                 Flow::Sink => {
-                    self.left.set(sink.0, true);
-                    self.right.set(sink.0, false);
-                    self.left.set(source.0, false);
-                    self.right.set(source.0, true);
+                    self.left.add(sink);
+                    self.right.sub(sink);
+                    self.left.sub(source);
+                    self.right.add(source);
                 }
             },
             HedgePair::Unpaired { hedge, .. } => match flow {
                 Flow::Source => {
-                    self.left.set(hedge.0, true);
-                    self.right.set(hedge.0, false);
+                    self.left.add(hedge);
+                    self.right.sub(hedge);
                 }
                 Flow::Sink => {
-                    self.left.set(hedge.0, false);
-                    self.right.set(hedge.0, true);
+                    self.left.sub(hedge);
+                    self.right.add(hedge);
                 }
             },
             _ => {}
@@ -369,12 +368,12 @@ impl Inclusion<HedgePair> for OrientedCut {
     }
 }
 
-impl Inclusion<BitVec> for OrientedCut {
-    fn includes(&self, other: &BitVec) -> bool {
+impl Inclusion<SuBitGraph> for OrientedCut {
+    fn includes(&self, other: &SuBitGraph) -> bool {
         self.left.includes(other)
     }
 
-    fn intersects(&self, other: &BitVec) -> bool {
+    fn intersects(&self, other: &SuBitGraph) -> bool {
         self.left.intersects(other)
     }
 }
@@ -438,19 +437,25 @@ impl Inclusion<RangeInclusive<Hedge>> for OrientedCut {
     }
 }
 
-impl SubGraph for OrientedCut {
-    type Base = BitVec;
-
-    type BaseIter<'a> = SubGraphHedgeIter<'a>;
+impl SubGraphLike for OrientedCut {
     fn nedges<E, V, H, N: NodeStorage<NodeData = V>>(
         &self,
         _graph: &HedgeGraph<E, V, H, N>,
     ) -> usize {
-        self.nhedges()
+        self.n_included()
     }
+    fn hairs(&self, node: impl Iterator<Item = Hedge>) -> SuBitGraph {
+        self.left.hairs(node)
+    }
+}
+
+impl SubSetLike for OrientedCut {
+    type Base = SuBitGraph;
+
+    type BaseIter<'a> = SubSetIter<'a>;
 
     fn size(&self) -> usize {
-        self.left.len()
+        self.left.size()
     }
 
     fn has_greater(&self, hedge: Hedge) -> bool {
@@ -462,7 +467,7 @@ impl SubGraph for OrientedCut {
         self.right.join_mut(other.right);
     }
 
-    fn included(&self) -> &BitVec {
+    fn included(&self) -> &SuBitGraph {
         self.left.included()
     }
 
@@ -470,22 +475,18 @@ impl SubGraph for OrientedCut {
         self.left.included_iter()
     }
 
-    fn nhedges(&self) -> usize {
-        self.left.nhedges()
+    fn n_included(&self) -> usize {
+        self.left.n_included()
     }
     fn empty(size: usize) -> Self {
         OrientedCut {
-            left: BitVec::empty(size),
-            right: BitVec::empty(size),
+            left: SuBitGraph::empty(size),
+            right: SuBitGraph::empty(size),
         }
     }
 
-    fn hairs(&self, node: impl Iterator<Item = Hedge>) -> BitVec {
-        self.left.hairs(node)
-    }
-
     fn is_empty(&self) -> bool {
-        self.left.count_ones() == 0
+        self.left.is_empty()
     }
 
     fn string_label(&self) -> String {

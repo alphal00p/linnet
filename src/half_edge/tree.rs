@@ -1,23 +1,25 @@
 use std::{cmp::Ordering, collections::VecDeque};
 
-use bitvec::vec::BitVec;
 use itertools::Itertools;
 
-use crate::tree::{
-    parent_pointer::ParentPointerStore, Forest, ForestNodeStore, ForestNodeStoreBfs,
-    ForestNodeStoreDown, ForestNodeStorePreorder, RootId,
+use crate::{
+    half_edge::subgraph::{SuBitGraph, SubGraphLike},
+    tree::{
+        parent_pointer::ParentPointerStore, Forest, ForestNodeStore, ForestNodeStoreBfs,
+        ForestNodeStoreDown, ForestNodeStorePreorder, RootId,
+    },
 };
 
 use super::{
     involution::{Hedge, Involution},
-    subgraph::{Cycle, Inclusion, InternalSubGraph, ModifySubgraph, SubGraph, SubGraphOps},
+    subgraph::{Cycle, Inclusion, InternalSubGraph, ModifySubSet, SubSetLike, SubSetOps},
     HedgeGraph, HedgeGraphError, NodeIndex, NodeStorageOps,
 };
 
 // pub struct HedgeTree<V, P: ForestNodeStore<NodeData = ()>, E> {
 //     graph: HedgeGraph<E, V, Forest<V, P>>,
 //     tree_subgraph: InternalSubGraph,
-//     covers: BitVec,
+//     covers: SuBitGraph,
 // }
 
 // impl<V, P: ForestNodeStore<NodeData = ()>, E> HedgeTree<V, P, E> {
@@ -109,7 +111,7 @@ pub struct SimpleTraversalTree<P: ForestNodeStore<NodeData = ()> = ParentPointer
     /// A bitmask representing the set of half-edges that constitute the actual
     /// edges of this traversal tree.
     // #[cfg_attr(feature = "bincode", bincode(with_serde))] // Handled by manual impl
-    pub tree_subgraph: BitVec,
+    pub tree_subgraph: SuBitGraph,
 }
 #[cfg(feature = "bincode")]
 impl<P: ForestNodeStore<NodeData = ()>> ::bincode::Encode for SimpleTraversalTree<P>
@@ -190,15 +192,15 @@ impl<P: ForestNodeStore<NodeData = ()>> SimpleTraversalTree<P> {
             .map(|a| NodeIndex(a.1))
             .collect()
     }
-    pub fn covers<S: SubGraph>(&self, subgraph: &S) -> BitVec {
+    pub fn covers<S: SubSetLike>(&self, subgraph: &S) -> SuBitGraph {
         // println!("calculating covers..");
-        let mut covers = BitVec::empty(self.tree_subgraph.len());
+        let mut covers = SuBitGraph::empty(self.tree_subgraph.size());
 
         // self.tree_subgraph.covers(graph)
 
-        for i in 0..self.tree_subgraph.len() {
+        for i in 0..self.tree_subgraph.size() {
             if self.node_data(self.node_id(Hedge(i))).includes() && subgraph.includes(&Hedge(i)) {
-                covers.set(i, true);
+                covers.add(Hedge(i));
             }
         }
 
@@ -218,7 +220,7 @@ impl<P: ForestNodeStore<NodeData = ()>> SimpleTraversalTree<P> {
     }
 
     pub fn tree_subgraph<I: AsRef<Involution>>(&self, inv: I) -> InternalSubGraph {
-        let mut tree = BitVec::empty(self.tree_subgraph.len());
+        let mut tree = SuBitGraph::empty(self.tree_subgraph.size());
         let inv = inv.as_ref();
 
         for (r, h) in self.forest.iter_roots() {
@@ -262,11 +264,11 @@ impl<P: ForestNodeStore<NodeData = ()>> SimpleTraversalTree<P> {
         }
     }
 
-    fn path_to_root<I: AsRef<Involution>>(&self, start: Hedge, inv: I) -> BitVec {
-        let mut path = BitVec::empty(self.tree_subgraph.len());
+    fn path_to_root<I: AsRef<Involution>>(&self, start: Hedge, inv: I) -> SuBitGraph {
+        let mut path = SuBitGraph::empty(self.tree_subgraph.size());
 
         self.ancestor_iter_hedge(start, inv.as_ref())
-            .for_each(|a| path.set(a.0, true));
+            .for_each(|a| path.add(a));
         path
     }
 
@@ -593,7 +595,7 @@ impl SimpleTraversalTree {
     //     self.forest.root()
     // }
 
-    pub fn depth_first_traverse<S: SubGraph, E, V, H, N: NodeStorageOps<NodeData = V>>(
+    pub fn depth_first_traverse<S: SubGraphLike, E, V, H, N: NodeStorageOps<NodeData = V>>(
         graph: &HedgeGraph<E, V, H, N>,
         subgraph: &S,
         root_node: &NodeIndex,
@@ -601,7 +603,7 @@ impl SimpleTraversalTree {
     ) -> Result<Self, HedgeGraphError> {
         let mut seen = subgraph.hairs(graph.iter_crown(*root_node));
 
-        if seen.count_ones() == 0 {
+        if seen.is_empty() {
             // if the root node is not in the subgraph
             return Err(HedgeGraphError::RootNodeNotInSubgraph(*root_node));
         }
@@ -635,8 +637,8 @@ impl SimpleTraversalTree {
                 if !seen.includes(&connected) && subgraph.includes(&connected) {
                     // if this new hedge hasn't been seen before, it means the node it belongs to
                     // is a new node in the traversal
-                    init.tree_subgraph.set(connected.0, true);
-                    init.tree_subgraph.set(hedge.0, true);
+                    init.tree_subgraph.add(connected);
+                    init.tree_subgraph.add(hedge);
                     let node_id = init.forest.change_to_root(connected.into());
                     iter_order += 1;
                     init.forest[node_id] = TTRoot::Child(iter_order);
@@ -649,7 +651,7 @@ impl SimpleTraversalTree {
 
                 for i in cn {
                     if subgraph.includes(&i) {
-                        seen.set(i.0, true);
+                        seen.add(i);
                         if !seen.includes(&graph.inv(i)) {
                             stack.push(i);
                         }
@@ -662,7 +664,7 @@ impl SimpleTraversalTree {
         Ok(init)
     }
 
-    pub fn breadth_first_traverse<S: SubGraph, E, V, H, N: NodeStorageOps<NodeData = V>>(
+    pub fn breadth_first_traverse<S: SubGraphLike, E, V, H, N: NodeStorageOps<NodeData = V>>(
         graph: &HedgeGraph<E, V, H, N>,
         subgraph: &S,
         root_node: &NodeIndex,
@@ -670,7 +672,7 @@ impl SimpleTraversalTree {
     ) -> Result<Self, HedgeGraphError> {
         let mut seen = subgraph.hairs(graph.iter_crown(*root_node));
 
-        if seen.count_ones() == 0 {
+        if seen.is_empty() {
             // if the root node is not in the subgraph
             return Err(HedgeGraphError::InvalidNode(*root_node));
         }
@@ -701,8 +703,8 @@ impl SimpleTraversalTree {
                     // if this new hedge hasn't been seen before, it means the node it belongs to
                     //  a new node in the traversal
                     //
-                    init.tree_subgraph.set(connected.0, true);
-                    init.tree_subgraph.set(hedge.0, true);
+                    init.tree_subgraph.add(connected);
+                    init.tree_subgraph.add(hedge);
                     let node_id = init.forest.change_to_root(connected.into());
                     iter_order += 1;
                     init.forest[node_id] = TTRoot::Child(iter_order);
@@ -750,12 +752,12 @@ pub struct OwnedTraversalTree<P: ForestNodeStore<NodeData = ()> + Clone + Forest
     /// A bitmask indicating the set of half-edges covered by this traversal tree,
     /// potentially in the context of a larger original graph.
     // #[cfg_attr(feature = "bincode", bincode(with_serde))]
-    pub covers: BitVec,
+    pub covers: SuBitGraph,
 }
 
 // impl TraversalTree {
-//     pub fn children(&self, hedge: Hedge) -> BitVec {
-//         let mut children = <BitVec as SubGraph>::empty(self.inv.inv.len());
+//     pub fn children(&self, hedge: Hedge) -> SuBitGraph {
+//         let mut children = <SuBitGraph as SubGraph>::empty(self.inv.inv.len());
 
 //         for (i, m) in self.parents.iter().enumerate() {
 //             if let Parent::Hedge { hedge_to_root, .. } = m {
@@ -770,8 +772,8 @@ pub struct OwnedTraversalTree<P: ForestNodeStore<NodeData = ()> + Clone + Forest
 //         children
 //     }
 
-//     pub fn leaf_edges(&self) -> BitVec {
-//         let mut leaves = <BitVec as SubGraph>::empty(self.inv.inv.len());
+//     pub fn leaf_edges(&self) -> SuBitGraph {
+//         let mut leaves = <SuBitGraph as SubGraph>::empty(self.inv.inv.len());
 //         for hedge in self.covers().included_iter() {
 //             let is_not_parent = !self.parent_iter().any(|(_, p)| {
 //                 if let Parent::Hedge { hedge_to_root, .. } = p {
