@@ -89,7 +89,7 @@ impl<V> NodeStorage for UnionFindNodeStore<V> {
 }
 
 impl<V> UnionFindNodeStore<V> {
-    fn root_hedge(&self, node: NodeIndex) -> Hedge {
+    pub fn root_hedge(&self, node: NodeIndex) -> Hedge {
         self.nodes[&SetIndex(node.0)].root_pointer
     }
 }

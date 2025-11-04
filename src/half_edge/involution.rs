@@ -1965,11 +1965,11 @@ impl<E> Involution<E> {
         })
     }
 
-    pub fn iter(&self) -> InvolutionIter<E> {
+    pub fn iter(&self) -> InvolutionIter<'_, E> {
         self.into_iter()
     }
 
-    pub fn iter_mut(&mut self) -> InvolutionIterMut<E> {
+    pub fn iter_mut(&mut self) -> InvolutionIterMut<'_, E> {
         self.into_iter()
     }
 
@@ -2015,7 +2015,7 @@ impl<E> Involution<E> {
         let inv = self
             .inv
             .into_iter()
-            .map(|(h, e)| (e.map_data_option(g.clone()).map(|e| (h, e))))
+            .map(|(h, e)| e.map_data_option(g.clone()).map(|e| (h, e)))
             .collect::<Option<HedgeVec<_>>>()?;
 
         Some(Involution { inv })

@@ -84,3 +84,6 @@ iai-callgrind = "0.14.0"
 
 [workspace]
 members = ["linnest"]
+
+[patch.crates-io]
+linnet = { path = "." }
