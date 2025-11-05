@@ -358,7 +358,7 @@ impl<N> NodeStorageOps for NodeStorageVec<N> {
     ) -> Self::OpStorage<V2> {
         let mut left = Hedge(0);
         let mut extracted = self.len();
-        println!("HOI");
+        // println!("HOI");
         while left < extracted {
             if !subgraph.includes(&left) {
                 //left is in the right place
@@ -374,7 +374,7 @@ impl<N> NodeStorageOps for NodeStorageVec<N> {
             }
         }
 
-        println!("left{}", left);
+        // println!("left{}", left);
 
         let mut left_nodes = NodeIndex(0);
         let mut extracted_nodes = self.len();
@@ -398,7 +398,7 @@ impl<N> NodeStorageOps for NodeStorageVec<N> {
                 }
             }
         }
-        println!("left: {}", left_nodes.0);
+        // println!("left: {}", left_nodes.0);
         // println!("extracted: {}", extracted_nodes.0);
         let mut overlapping_nodes = left_nodes;
         let mut non_overlapping_extracted = self.len();
@@ -418,7 +418,7 @@ impl<N> NodeStorageOps for NodeStorageVec<N> {
             }
         }
 
-        println!("overlapping_nodes: {}", overlapping_nodes.0);
+        // println!("overlapping_nodes: {}", overlapping_nodes.0);
         // println!("non_overlapping_extracted: {}", non_overlapping_extracted.0);
 
         let mut extracted_nodes = self.nodes.split_off(overlapping_nodes);
