@@ -674,7 +674,7 @@ dependencies = [
 
 [[package]]
 name = "linnet"
-version = "0.13.0"
+version = "0.13.1"
 dependencies = [
  "ahash",
  "bincode 2.0.1",
