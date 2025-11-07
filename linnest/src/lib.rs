@@ -206,8 +206,13 @@ impl std::fmt::Display for PinConstraint {
     }
 }
 
+use figment::{
+    providers::Serialized,
+    value::{Dict, Value},
+    Figment,
+};
 use rand::rngs::SmallRng;
-use serde::{Deserialize, Serialize};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::path::Path;
 use std::{collections::BTreeMap, io::BufWriter};
 use std::{collections::HashMap, ops::Deref};
@@ -595,9 +600,8 @@ pub struct TypstGraph {
     graph: HedgeGraph<TypstEdge, TypstNode, TypstHedge>,
     spring_params: ParamTuning,
     schedule: GeoSchedule,
-    step: Option<f64>,
-    temp: Option<f64>,
-    seed: Option<u64>,
+    layout_overrides: LayoutOverrides,
+    global_statements: BTreeMap<String, String>,
 }
 
 impl Deref for TypstGraph {
@@ -609,9 +613,14 @@ impl Deref for TypstGraph {
 
 impl From<DotGraph> for TypstGraph {
     fn from(dot: DotGraph) -> Self {
+        let DotGraph {
+            graph: dot_graph,
+            global_data,
+        } = dot;
+
         let mut group_map = HashMap::new();
         let edge_pin_constrains: EdgeVec<(Point2<f64>, PointConstraint)> =
-            dot.graph.new_edgevec(|e, eid, _| {
+            dot_graph.new_edgevec(|e, eid, _| {
                 let a = e
                     .get::<_, String>("pin")
                     .transpose()
@@ -629,7 +638,7 @@ impl From<DotGraph> for TypstGraph {
         let mut group_map = HashMap::new();
 
         let node_pin_constrains: NodeVec<(Point2<f64>, PointConstraint)> =
-            dot.graph.new_nodevec(|nid, _, n| {
+            dot_graph.new_nodevec(|nid, _, n| {
                 let a = n
                     .get::<_, String>("pin")
                     .transpose()
@@ -644,42 +653,23 @@ impl From<DotGraph> for TypstGraph {
                 }
             });
 
-        let graph = dot.graph.map(
+        let graph = dot_graph.map(
             |inv, nid, data| TypstNode::parse(inv, nid, data, &node_pin_constrains),
             |inv, store, p, eid, data| {
                 TypstEdge::parse(inv, store, p, eid, data, &edge_pin_constrains)
             },
             TypstHedge::parse,
         );
-
-        let spring_params = ParamTuning::parse(&dot.global_data);
-        let schedule = GeoSchedule::parse(&dot.global_data);
-
-        let step = dot
-            .global_data
-            .statements
-            .get("step")
-            .and_then(|s| s.parse::<f64>().ok());
-
-        let temp = dot
-            .global_data
-            .statements
-            .get("temp")
-            .and_then(|s| s.parse::<f64>().ok());
-
-        let seed = dot
-            .global_data
-            .statements
-            .get("seed")
-            .and_then(|s| s.parse::<u64>().ok());
-        Self {
+        let mut typst_graph = Self {
             graph,
-            spring_params,
-            schedule,
-            step,
-            temp,
-            seed,
-        }
+            spring_params: ParamTuning::default(),
+            schedule: GeoSchedule::default(),
+            layout_overrides: LayoutOverrides::default(),
+            global_statements: global_data.statements,
+        };
+
+        typst_graph.apply_layout_config(&BTreeMap::new());
+        typst_graph
     }
 }
 
@@ -688,10 +678,119 @@ pub struct TreeInitCfg {
     pub dx: f64, // ≈ 0.9 * L
 }
 
+const DEFAULT_STEP: f64 = 0.2;
+const DEFAULT_TEMP: f64 = 1.1;
+const DEFAULT_SEED: u64 = 42;
+const DEFAULT_VIEWPORT: f64 = 10.0;
+const DEFAULT_TREE_DX: f64 = 0.9;
+const DEFAULT_TREE_DY: f64 = 1.2;
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(default)]
+struct LayoutOverrides {
+    step: Option<f64>,
+    temp: Option<f64>,
+    seed: Option<u64>,
+    viewport_w: Option<f64>,
+    viewport_h: Option<f64>,
+    tree_dx: Option<f64>,
+    tree_dy: Option<f64>,
+}
+
+impl LayoutOverrides {
+    fn step_or_default(&self) -> f64 {
+        self.step.unwrap_or(DEFAULT_STEP)
+    }
+
+    fn temp_or_default(&self) -> f64 {
+        self.temp.unwrap_or(DEFAULT_TEMP)
+    }
+
+    fn seed_or_default(&self) -> u64 {
+        self.seed.unwrap_or(DEFAULT_SEED)
+    }
+
+    fn viewport_w_or_default(&self) -> f64 {
+        self.viewport_w.unwrap_or(DEFAULT_VIEWPORT)
+    }
+
+    fn viewport_h_or_default(&self) -> f64 {
+        self.viewport_h.unwrap_or(DEFAULT_VIEWPORT)
+    }
+
+    fn tree_dx_or_default(&self) -> f64 {
+        self.tree_dx.unwrap_or(DEFAULT_TREE_DX)
+    }
+
+    fn tree_dy_or_default(&self) -> f64 {
+        self.tree_dy.unwrap_or(DEFAULT_TREE_DY)
+    }
+}
+
+fn parse_value_for_figment(raw: &str) -> Value {
+    let trimmed = raw.trim();
+    let mut candidates = vec![trimmed];
+    if trimmed.starts_with('"') && trimmed.ends_with('"') && trimmed.len() > 1 {
+        candidates.push(&trimmed[1..trimmed.len() - 1]);
+    }
+
+    for candidate in candidates {
+        if let Ok(value) = candidate.parse::<bool>() {
+            return Value::from(value);
+        }
+        if let Ok(value) = candidate.parse::<u64>() {
+            return Value::from(value);
+        }
+        if let Ok(value) = candidate.parse::<i64>() {
+            return Value::from(value);
+        }
+        if let Ok(value) = candidate.parse::<f64>() {
+            return Value::from(value);
+        }
+    }
+
+    Value::from(raw.to_string())
+}
+
+fn map_to_figment_dict(map: &BTreeMap<String, String>) -> Dict {
+    let mut dict = Dict::new();
+    for (key, value) in map {
+        dict.insert(key.clone(), parse_value_for_figment(value));
+    }
+    dict
+}
+
+fn merge_with_figment<T>(
+    overrides: &BTreeMap<String, String>,
+    statements: &BTreeMap<String, String>,
+) -> Result<T, figment::Error>
+where
+    T: Serialize + DeserializeOwned + Default,
+{
+    let figment = Figment::from(Serialized::defaults(T::default()))
+        .merge(Serialized::from(map_to_figment_dict(overrides)))
+        .merge(Serialized::from(map_to_figment_dict(statements)));
+
+    figment.extract()
+}
+
 impl TypstGraph {
-    pub fn layout(&mut self, step: f64, seed: u64, temp: f64, cbor_map: &BTreeMap<String, String>) {
+    fn apply_layout_config(&mut self, overrides: &BTreeMap<String, String>) {
+        self.layout_overrides =
+            merge_with_figment::<LayoutOverrides>(overrides, &self.global_statements)
+                .unwrap_or_default();
+
+        self.spring_params = merge_with_figment::<ParamTuning>(overrides, &self.global_statements)
+            .unwrap_or_else(|_| ParamTuning::default());
+
+        self.schedule = merge_with_figment::<GeoSchedule>(overrides, &self.global_statements)
+            .unwrap_or_else(|_| GeoSchedule::default());
+    }
+
+    pub fn layout(&mut self, cbor_map: &BTreeMap<String, String>) {
+        self.apply_layout_config(cbor_map);
         // println!("Tree initialize cfg:");
-        let (cfg, energy) = self.tree_init_cfg(&cbor_map);
+        let (cfg, energy) = self.tree_init_cfg();
 
         // println!("New positions as tree");
         let (pos_n, pos_e) = self.new_positions(cfg);
@@ -704,9 +803,9 @@ impl TypstGraph {
         let (out, _stats) = anneal::<_, _, _, _, SmallRng>(
             state,
             SAConfig {
-                temp: self.temp.unwrap_or(temp),
-                step: self.step.unwrap_or(step),
-                seed: self.seed.unwrap_or(seed),
+                temp: self.layout_overrides.temp_or_default(),
+                step: self.layout_overrides.step_or_default(),
+                seed: self.layout_overrides.seed_or_default(),
             },
             &LayoutNeighbor,
             &energy,
@@ -718,31 +817,16 @@ impl TypstGraph {
         self.update_positions(out.vertex_points, out.edge_points);
     }
 
-    pub fn tree_init_cfg(
-        &self,
-        map: &BTreeMap<String, String>,
-    ) -> (TreeInitCfg, SpringChargeEnergy) {
-        let viewport_w = map
-            .get("viewport_w")
-            .and_then(|s| s.parse::<f64>().ok())
-            .unwrap_or(10.0);
-        let viewport_h = map
-            .get("viewport_h")
-            .and_then(|s| s.parse::<f64>().ok())
-            .unwrap_or(10.0);
-        let tune = self.spring_params.clone();
+    pub fn tree_init_cfg(&self) -> (TreeInitCfg, SpringChargeEnergy) {
+        let viewport_w = self.layout_overrides.viewport_w_or_default();
+        let viewport_h = self.layout_overrides.viewport_h_or_default();
+        let tune = self.spring_params;
         let energycfg =
             SpringChargeEnergy::from_graph(self.n_nodes(), viewport_w, viewport_h, tune);
 
         let l = energycfg.spring_length;
-        let dy = map
-            .get("tree_dy")
-            .and_then(|s| s.parse::<f64>().ok())
-            .unwrap_or(1.2);
-        let dx = map
-            .get("tree_dx")
-            .and_then(|s| s.parse::<f64>().ok())
-            .unwrap_or(0.9);
+        let dy = self.layout_overrides.tree_dy_or_default();
+        let dx = self.layout_overrides.tree_dx_or_default();
         (
             TreeInitCfg {
                 dy: dy * l,
@@ -927,24 +1011,11 @@ pub fn layout_graph(arg: &[u8], arg2: &[u8]) -> Result<Vec<u8>, String> {
         .map_err(|a| a.to_string())?
         .into_iter();
 
-    let step = cbor_map
-        .get("step")
-        .and_then(|s| s.parse::<f64>().ok())
-        .unwrap_or(0.2);
-    let temp = cbor_map
-        .get("temp")
-        .and_then(|s| s.parse::<f64>().ok())
-        .unwrap_or(1.1);
-    let seed = cbor_map
-        .get("seed")
-        .and_then(|s| s.parse::<u64>().ok())
-        .unwrap_or(42);
-
     let mut graphs = Vec::new();
     for g in dots {
         let mut typst_graph = TypstGraph::from(g);
 
-        typst_graph.layout(step, seed, temp, &cbor_map);
+        typst_graph.layout(&cbor_map);
         graphs.push((
             typst_graph.to_cbor(),
             typst_graph.to_dot_graph().debug_dot(),
@@ -1088,7 +1159,7 @@ mod tests {
            v9 -> v6
        }).unwrap().into();
 
-        g.layout(0.0, 0, 0.8, &BTreeMap::new());
+        g.layout(&BTreeMap::new());
         println!("{}", g.to_dot_graph().debug_dot())
     }
 
@@ -1196,24 +1267,11 @@ mod tests {
             .unwrap()
             .into_iter();
 
-        let step = cbor_map
-            .get("step")
-            .and_then(|s| s.parse::<f64>().ok())
-            .unwrap_or(0.2);
-        let temp = cbor_map
-            .get("temp")
-            .and_then(|s| s.parse::<f64>().ok())
-            .unwrap_or(1.1);
-        let seed = cbor_map
-            .get("seed")
-            .and_then(|s| s.parse::<u64>().ok())
-            .unwrap_or(42);
-
         let mut graphs = Vec::new();
         for g in dots {
             let mut typst_graph = TypstGraph::from(g);
 
-            typst_graph.layout(step, seed, temp, &cbor_map);
+            typst_graph.layout(&cbor_map);
             graphs.push((
                 typst_graph.to_cbor(),
                 typst_graph.to_dot_graph().debug_dot(),

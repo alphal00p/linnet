@@ -113,6 +113,7 @@ pub fn anneal<S: Clone, N: Neighbor<S>, E: Energy<S>, Sch: Schedule, R: Seedable
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Copy)]
+#[serde(default)]
 pub struct GeoSchedule {
     pub steps: usize,      // e.g. 200
     pub epochs: usize,     // e.g. 8
@@ -120,6 +121,7 @@ pub struct GeoSchedule {
     pub accept_floor: f64, // e.g. 0.15
     pub step_shrink: f64,  // e.g. 0.7
     pub early_tol: f64,    // e.g. 1e-6 (relative best improvement)
+    #[serde(skip)]
     _prev_best: Option<f64>,
 }
 

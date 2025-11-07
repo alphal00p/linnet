@@ -333,6 +333,7 @@ impl<'a, E, V, H, N: NodeStorageOps<NodeData = V> + Clone> Energy<LayoutState<'a
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[serde(default)]
 pub struct ParamTuning {
     pub length_scale: f64,   // scales L: default 1.0
     pub k_spring: f64,       // spring stiffness: default 1.0
