@@ -1,5 +1,6 @@
 pub mod geom;
 use cgmath::{EuclideanSpace, Point2, Rad, Vector2, Zero};
+use figment::{providers::Serialized, Figment, Profile};
 use linnet::{
     half_edge::{
         involution::{EdgeData, EdgeIndex, EdgeVec, Flow, Hedge, HedgePair, Involution},
@@ -595,9 +596,7 @@ pub struct TypstGraph {
     graph: HedgeGraph<TypstEdge, TypstNode, TypstHedge>,
     spring_params: ParamTuning,
     schedule: GeoSchedule,
-    step: Option<f64>,
-    temp: Option<f64>,
-    seed: Option<u64>,
+    layout_overrides: BTreeMap<String, String>,
 }
 
 impl Deref for TypstGraph {
@@ -654,31 +653,12 @@ impl From<DotGraph> for TypstGraph {
 
         let spring_params = ParamTuning::parse(&dot.global_data);
         let schedule = GeoSchedule::parse(&dot.global_data);
-
-        let step = dot
-            .global_data
-            .statements
-            .get("step")
-            .and_then(|s| s.parse::<f64>().ok());
-
-        let temp = dot
-            .global_data
-            .statements
-            .get("temp")
-            .and_then(|s| s.parse::<f64>().ok());
-
-        let seed = dot
-            .global_data
-            .statements
-            .get("seed")
-            .and_then(|s| s.parse::<u64>().ok());
+        let layout_overrides = dot.global_data.statements.clone();
         Self {
             graph,
             spring_params,
             schedule,
-            step,
-            temp,
-            seed,
+            layout_overrides,
         }
     }
 }
@@ -688,65 +668,436 @@ pub struct TreeInitCfg {
     pub dx: f64, // ≈ 0.9 * L
 }
 
+#[derive(Debug, Clone, Deserialize)]
+struct LayoutConfig {
+    #[serde(default = "default_viewport_w", deserialize_with = "deserialize_f64")]
+    viewport_w: f64,
+    #[serde(default = "default_viewport_h", deserialize_with = "deserialize_f64")]
+    viewport_h: f64,
+    #[serde(default = "default_tree_dy", deserialize_with = "deserialize_f64")]
+    tree_dy: f64,
+    #[serde(default = "default_tree_dx", deserialize_with = "deserialize_f64")]
+    tree_dx: f64,
+    #[serde(default = "default_step", deserialize_with = "deserialize_f64")]
+    step: f64,
+    #[serde(default = "default_temp", deserialize_with = "deserialize_f64")]
+    temp: f64,
+    #[serde(default = "default_seed", deserialize_with = "deserialize_u64")]
+    seed: u64,
+    #[serde(default = "default_delta", deserialize_with = "deserialize_f64")]
+    delta: f64,
+    #[serde(default)]
+    spring: SpringConfig,
+    #[serde(default)]
+    schedule: ScheduleConfig,
+}
+
+impl Default for LayoutConfig {
+    fn default() -> Self {
+        Self {
+            viewport_w: default_viewport_w(),
+            viewport_h: default_viewport_h(),
+            tree_dy: default_tree_dy(),
+            tree_dx: default_tree_dx(),
+            step: default_step(),
+            temp: default_temp(),
+            seed: default_seed(),
+            delta: default_delta(),
+            spring: SpringConfig::default(),
+            schedule: ScheduleConfig::default(),
+        }
+    }
+}
+
+impl LayoutConfig {
+    fn from_figment(figment: &Figment) -> Self {
+        figment.extract::<Self>().unwrap_or_default()
+    }
+}
+
+fn default_viewport_w() -> f64 {
+    10.0
+}
+
+fn default_viewport_h() -> f64 {
+    10.0
+}
+
+fn default_tree_dy() -> f64 {
+    1.2
+}
+
+fn default_tree_dx() -> f64 {
+    0.9
+}
+
+fn default_step() -> f64 {
+    0.2
+}
+
+fn default_temp() -> f64 {
+    1.1
+}
+
+fn default_seed() -> u64 {
+    42
+}
+
+fn default_delta() -> f64 {
+    0.4
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct SpringConfig {
+    #[serde(default = "default_length_scale", deserialize_with = "deserialize_f64")]
+    length_scale: f64,
+    #[serde(default = "default_k_spring", deserialize_with = "deserialize_f64")]
+    k_spring: f64,
+    #[serde(default = "default_beta", deserialize_with = "deserialize_f64")]
+    beta: f64,
+    #[serde(
+        default = "default_gamma_dangling",
+        deserialize_with = "deserialize_f64"
+    )]
+    gamma_dangling: f64,
+    #[serde(default = "default_gamma_ev", deserialize_with = "deserialize_f64")]
+    gamma_ev: f64,
+    #[serde(default = "default_gamma_ee", deserialize_with = "deserialize_f64")]
+    gamma_ee: f64,
+    #[serde(default = "default_g_center", deserialize_with = "deserialize_f64")]
+    g_center: f64,
+    #[serde(default = "default_eps", deserialize_with = "deserialize_f64")]
+    eps: f64,
+}
+
+impl Default for SpringConfig {
+    fn default() -> Self {
+        Self {
+            length_scale: default_length_scale(),
+            k_spring: default_k_spring(),
+            beta: default_beta(),
+            gamma_dangling: default_gamma_dangling(),
+            gamma_ev: default_gamma_ev(),
+            gamma_ee: default_gamma_ee(),
+            g_center: default_g_center(),
+            eps: default_eps(),
+        }
+    }
+}
+
+impl From<&SpringConfig> for ParamTuning {
+    fn from(cfg: &SpringConfig) -> Self {
+        ParamTuning {
+            length_scale: cfg.length_scale,
+            k_spring: cfg.k_spring,
+            beta: cfg.beta,
+            gamma_dangling: cfg.gamma_dangling,
+            gamma_ev: cfg.gamma_ev,
+            gamma_ee: cfg.gamma_ee,
+            g_center: cfg.g_center,
+            eps: cfg.eps,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct ScheduleConfig {
+    #[serde(default = "default_steps", deserialize_with = "deserialize_usize")]
+    steps: usize,
+    #[serde(default = "default_epochs", deserialize_with = "deserialize_usize")]
+    epochs: usize,
+    #[serde(default = "default_cool", deserialize_with = "deserialize_f64")]
+    cool: f64,
+    #[serde(default = "default_accept_floor", deserialize_with = "deserialize_f64")]
+    accept_floor: f64,
+    #[serde(default = "default_step_shrink", deserialize_with = "deserialize_f64")]
+    step_shrink: f64,
+    #[serde(default = "default_early_tol", deserialize_with = "deserialize_f64")]
+    early_tol: f64,
+}
+
+impl Default for ScheduleConfig {
+    fn default() -> Self {
+        Self {
+            steps: default_steps(),
+            epochs: default_epochs(),
+            cool: default_cool(),
+            accept_floor: default_accept_floor(),
+            step_shrink: default_step_shrink(),
+            early_tol: default_early_tol(),
+        }
+    }
+}
+
+impl From<&ScheduleConfig> for GeoSchedule {
+    fn from(cfg: &ScheduleConfig) -> Self {
+        GeoSchedule::new(
+            cfg.steps,
+            cfg.epochs,
+            cfg.cool,
+            cfg.accept_floor,
+            cfg.step_shrink,
+            cfg.early_tol,
+        )
+    }
+}
+
+fn default_length_scale() -> f64 {
+    1.0
+}
+
+fn default_k_spring() -> f64 {
+    1.0
+}
+
+fn default_beta() -> f64 {
+    0.14
+}
+
+fn default_gamma_dangling() -> f64 {
+    0.14
+}
+
+fn default_gamma_ev() -> f64 {
+    0.20
+}
+
+fn default_gamma_ee() -> f64 {
+    0.10
+}
+
+fn default_g_center() -> f64 {
+    0.05
+}
+
+fn default_eps() -> f64 {
+    1e-4
+}
+
+fn default_steps() -> usize {
+    200
+}
+
+fn default_epochs() -> usize {
+    8
+}
+
+fn default_cool() -> f64 {
+    0.85
+}
+
+fn default_accept_floor() -> f64 {
+    0.15
+}
+
+fn default_step_shrink() -> f64 {
+    0.7
+}
+
+fn default_early_tol() -> f64 {
+    1e-6
+}
+
+fn deserialize_f64<'de, D>(deserializer: D) -> Result<f64, D::Error>
+where
+    D: serde::de::Deserializer<'de>,
+{
+    struct F64Visitor;
+
+    impl<'de> serde::de::Visitor<'de> for F64Visitor {
+        type Value = f64;
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+            formatter.write_str("a number or a numeric string")
+        }
+
+        fn visit_f64<E>(self, value: f64) -> Result<f64, E> {
+            Ok(value)
+        }
+
+        fn visit_u64<E>(self, value: u64) -> Result<f64, E> {
+            Ok(value as f64)
+        }
+
+        fn visit_i64<E>(self, value: i64) -> Result<f64, E> {
+            Ok(value as f64)
+        }
+
+        fn visit_str<E>(self, value: &str) -> Result<f64, E>
+        where
+            E: serde::de::Error,
+        {
+            value.parse().map_err(E::custom)
+        }
+
+        fn visit_string<E>(self, value: String) -> Result<f64, E>
+        where
+            E: serde::de::Error,
+        {
+            self.visit_str(&value)
+        }
+    }
+
+    deserializer.deserialize_any(F64Visitor)
+}
+
+fn deserialize_u64<'de, D>(deserializer: D) -> Result<u64, D::Error>
+where
+    D: serde::de::Deserializer<'de>,
+{
+    struct U64Visitor;
+
+    impl<'de> serde::de::Visitor<'de> for U64Visitor {
+        type Value = u64;
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+            formatter.write_str("a non-negative integer or numeric string")
+        }
+
+        fn visit_u64<E>(self, value: u64) -> Result<u64, E> {
+            Ok(value)
+        }
+
+        fn visit_i64<E>(self, value: i64) -> Result<u64, E>
+        where
+            E: serde::de::Error,
+        {
+            if value < 0 {
+                return Err(E::custom("expected non-negative integer"));
+            }
+            Ok(value as u64)
+        }
+
+        fn visit_f64<E>(self, value: f64) -> Result<u64, E>
+        where
+            E: serde::de::Error,
+        {
+            if value.is_sign_negative() {
+                return Err(E::custom("expected non-negative integer"));
+            }
+            Ok(value as u64)
+        }
+
+        fn visit_str<E>(self, value: &str) -> Result<u64, E>
+        where
+            E: serde::de::Error,
+        {
+            value.parse().map_err(E::custom)
+        }
+
+        fn visit_string<E>(self, value: String) -> Result<u64, E>
+        where
+            E: serde::de::Error,
+        {
+            self.visit_str(&value)
+        }
+    }
+
+    deserializer.deserialize_any(U64Visitor)
+}
+
+fn deserialize_usize<'de, D>(deserializer: D) -> Result<usize, D::Error>
+where
+    D: serde::de::Deserializer<'de>,
+{
+    struct UsizeVisitor;
+
+    impl<'de> serde::de::Visitor<'de> for UsizeVisitor {
+        type Value = usize;
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+            formatter.write_str("a non-negative integer or numeric string")
+        }
+
+        fn visit_u64<E>(self, value: u64) -> Result<usize, E> {
+            Ok(value as usize)
+        }
+
+        fn visit_i64<E>(self, value: i64) -> Result<usize, E>
+        where
+            E: serde::de::Error,
+        {
+            if value < 0 {
+                return Err(E::custom("expected non-negative integer"));
+            }
+            Ok(value as usize)
+        }
+
+        fn visit_f64<E>(self, value: f64) -> Result<usize, E>
+        where
+            E: serde::de::Error,
+        {
+            if value.is_sign_negative() {
+                return Err(E::custom("expected non-negative integer"));
+            }
+            Ok(value as usize)
+        }
+
+        fn visit_str<E>(self, value: &str) -> Result<usize, E>
+        where
+            E: serde::de::Error,
+        {
+            value.parse().map_err(E::custom)
+        }
+
+        fn visit_string<E>(self, value: String) -> Result<usize, E>
+        where
+            E: serde::de::Error,
+        {
+            self.visit_str(&value)
+        }
+    }
+
+    deserializer.deserialize_any(UsizeVisitor)
+}
+
 impl TypstGraph {
-    pub fn layout(&mut self, step: f64, seed: u64, temp: f64, cbor_map: &BTreeMap<String, String>) {
-        // println!("Tree initialize cfg:");
-        let (cfg, energy) = self.tree_init_cfg(&cbor_map);
+    pub fn layout(&mut self, figment: &Figment) {
+        let merged = figment.clone().merge(Serialized::from(
+            self.layout_overrides.clone(),
+            Profile::Default,
+        ));
+        let config = LayoutConfig::from_figment(&merged);
+        self.layout_with_config(&config);
+    }
 
-        // println!("New positions as tree");
-        let (pos_n, pos_e) = self.new_positions(cfg);
+    fn layout_with_config(&mut self, config: &LayoutConfig) {
+        self.spring_params = ParamTuning::from(&config.spring);
+        self.schedule = GeoSchedule::from(&config.schedule);
 
-        // println!("New state");
-        let state = self.graph.new_layout_state(pos_n, pos_e, 0.4);
-
-        // println!("Anneal");
+        let (tree_cfg, energy) = self.tree_init_cfg(config);
+        let (pos_n, pos_e) = self.new_positions(tree_cfg);
+        let state = self.graph.new_layout_state(pos_n, pos_e, config.delta);
 
         let (out, _stats) = anneal::<_, _, _, _, SmallRng>(
             state,
             SAConfig {
-                temp: self.temp.unwrap_or(temp),
-                step: self.step.unwrap_or(step),
-                seed: self.seed.unwrap_or(seed),
+                temp: config.temp,
+                step: config.step,
+                seed: config.seed,
             },
             &LayoutNeighbor,
             &energy,
             &mut self.schedule,
         );
 
-        // println!("Update positions");
-
         self.update_positions(out.vertex_points, out.edge_points);
     }
 
-    pub fn tree_init_cfg(
-        &self,
-        map: &BTreeMap<String, String>,
-    ) -> (TreeInitCfg, SpringChargeEnergy) {
-        let viewport_w = map
-            .get("viewport_w")
-            .and_then(|s| s.parse::<f64>().ok())
-            .unwrap_or(10.0);
-        let viewport_h = map
-            .get("viewport_h")
-            .and_then(|s| s.parse::<f64>().ok())
-            .unwrap_or(10.0);
+    pub fn tree_init_cfg(&self, config: &LayoutConfig) -> (TreeInitCfg, SpringChargeEnergy) {
         let tune = self.spring_params.clone();
-        let energycfg =
-            SpringChargeEnergy::from_graph(self.n_nodes(), viewport_w, viewport_h, tune);
+        let energycfg = SpringChargeEnergy::from_graph(
+            self.n_nodes(),
+            config.viewport_w,
+            config.viewport_h,
+            tune,
+        );
 
         let l = energycfg.spring_length;
-        let dy = map
-            .get("tree_dy")
-            .and_then(|s| s.parse::<f64>().ok())
-            .unwrap_or(1.2);
-        let dx = map
-            .get("tree_dx")
-            .and_then(|s| s.parse::<f64>().ok())
-            .unwrap_or(0.9);
         (
             TreeInitCfg {
-                dy: dy * l,
-                dx: dx * l,
+                dy: config.tree_dy * l,
+                dx: config.tree_dx * l,
             },
             energycfg,
         )
@@ -919,32 +1270,20 @@ pub fn layout_graph(arg: &[u8], arg2: &[u8]) -> Result<Vec<u8>, String> {
         Ok(s) => s,
         Err(_) => return Err("Invalid UTF-8".to_string()), // Return error on invalid UTF-8
     };
+    let cbor_map: ciborium::Value = ciborium::de::from_reader(arg2)
+        .map_err(|e| format!("Failed to deserialize CBOR value: {}", e))?;
 
-    let cbor_map: BTreeMap<String, String> = ciborium::de::from_reader(arg2)
-        .map_err(|e| format!("Failed to deserialize CBOR map: {}", e))?;
+    let figment = Figment::from(Serialized::from(cbor_map, Profile::Default));
 
     let dots = DotGraphSet::from_string(dot_string)
         .map_err(|a| a.to_string())?
         .into_iter();
 
-    let step = cbor_map
-        .get("step")
-        .and_then(|s| s.parse::<f64>().ok())
-        .unwrap_or(0.2);
-    let temp = cbor_map
-        .get("temp")
-        .and_then(|s| s.parse::<f64>().ok())
-        .unwrap_or(1.1);
-    let seed = cbor_map
-        .get("seed")
-        .and_then(|s| s.parse::<u64>().ok())
-        .unwrap_or(42);
-
     let mut graphs = Vec::new();
     for g in dots {
         let mut typst_graph = TypstGraph::from(g);
 
-        typst_graph.layout(step, seed, temp, &cbor_map);
+        typst_graph.layout(&figment);
         graphs.push((
             typst_graph.to_cbor(),
             typst_graph.to_dot_graph().debug_dot(),
@@ -986,6 +1325,8 @@ impl CBORTypstGraph {
 mod tests {
     use std::{collections::BTreeMap, fs};
 
+    use figment::providers::Serialized;
+    use figment::{Figment, Profile};
     use linnet::{dot, parser::set::DotGraphSet};
 
     use linnet::half_edge::swap::Swap;
@@ -1088,7 +1429,11 @@ mod tests {
            v9 -> v6
        }).unwrap().into();
 
-        g.layout(0.0, 0, 0.8, &BTreeMap::new());
+        let figment = Figment::from(Serialized::from(
+            BTreeMap::<String, String>::new(),
+            Profile::Default,
+        ));
+        g.layout(&figment);
         println!("{}", g.to_dot_graph().debug_dot())
     }
 
@@ -1189,31 +1534,21 @@ mod tests {
            }
         );
 
-        let cbor_map: BTreeMap<String, String> = BTreeMap::new();
+        let figment = Figment::from(Serialized::from(
+            BTreeMap::<String, String>::new(),
+            Profile::Default,
+        ));
 
         let dots = DotGraphSet::from_string(input)
             .map_err(|a| a.to_string())
             .unwrap()
             .into_iter();
 
-        let step = cbor_map
-            .get("step")
-            .and_then(|s| s.parse::<f64>().ok())
-            .unwrap_or(0.2);
-        let temp = cbor_map
-            .get("temp")
-            .and_then(|s| s.parse::<f64>().ok())
-            .unwrap_or(1.1);
-        let seed = cbor_map
-            .get("seed")
-            .and_then(|s| s.parse::<u64>().ok())
-            .unwrap_or(42);
-
         let mut graphs = Vec::new();
         for g in dots {
             let mut typst_graph = TypstGraph::from(g);
 
-            typst_graph.layout(step, seed, temp, &cbor_map);
+            typst_graph.layout(&figment);
             graphs.push((
                 typst_graph.to_cbor(),
                 typst_graph.to_dot_graph().debug_dot(),
