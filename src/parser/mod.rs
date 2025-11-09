@@ -82,8 +82,12 @@ use std::{
     path::Path,
 };
 
+#[cfg(feature = "serde")]
+use figment;
+
 use ahash::{HashSet, HashSetExt};
 use dot_parser::ast::CompassPt;
+use figment::Figment;
 use indenter::CodeFormatter;
 use itertools::{Either, Itertools};
 use subgraph_free::SubGraphFreeGraph;
@@ -261,7 +265,7 @@ impl<S: NodeStorageOps<NodeData = DotVertexData>> DotGraph<S> {
     {
         let ast_graph: SubGraphFreeGraph = dot_parser::ast::Graph::from_file(p)?.into();
 
-        Ok(Self::from(ast_graph))
+        Ok(Self::from((ast_graph, Figment::new())))
     }
 
     #[allow(clippy::result_large_err, clippy::type_complexity)]
@@ -272,7 +276,20 @@ impl<S: NodeStorageOps<NodeData = DotVertexData>> DotGraph<S> {
             .filter_map(&|(k, v)| Some((k.to_string(), v.to_string())))
             .into();
 
-        Ok(Self::from(ast_graph))
+        Ok(Self::from((ast_graph, Figment::new())))
+    }
+
+    #[cfg(feature = "serde")]
+    pub fn from_string_with_figment<'a, Str: AsRef<str>>(
+        s: Str,
+        figment: figment::Figment,
+    ) -> Result<Self, HedgeParseError<'a, (), (), (), ()>> {
+        let ast_graph: SubGraphFreeGraph = dot_parser::ast::Graph::try_from(s.as_ref())?
+            .filter_map(&|(k, v)| Some((k.to_string(), v.to_string())))
+            .into();
+
+        let graph = Self::from((ast_graph, figment));
+        Ok(graph)
     }
 
     pub fn back_and_forth_dot(self) -> Self {
@@ -318,8 +335,10 @@ impl<S: NodeStorageOps<NodeData = DotVertexData>> DotGraph<S> {
 pub mod error;
 pub use error::{HedgeParseError, HedgeParseExt};
 
-impl<S: NodeStorageOps<NodeData = DotVertexData>> From<SubGraphFreeGraph> for DotGraph<S> {
-    fn from(value: SubGraphFreeGraph) -> Self {
+impl<S: NodeStorageOps<NodeData = DotVertexData>> From<(SubGraphFreeGraph, Figment)>
+    for DotGraph<S>
+{
+    fn from((value, fig): (SubGraphFreeGraph, Figment)) -> Self {
         let is_digraph = value.is_digraph;
         let name = value.name.clone();
         let (attrs, ids, nodes, edges) = value.nodes_and_edges();
@@ -329,6 +348,7 @@ impl<S: NodeStorageOps<NodeData = DotVertexData>> From<SubGraphFreeGraph> for Do
         if let Some(name) = name {
             global_data.add_name(name);
         }
+        global_data.set_figment(fig);
 
         let mut g = HedgeGraphBuilder::new();
         let mut map = BTreeMap::new();

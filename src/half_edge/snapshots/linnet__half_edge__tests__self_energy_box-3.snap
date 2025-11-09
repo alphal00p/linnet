@@ -1,15 +1,18 @@
 ---
 source: src/half_edge/tests.rs
-expression: cut.reference
+expression: cut.left
 ---
-BitSeq(
-  order: "bitvec::order::Lsb0",
-  head: BitIdx(
-    width: 64,
-    index: 0,
+SubSet(
+  set: BitSeq(
+    order: "bitvec::order::Lsb0",
+    head: BitIdx(
+      width: 64,
+      index: 0,
+    ),
+    bits: 24,
+    data: [
+      591888,
+    ],
   ),
-  bits: 24,
-  data: [
-    591888,
-  ],
+  id: PhantomData,
 )

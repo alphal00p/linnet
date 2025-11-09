@@ -26,4 +26,4 @@ rand_xoshiro = "0.7.0"
 figment = "0.10.19"
 
 [lib]
-crate-type = ["cdylib"]
+crate-type = ["cdylib", "rlib"]

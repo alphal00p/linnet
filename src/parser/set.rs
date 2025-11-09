@@ -1,5 +1,9 @@
 use std::path::Path;
 
+#[cfg(feature = "serde")]
+use figment;
+use figment::Figment;
+
 use crate::half_edge::{
     nodestore::{NodeStorage, NodeStorageOps, NodeStorageVec},
     HedgeGraph,
@@ -31,7 +35,7 @@ impl<S: NodeStorageOps<NodeData = DotVertexData>>
         let mut global_data = Vec::new();
         for g in ast_graphs.graphs {
             let can_graph = SubGraphFreeGraph::from(g);
-            let graph = DotGraph::from(can_graph);
+            let graph = DotGraph::from((can_graph, Figment::new()));
 
             set.push(graph.graph);
             global_data.push(graph.global_data);
@@ -52,7 +56,30 @@ impl<S: NodeStorageOps<NodeData = DotVertexData>>
                 g.filter_map(&|a| Some((a.0.to_string(), a.1.to_string()))),
             );
 
-            let graph = DotGraph::from(can_graph);
+            let graph = DotGraph::from((can_graph, Figment::new()));
+            global_data.push(graph.global_data);
+            set.push(graph.graph);
+        }
+
+        Ok(GraphSet { set, global_data })
+    }
+
+    #[cfg(feature = "serde")]
+    #[allow(clippy::result_large_err, clippy::type_complexity)]
+    pub fn from_string_with_figment<'a, Str: AsRef<str>>(
+        s: Str,
+        figment: figment::Figment,
+    ) -> Result<Self, HedgeParseError<'a, (), (), (), ()>> {
+        let ast_graphs = dot_parser::ast::Graphs::try_from(s.as_ref())?;
+
+        let mut global_data = Vec::new();
+        let mut set = Vec::with_capacity(ast_graphs.graphs.len());
+        for g in ast_graphs.graphs {
+            let can_graph = SubGraphFreeGraph::from(
+                g.filter_map(&|a| Some((a.0.to_string(), a.1.to_string()))),
+            );
+
+            let graph = DotGraph::from((can_graph, figment.clone()));
             global_data.push(graph.global_data);
             set.push(graph.graph);
         }

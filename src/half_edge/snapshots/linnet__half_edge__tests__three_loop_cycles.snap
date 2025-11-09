@@ -4,44 +4,53 @@ expression: cycles
 ---
 [
   Cycle(
-    filter: BitSeq(
-      order: "bitvec::order::Lsb0",
-      head: BitIdx(
-        width: 64,
-        index: 0,
+    filter: SubSet(
+      set: BitSeq(
+        order: "bitvec::order::Lsb0",
+        head: BitIdx(
+          width: 64,
+          index: 0,
+        ),
+        bits: 12,
+        data: [
+          4035,
+        ],
       ),
-      bits: 12,
-      data: [
-        4035,
-      ],
+      id: PhantomData,
     ),
     loop_count: Some(1),
   ),
   Cycle(
-    filter: BitSeq(
-      order: "bitvec::order::Lsb0",
-      head: BitIdx(
-        width: 64,
-        index: 0,
+    filter: SubSet(
+      set: BitSeq(
+        order: "bitvec::order::Lsb0",
+        head: BitIdx(
+          width: 64,
+          index: 0,
+        ),
+        bits: 12,
+        data: [
+          4044,
+        ],
       ),
-      bits: 12,
-      data: [
-        4044,
-      ],
+      id: PhantomData,
     ),
     loop_count: Some(1),
   ),
   Cycle(
-    filter: BitSeq(
-      order: "bitvec::order::Lsb0",
-      head: BitIdx(
-        width: 64,
-        index: 0,
+    filter: SubSet(
+      set: BitSeq(
+        order: "bitvec::order::Lsb0",
+        head: BitIdx(
+          width: 64,
+          index: 0,
+        ),
+        bits: 12,
+        data: [
+          4080,
+        ],
       ),
-      bits: 12,
-      data: [
-        4080,
-      ],
+      id: PhantomData,
     ),
     loop_count: Some(1),
   ),

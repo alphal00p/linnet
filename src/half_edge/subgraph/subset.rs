@@ -78,6 +78,10 @@ impl<ID> SubSet<ID> {
     pub fn pop(&mut self) -> Option<bool> {
         self.set.pop()
     }
+
+    pub fn clear(&mut self) {
+        self.set.fill(false);
+    }
 }
 
 impl<ID> Not for SubSet<ID> {

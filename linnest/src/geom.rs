@@ -2,7 +2,7 @@ use cgmath::{Angle, InnerSpace, Point2, Rad, Vector2};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-#[derive(Debug, Error, Clone, Copy, PartialEq,Serialize,Deserialize)]
+#[derive(Debug, Error, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum GeomError {
     #[error("degenerate triangle: two points coincide")]
     CoincidentPoints,
@@ -55,7 +55,10 @@ pub fn tangent_angle_toward_c_side(
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[inline] fn turns(t: f64) -> Rad<f64> { Rad::<f64>::full_turn() * t }
+    #[inline]
+    fn turns(t: f64) -> Rad<f64> {
+        Rad::<f64>::full_turn() * t
+    }
 
     #[test]
     fn basic_right_triangle_toward_c_side() {
@@ -65,7 +68,7 @@ mod tests {
         let c = Point2::new(0.0, 1.0);
         let ang = tangent_angle_toward_c_side(a, b, c).unwrap();
 
-        assert!((ang - turns(3.0/8.0)).0.abs() < 1e-12);
+        assert!((ang - turns(3.0 / 8.0)).0.abs() < 1e-12);
     }
 
     #[test]
@@ -76,7 +79,7 @@ mod tests {
         let c = Point2::new(0.0, -1.0);
         let ang = tangent_angle_toward_c_side(a, b, c).unwrap();
 
-        assert!((ang + turns(3.0/8.0)).0.abs() < 1e-12);
+        assert!((ang + turns(3.0 / 8.0)).0.abs() < 1e-12);
     }
 
     #[test]
@@ -90,24 +93,42 @@ mod tests {
         let theta_ba = tangent_angle_toward_c_side(b, a, c).unwrap();
 
         // Oriented angle must flip when the base ray is reversed
-        assert!((theta_ab.0 + theta_ba.0).abs() < 1e-12,
-                "Expected θ(A→B,C) = -θ(B→A,C), got {} vs {}",
-                theta_ab.0, theta_ba.0);
+        assert!(
+            (theta_ab.0 + theta_ba.0).abs() < 1e-12,
+            "Expected θ(A→B,C) = -θ(B→A,C), got {} vs {}",
+            theta_ab.0,
+            theta_ba.0
+        );
     }
-
 
     #[test]
     fn tangent_really_points_to_cs_side() {
         // A few diverse triangles (randomize more if you like)
         let cases = [
-            (Point2::new(0.2, -0.7), Point2::new(2.5, 0.1),  Point2::new(-0.4,  1.3)),
-            (Point2::new(0.0, 0.0),  Point2::new(1.0, 0.0),  Point2::new(0.3,  0.9)),
-            (Point2::new(-1.2, 2.0), Point2::new( 0.4, 3.1), Point2::new(-2.0, -0.8)),
-            (Point2::new(5.0, -3.0), Point2::new( 8.0, 1.0), Point2::new( 6.0, -6.0)),
+            (
+                Point2::new(0.2, -0.7),
+                Point2::new(2.5, 0.1),
+                Point2::new(-0.4, 1.3),
+            ),
+            (
+                Point2::new(0.0, 0.0),
+                Point2::new(1.0, 0.0),
+                Point2::new(0.3, 0.9),
+            ),
+            (
+                Point2::new(-1.2, 2.0),
+                Point2::new(0.4, 3.1),
+                Point2::new(-2.0, -0.8),
+            ),
+            (
+                Point2::new(5.0, -3.0),
+                Point2::new(8.0, 1.0),
+                Point2::new(6.0, -6.0),
+            ),
         ];
 
-        for (a,b,c) in cases {
-            let theta = tangent_angle_toward_c_side(a,b,c).unwrap();
+        for (a, b, c) in cases {
+            let theta = tangent_angle_toward_c_side(a, b, c).unwrap();
 
             // Rotate AB by the reported angle and check the side:
             let ab = b - a;
@@ -116,9 +137,13 @@ mod tests {
 
             let orient = cross_z(b - a, c - a);
             let side_rotated = cross_z(ab, t);
-            assert!(orient * side_rotated > 0.0,
+            assert!(
+                orient * side_rotated > 0.0,
                 "tangent not on C's side: orient={}, side_rotated={}, θ={}",
-                orient, side_rotated, theta.0);
+                orient,
+                side_rotated,
+                theta.0
+            );
         }
     }
 
@@ -127,7 +152,10 @@ mod tests {
         let a = Point2::new(0.0, 0.0);
         let b = Point2::new(0.0, 0.0);
         let c = Point2::new(1.0, 0.0);
-        assert_eq!(tangent_angle_toward_c_side(a, b, c).unwrap_err(), GeomError::CoincidentPoints);
+        assert_eq!(
+            tangent_angle_toward_c_side(a, b, c).unwrap_err(),
+            GeomError::CoincidentPoints
+        );
     }
 
     #[test]
@@ -135,7 +163,10 @@ mod tests {
         let a = Point2::new(0.0, 0.0);
         let b = Point2::new(2.0, 0.0);
         let c = Point2::new(5e-16, 0.0);
-        assert_eq!(tangent_angle_toward_c_side(a, b, c).unwrap_err(), GeomError::Collinear);
+        assert_eq!(
+            tangent_angle_toward_c_side(a, b, c).unwrap_err(),
+            GeomError::Collinear
+        );
     }
 
     #[test]
@@ -151,7 +182,8 @@ mod tests {
         let a_translated = a + translation;
         let b_translated = b + translation;
         let c_translated = c + translation;
-        let translated_angle = tangent_angle_toward_c_side(a_translated, b_translated, c_translated).unwrap();
+        let translated_angle =
+            tangent_angle_toward_c_side(a_translated, b_translated, c_translated).unwrap();
 
         // Apply rotation (45 degrees)
         let cos_theta = (std::f64::consts::PI / 4.0).cos();
@@ -160,7 +192,7 @@ mod tests {
         let rotate = |p: Point2<f64>| -> Point2<f64> {
             Point2::new(
                 p.x * cos_theta - p.y * sin_theta,
-                p.x * sin_theta + p.y * cos_theta
+                p.x * sin_theta + p.y * cos_theta,
             )
         };
 
@@ -173,15 +205,28 @@ mod tests {
         let a_transformed = rotate(a) + translation;
         let b_transformed = rotate(b) + translation;
         let c_transformed = rotate(c) + translation;
-        let transformed_angle = tangent_angle_toward_c_side(a_transformed, b_transformed, c_transformed).unwrap();
+        let transformed_angle =
+            tangent_angle_toward_c_side(a_transformed, b_transformed, c_transformed).unwrap();
 
         // All angles should be the same (within numerical tolerance)
-        assert!((original_angle.0 - translated_angle.0).abs() < 1e-12,
-                "Translation changed angle: {} vs {}", original_angle.0, translated_angle.0);
-        assert!((original_angle.0 - rotated_angle.0).abs() < 1e-12,
-                "Rotation changed angle: {} vs {}", original_angle.0, rotated_angle.0);
-        assert!((original_angle.0 - transformed_angle.0).abs() < 1e-12,
-                "Combined transformation changed angle: {} vs {}", original_angle.0, transformed_angle.0);
+        assert!(
+            (original_angle.0 - translated_angle.0).abs() < 1e-12,
+            "Translation changed angle: {} vs {}",
+            original_angle.0,
+            translated_angle.0
+        );
+        assert!(
+            (original_angle.0 - rotated_angle.0).abs() < 1e-12,
+            "Rotation changed angle: {} vs {}",
+            original_angle.0,
+            rotated_angle.0
+        );
+        assert!(
+            (original_angle.0 - transformed_angle.0).abs() < 1e-12,
+            "Combined transformation changed angle: {} vs {}",
+            original_angle.0,
+            transformed_angle.0
+        );
     }
 
     #[test]
@@ -197,7 +242,8 @@ mod tests {
         let a_translated = a + translation;
         let b_translated = b + translation;
         let c_translated = c + translation;
-        let translated_angle = tangent_angle_toward_c_side(a_translated, b_translated, c_translated).unwrap();
+        let translated_angle =
+            tangent_angle_toward_c_side(a_translated, b_translated, c_translated).unwrap();
 
         // Apply rotation (120 degrees)
         let cos_theta = (2.0 * std::f64::consts::PI / 3.0).cos();
@@ -206,7 +252,7 @@ mod tests {
         let rotate = |p: Point2<f64>| -> Point2<f64> {
             Point2::new(
                 p.x * cos_theta - p.y * sin_theta,
-                p.x * sin_theta + p.y * cos_theta
+                p.x * sin_theta + p.y * cos_theta,
             )
         };
 
@@ -219,16 +265,27 @@ mod tests {
         let a_transformed = rotate(a) + translation;
         let b_transformed = rotate(b) + translation;
         let c_transformed = rotate(c) + translation;
-        let transformed_angle = tangent_angle_toward_c_side(a_transformed, b_transformed, c_transformed).unwrap();
+        let transformed_angle =
+            tangent_angle_toward_c_side(a_transformed, b_transformed, c_transformed).unwrap();
 
         // All angles should be the same (within numerical tolerance)
-        assert!((original_angle.0 - translated_angle.0).abs() < 1e-12,
-                "Translation changed mirrored angle: {} vs {}", original_angle.0, translated_angle.0);
-        assert!((original_angle.0 - rotated_angle.0).abs() < 1e-12,
-                "Rotation changed mirrored angle: {} vs {}", original_angle.0, rotated_angle.0);
-        assert!((original_angle.0 - transformed_angle.0).abs() < 1e-12,
-                "Combined transformation changed mirrored angle: {} vs {}", original_angle.0, transformed_angle.0);
+        assert!(
+            (original_angle.0 - translated_angle.0).abs() < 1e-12,
+            "Translation changed mirrored angle: {} vs {}",
+            original_angle.0,
+            translated_angle.0
+        );
+        assert!(
+            (original_angle.0 - rotated_angle.0).abs() < 1e-12,
+            "Rotation changed mirrored angle: {} vs {}",
+            original_angle.0,
+            rotated_angle.0
+        );
+        assert!(
+            (original_angle.0 - transformed_angle.0).abs() < 1e-12,
+            "Combined transformation changed mirrored angle: {} vs {}",
+            original_angle.0,
+            transformed_angle.0
+        );
     }
-
-
 }

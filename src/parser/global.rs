@@ -1,6 +1,7 @@
 use std::{collections::BTreeMap, fmt::Display};
 
 use dot_parser::{ast::AttrStmt, canonical::IDEq};
+use figment::Figment;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -14,6 +15,52 @@ pub struct GlobalData {
 impl GlobalData {
     pub fn add_name(&mut self, name: String) {
         self.name = name;
+    }
+
+    #[cfg(feature = "serde")]
+    pub fn with_figment(mut self, figment: Figment) -> Self {
+        self.extract_figment_data(&figment);
+        self
+    }
+
+    #[cfg(feature = "serde")]
+    pub fn set_figment(&mut self, figment: Figment) {
+        self.extract_figment_data(&figment);
+    }
+
+    #[cfg(not(feature = "serde"))]
+    pub fn set_figment(&mut self, _figment: Figment) {
+        // Incremental CLI always passes a Figment instance, but without the
+        // serde feature we cannot deserialize it, so we silently ignore it.
+    }
+
+    #[cfg(feature = "serde")]
+    fn extract_figment_data(&mut self, figment: &Figment) {
+        // Extract graph.* keys using focus
+        if let Ok(graph_data) = figment.focus("graph").extract::<BTreeMap<String, String>>() {
+            self.statements.extend(graph_data);
+        }
+
+        // Extract edge.* keys using focus
+        if let Ok(edge_data) = figment.focus("edge").extract::<BTreeMap<String, String>>() {
+            self.edge_statements.extend(edge_data);
+        }
+
+        // Extract node.* keys using focus
+        if let Ok(node_data) = figment.focus("node").extract::<BTreeMap<String, String>>() {
+            self.node_statements.extend(node_data);
+        }
+
+        // Extract top-level keys (no nested structure)
+        if let Ok(all_data) = figment.extract::<BTreeMap<String, figment::value::Value>>() {
+            for (key, value) in all_data {
+                if !key.contains('.') {
+                    if let Some(value_str) = value.into_string() {
+                        self.statements.insert(key, value_str);
+                    }
+                }
+            }
+        }
     }
 }
 

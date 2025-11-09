@@ -31,6 +31,10 @@ harness = false
 # name = "iterbv"
 # harness = false
 
+[[bench]]
+name = "layout_small"
+harness = false
+
 
 [[bin]]
 name = "linnet-cli"
@@ -48,6 +52,7 @@ itertools = "0.14.0"
 rand = { version = "0.8.5", features = ["small_rng"] }
 ref-ops = "0.2.5"
 serde = { version = "1.0", features = ["derive"], optional = true }
+figment = { version = "0.10.19" }
 symbolica = { version = "0.19", optional = true, default-features = false }
 thiserror = "2.0.11"
 derive_more = "0.99.17"
@@ -60,6 +65,13 @@ indenter = { version = "0.3.3", features = ["std"] }
 paste = "1.0.15"
 getrandom = { version = "0.2", default-features = false, features = ["custom"] }
 rand_xoshiro = "0.7.0"
+anyhow = "1.0"
+blake3 = "1.5"
+clap = { version = "4.5", features = ["derive"] }
+pathdiff = "0.2"
+serde_json = "1.0"
+walkdir = "2.5"
+rust-embed = { version = "8.4", features = ["interpolate-folder-path"] }
 
 [features]
 serde = ["dep:serde", "bitvec/serde"]
@@ -81,6 +93,9 @@ similar-asserts = "1.7.0"
 # hibitset = "0.6.4"
 # fixedbitset = "0.5.7"
 iai-callgrind = "0.14.0"
+criterion = "0.5"
+figment = "0.10.19"
+linnest = { path = "linnest" }
 
 [workspace]
 members = ["linnest"]

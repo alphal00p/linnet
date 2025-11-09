@@ -1,6 +1,8 @@
 pub mod geom;
 use cgmath::{EuclideanSpace, Point2, Rad, Vector2, Zero};
 use figment::{providers::Serialized, Figment, Profile};
+#[cfg(any(test, target_arch = "wasm32"))]
+use linnet::parser::set::DotGraphSet;
 use linnet::{
     half_edge::{
         involution::{EdgeData, EdgeIndex, EdgeVec, Flow, Hedge, HedgePair, Involution},
@@ -16,10 +18,7 @@ use linnet::{
         tree::SimpleTraversalTree,
         EdgeAccessors, HedgeGraph, NodeIndex, NodeVec,
     },
-    parser::{
-        set::DotGraphSet, DotEdgeData, DotGraph, DotHedgeData, DotVertexData, GlobalData,
-        HedgeParseError,
-    },
+    parser::{DotEdgeData, DotGraph, DotHedgeData, DotVertexData, GlobalData, HedgeParseError},
     tree::child_pointer::ParentChildStore,
 };
 
@@ -214,8 +213,10 @@ use std::{collections::BTreeMap, io::BufWriter};
 use std::{collections::HashMap, ops::Deref};
 use std::{f64, fs::File};
 
+#[cfg(target_arch = "wasm32")]
 use wasm_minimal_protocol::*;
 
+#[cfg(target_arch = "wasm32")]
 initiate_protocol!();
 
 // Custom getrandom implementation for WASM
@@ -594,9 +595,7 @@ impl TypstHedge {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct TypstGraph {
     graph: HedgeGraph<TypstEdge, TypstNode, TypstHedge>,
-    spring_params: ParamTuning,
-    schedule: GeoSchedule,
-    layout_overrides: BTreeMap<String, String>,
+    layout_config: LayoutConfig,
 }
 
 impl Deref for TypstGraph {
@@ -606,8 +605,8 @@ impl Deref for TypstGraph {
     }
 }
 
-impl From<DotGraph> for TypstGraph {
-    fn from(dot: DotGraph) -> Self {
+impl TypstGraph {
+    pub fn from_dot(dot: DotGraph, figment: &Figment) -> Self {
         let mut group_map = HashMap::new();
         let edge_pin_constrains: EdgeVec<(Point2<f64>, PointConstraint)> =
             dot.graph.new_edgevec(|e, eid, _| {
@@ -651,15 +650,18 @@ impl From<DotGraph> for TypstGraph {
             TypstHedge::parse,
         );
 
-        let spring_params = ParamTuning::parse(&dot.global_data);
-        let schedule = GeoSchedule::parse(&dot.global_data);
-        let layout_overrides = dot.global_data.statements.clone();
+        let merged_figment = merge_with_overrides(figment, &dot.global_data.statements);
+        let config = LayoutConfig::from_figment(&merged_figment);
         Self {
             graph,
-            spring_params,
-            schedule,
-            layout_overrides,
+            layout_config: config,
         }
+    }
+}
+
+impl From<(DotGraph, Figment)> for TypstGraph {
+    fn from(value: (DotGraph, Figment)) -> Self {
+        TypstGraph::from_dot(value.0, &value.1)
     }
 }
 
@@ -668,7 +670,7 @@ pub struct TreeInitCfg {
     pub dx: f64, // ≈ 0.9 * L
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct LayoutConfig {
     #[serde(default = "default_viewport_w", deserialize_with = "deserialize_f64")]
     viewport_w: f64,
@@ -686,9 +688,11 @@ struct LayoutConfig {
     seed: u64,
     #[serde(default = "default_delta", deserialize_with = "deserialize_f64")]
     delta: f64,
-    #[serde(default)]
+    #[serde(default = "default_incremental_energy")]
+    incremental_energy: bool,
+    #[serde(default, flatten)]
     spring: SpringConfig,
-    #[serde(default)]
+    #[serde(default, flatten)]
     schedule: ScheduleConfig,
 }
 
@@ -703,6 +707,7 @@ impl Default for LayoutConfig {
             temp: default_temp(),
             seed: default_seed(),
             delta: default_delta(),
+            incremental_energy: default_incremental_energy(),
             spring: SpringConfig::default(),
             schedule: ScheduleConfig::default(),
         }
@@ -713,6 +718,47 @@ impl LayoutConfig {
     fn from_figment(figment: &Figment) -> Self {
         figment.extract::<Self>().unwrap_or_default()
     }
+
+    fn add_to_global(&self, global_data: &mut GlobalData) {
+        macro_rules! insert {
+            ($key:expr, $value:expr) => {
+                global_data
+                    .statements
+                    .insert($key.to_string(), $value.to_string());
+            };
+        }
+
+        insert!("viewport_w", self.viewport_w);
+        insert!("viewport_h", self.viewport_h);
+        insert!("tree_dx", self.tree_dx);
+        insert!("tree_dy", self.tree_dy);
+        insert!("step", self.step);
+        insert!("temp", self.temp);
+        insert!("seed", self.seed);
+        insert!("delta", self.delta);
+        global_data.statements.insert(
+            "incremental_energy".to_string(),
+            self.incremental_energy.to_string(),
+        );
+
+        let spring_params = ParamTuning::from(&self.spring);
+        spring_params.add_to_global(global_data);
+        let schedule = GeoSchedule::from(&self.schedule);
+        schedule.add_to_global(global_data);
+    }
+}
+
+fn merge_with_overrides(figment: &Figment, overrides: &BTreeMap<String, String>) -> Figment {
+    figment
+        .clone()
+        .merge(Serialized::from(overrides.clone(), Profile::Default))
+}
+
+fn default_figment() -> Figment {
+    Figment::from(Serialized::from(
+        BTreeMap::<String, String>::new(),
+        Profile::Default,
+    ))
 }
 
 fn default_viewport_w() -> f64 {
@@ -747,7 +793,11 @@ fn default_delta() -> f64 {
     0.4
 }
 
-#[derive(Debug, Clone, Deserialize)]
+fn default_incremental_energy() -> bool {
+    true
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct SpringConfig {
     #[serde(default = "default_length_scale", deserialize_with = "deserialize_f64")]
     length_scale: f64,
@@ -800,7 +850,7 @@ impl From<&SpringConfig> for ParamTuning {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct ScheduleConfig {
     #[serde(default = "default_steps", deserialize_with = "deserialize_usize")]
     steps: usize,
@@ -1052,52 +1102,47 @@ where
 }
 
 impl TypstGraph {
-    pub fn layout(&mut self, figment: &Figment) {
-        let merged = figment.clone().merge(Serialized::from(
-            self.layout_overrides.clone(),
-            Profile::Default,
-        ));
-        let config = LayoutConfig::from_figment(&merged);
-        self.layout_with_config(&config);
-    }
+    pub fn layout(&mut self) {
+        let spring_params = ParamTuning::from(&self.layout_config.spring);
+        let mut schedule = GeoSchedule::from(&self.layout_config.schedule);
 
-    fn layout_with_config(&mut self, config: &LayoutConfig) {
-        self.spring_params = ParamTuning::from(&config.spring);
-        self.schedule = GeoSchedule::from(&config.schedule);
-
-        let (tree_cfg, energy) = self.tree_init_cfg(config);
+        let (tree_cfg, energy) = self.tree_init_cfg(&spring_params);
         let (pos_n, pos_e) = self.new_positions(tree_cfg);
-        let state = self.graph.new_layout_state(pos_n, pos_e, config.delta);
+        let state = self.graph.new_layout_state(
+            pos_n,
+            pos_e,
+            self.layout_config.delta,
+            self.layout_config.incremental_energy,
+        );
 
         let (out, _stats) = anneal::<_, _, _, _, SmallRng>(
             state,
             SAConfig {
-                temp: config.temp,
-                step: config.step,
-                seed: config.seed,
+                temp: self.layout_config.temp,
+                step: self.layout_config.step,
+                seed: self.layout_config.seed,
             },
             &LayoutNeighbor,
             &energy,
-            &mut self.schedule,
+            &mut schedule,
         );
 
         self.update_positions(out.vertex_points, out.edge_points);
     }
 
-    pub fn tree_init_cfg(&self, config: &LayoutConfig) -> (TreeInitCfg, SpringChargeEnergy) {
-        let tune = self.spring_params.clone();
+    fn tree_init_cfg(&self, tune: &ParamTuning) -> (TreeInitCfg, SpringChargeEnergy) {
         let energycfg = SpringChargeEnergy::from_graph(
             self.n_nodes(),
-            config.viewport_w,
-            config.viewport_h,
-            tune,
+            self.layout_config.viewport_w,
+            self.layout_config.viewport_h,
+            tune.clone(),
         );
 
         let l = energycfg.spring_length;
         (
             TreeInitCfg {
-                dy: config.tree_dy * l,
-                dx: config.tree_dx * l,
+                dy: self.layout_config.tree_dy * l,
+                dx: self.layout_config.tree_dx * l,
             },
             energycfg,
         )
@@ -1228,7 +1273,8 @@ impl TypstGraph {
     }
 
     pub fn parse<'a>(dot_str: &str) -> Result<Self, HedgeParseError<'a, (), (), (), ()>> {
-        Ok(DotGraph::from_string(dot_str)?.into())
+        let dot = DotGraph::from_string(dot_str)?;
+        Ok(TypstGraph::from_dot(dot, &default_figment()))
     }
 
     pub fn to_cbor(&self) -> CBORTypstGraph {
@@ -1255,14 +1301,14 @@ impl TypstGraph {
         // Reconstruct GlobalData from layout parameters
 
         let mut global_data = GlobalData::from(());
-        self.spring_params.add_to_global(&mut global_data);
-        self.schedule.add_to_global(&mut global_data);
+        self.layout_config.add_to_global(&mut global_data);
         DotGraph { graph, global_data }
     }
 }
 
 /// WASM function that takes DOT graph as string bytes, parses it into a TypstGraph,
 /// applies layout, and returns the CBOR-serialized result as bytes
+#[cfg(target_arch = "wasm32")]
 #[wasm_func]
 pub fn layout_graph(arg: &[u8], arg2: &[u8]) -> Result<Vec<u8>, String> {
     // Convert bytes to string
@@ -1275,15 +1321,15 @@ pub fn layout_graph(arg: &[u8], arg2: &[u8]) -> Result<Vec<u8>, String> {
 
     let figment = Figment::from(Serialized::from(cbor_map, Profile::Default));
 
-    let dots = DotGraphSet::from_string(dot_string)
+    let dots = DotGraphSet::from_string_with_figment(dot_string, figment.clone())
         .map_err(|a| a.to_string())?
         .into_iter();
 
     let mut graphs = Vec::new();
     for g in dots {
-        let mut typst_graph = TypstGraph::from(g);
+        let mut typst_graph = TypstGraph::from_dot(g, &figment);
 
-        typst_graph.layout(&figment);
+        typst_graph.layout();
         graphs.push((
             typst_graph.to_cbor(),
             typst_graph.to_dot_graph().debug_dot(),
@@ -1333,9 +1379,17 @@ mod tests {
 
     use crate::{CBORTypstGraph, TypstGraph};
 
+    fn test_figment() -> Figment {
+        Figment::from(Serialized::from(
+            BTreeMap::<String, String>::new(),
+            Profile::Default,
+        ))
+    }
+
     #[test]
     fn dot_cbor() {
-        let g: TypstGraph = dot!(digraph{ a; a->b}).unwrap().into();
+        let figment = test_figment();
+        let g = TypstGraph::from_dot(dot!(digraph{ a; a->b}).unwrap(), &figment);
 
         let _cbor = g.to_cbor();
     }
@@ -1344,7 +1398,8 @@ mod tests {
     fn test_cbor_serialization() {
         // use std::fs;
 
-        let g: TypstGraph = dot!(digraph{ a; a->b; b->c}).unwrap().into();
+        let figment = test_figment();
+        let g = TypstGraph::from_dot(dot!(digraph{ a; a->b; b->c}).unwrap(), &figment);
         let cbor = g.to_cbor();
 
         let test_path = "test_graph.cbor";
@@ -1369,7 +1424,8 @@ mod tests {
     fn test_typst_graph_convenience_serialization() {
         use std::fs;
 
-        let g: TypstGraph = dot!(digraph{ a->b; b->c}).unwrap().into();
+        let figment = test_figment();
+        let g = TypstGraph::from_dot(dot!(digraph{ a->b; b->c}).unwrap(), &figment);
         let test_path = "test_convenience_graph.cbor";
 
         // Test convenience method
@@ -1390,7 +1446,8 @@ mod tests {
 
     #[test]
     fn test_pin_parsing() {
-        let mut g:TypstGraph = dot!( digraph dot_80_0_GL208 {
+        let figment = test_figment();
+        let mut g = TypstGraph::from_dot(dot!( digraph dot_80_0_GL208 {
 
            steps=1
            step=0.4
@@ -1427,55 +1484,56 @@ mod tests {
            v8 -> v7
            v7 -> v9
            v9 -> v6
-       }).unwrap().into();
+       }).unwrap(), &figment);
 
-        let figment = Figment::from(Serialized::from(
-            BTreeMap::<String, String>::new(),
-            Profile::Default,
-        ));
-        g.layout(&figment);
+        g.layout();
         println!("{}", g.to_dot_graph().debug_dot())
     }
 
     #[test]
     fn test_parsing() {
-        let _g: TypstGraph = dot!(digraph qqx_aaa_pentagon {
-            steps=600
-            step=.2
-            beta =3.1
-            k_spring=15.3;
-            g_center=0
-            gamma_ee=0.3
-            gamma_ev=0.01
-            length_scale = 0.2
+        let figment = test_figment();
+        let g = TypstGraph::from_dot(
+            dot!(digraph qqx_aaa_pentagon {
+                steps=600
+                step=.2
+                beta =3.1
+                k_spring=15.3;
+                g_center=0
+                gamma_ee=0.3
+                gamma_ev=0.01
+                length_scale = 0.2
 
-             node[
-              eval="(stroke:blue,fill :black,
+                 node[
+                  eval="(stroke:blue,fill :black,
               radius:2pt,
               outset: -2pt)"
-            ]
-            // edge[
-            //   // eval="{particle}"
-            // ]
+                ]
+                // edge[
+                //   // eval="{particle}"
+                // ]
 
-        exte0 [style=invis pin="x:-4"];
-        v3:0 -> exte0;
-         // exte1 [style=invis pin="x:4"];
-        // exte1 -> vl1 [ particle="d"];
-        // exte2 [style=invis pin="x:4"];
-        // exte2 -> vl2:2 [particle="dx"];
-        // exte3 [style=invis pin="x:-4"];
-        // v1:3 -> exte3  [particle="a"];
-        // exte4 [style=invis pin="x:-4"];
-        // v2:4 -> exte4 [particle="a"];
-        // v1:5 -> v2:6 [particle="d"];
-        // v2:7 -> v3:8 [particle="d"];
-        // vl1:11 -> v1:12 [particle="d"];
-        // v3:9 -> vl2:10  [ particle="d"];
-        // vl1:13 -> vl2:14 [particle="g"];
-        })
-        .unwrap()
-        .into();
+            exte0 [style=invis pin="x:-4"];
+            v3:0 -> exte0;
+             // exte1 [style=invis pin="x:4"];
+            // exte1 -> vl1 [ particle="d"];
+            // exte2 [style=invis pin="x:4"];
+            // exte2 -> vl2:2 [particle="dx"];
+            // exte3 [style=invis pin="x:-4"];
+            // v1:3 -> exte3  [particle="a"];
+            // exte4 [style=invis pin="x:-4"];
+            // v2:4 -> exte4 [particle="a"];
+            // v1:5 -> v2:6 [particle="d"];
+            // v2:7 -> v3:8 [particle="d"];
+            // vl1:11 -> v1:12 [particle="d"];
+            // v3:9 -> vl2:10  [ particle="d"];
+            // vl1:13 -> vl2:14 [particle="g"];
+            })
+            .unwrap(),
+            &figment,
+        );
+
+        println!("{}", g.to_dot_graph().debug_dot())
     }
 
     #[test]
@@ -1539,16 +1597,16 @@ mod tests {
             Profile::Default,
         ));
 
-        let dots = DotGraphSet::from_string(input)
+        let dots = DotGraphSet::from_string_with_figment(input, figment.clone())
             .map_err(|a| a.to_string())
             .unwrap()
             .into_iter();
 
         let mut graphs = Vec::new();
         for g in dots {
-            let mut typst_graph = TypstGraph::from(g);
+            let mut typst_graph = TypstGraph::from_dot(g, &figment);
 
-            typst_graph.layout(&figment);
+            typst_graph.layout();
             graphs.push((
                 typst_graph.to_cbor(),
                 typst_graph.to_dot_graph().debug_dot(),

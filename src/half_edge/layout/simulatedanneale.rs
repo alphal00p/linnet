@@ -5,7 +5,13 @@ use crate::parser::GlobalData;
 
 // ---------- Traits ----------
 pub trait Energy<S> {
-    fn energy(&self, s: &S) -> f64;
+    /// Return the absolute energy of `next`.
+    /// When a previous state/energy is provided, implementations may reuse or update it
+    /// instead of recomputing from scratch.
+    fn energy(&self, prev: Option<(&S, f64)>, next: &S) -> f64;
+
+    /// Called once a proposal is accepted so implementations can clear or update caches.
+    fn on_accept(&self, _state: &mut S) {}
 }
 
 pub trait Neighbor<S> {
@@ -52,7 +58,7 @@ pub fn anneal<S: Clone, N: Neighbor<S>, E: Energy<S>, Sch: Schedule, R: Seedable
 ) -> (S, SAStats) {
     let mut rng = R::seed_from_u64(cfg.seed);
     let mut cur = init.clone();
-    let mut current_energy = energy.energy(&cur);
+    let mut current_energy = energy.energy(None, &cur);
 
     let mut best = cur.clone();
     let mut best_energy = current_energy;
@@ -81,12 +87,14 @@ pub fn anneal<S: Clone, N: Neighbor<S>, E: Energy<S>, Sch: Schedule, R: Seedable
         for _ in 0..steps {
             total_steps += 1;
             let cand = neigh.propose(&cur, &mut rng, cfg.step, cfg.temp);
-            let candidate_energy = energy.energy(&cand);
+            let candidate_energy = energy.energy(Some((&cur, current_energy)), &cand);
             let delta = candidate_energy - current_energy;
 
             let accept = delta <= 0.0 || rng.gen::<f64>() < (-delta / cfg.temp).exp();
             if accept {
-                cur = cand;
+                let mut accepted_state = cand;
+                energy.on_accept(&mut accepted_state);
+                cur = accepted_state;
                 current_energy = candidate_energy;
                 accepted += 1;
                 if candidate_energy < best_energy {

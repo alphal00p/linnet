@@ -10,7 +10,7 @@ use crate::{
         involution::{EdgeIndex, EdgeVec},
         layout::simulatedanneale::{Energy, Neighbor},
         nodestore::NodeStorageOps,
-        subgraph::{SuBitGraph, SubSetLike},
+        subgraph::{subset::SubSet, Inclusion, ModifySubSet, SuBitGraph, SubSetLike},
         swap::Swap,
         HedgeGraph, NodeIndex, NodeVec,
     },
@@ -148,6 +148,11 @@ pub struct LayoutState<'a, E, V, H, N: NodeStorageOps<NodeData = V>> {
     pub vertex_points: NodeVec<Point2<f64>>,
     pub edge_points: EdgeVec<Point2<f64>>,
     pub delta: f64,
+    // Tracks which node/edge entries were mutated during proposal generation so
+    // the energy function can update only the affected terms.
+    pub changed_nodes: SubSet<NodeIndex>,
+    pub changed_edges: SubSet<EdgeIndex>,
+    pub incremental: bool,
 }
 
 impl<'a, E, V, H, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, H, N> {
@@ -156,14 +161,20 @@ impl<'a, E, V, H, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, H, N> {
         vertex_points: NodeVec<Point2<f64>>,
         edge_points: EdgeVec<Point2<f64>>,
         delta: f64,
+        incremental: bool,
     ) -> LayoutState<'_, E, V, H, N> {
         let ext = self.external_filter();
+        let len_v = vertex_points.len().0;
+        let len_e = edge_points.len().0;
         LayoutState {
             graph: self,
             ext,
             vertex_points,
             edge_points,
             delta,
+            changed_nodes: SubSet::empty(len_v),
+            changed_edges: SubSet::empty(len_e),
+            incremental,
         }
     }
 }
@@ -176,7 +187,25 @@ impl<'a, E, V, H, N: NodeStorageOps<NodeData = V>> Clone for LayoutState<'a, E, 
             vertex_points: self.vertex_points.clone(),
             edge_points: self.edge_points.clone(),
             delta: self.delta,
+            changed_nodes: self.changed_nodes.clone(),
+            changed_edges: self.changed_edges.clone(),
+            incremental: self.incremental,
         }
+    }
+}
+
+impl<'a, E, V, H, N: NodeStorageOps<NodeData = V>> LayoutState<'a, E, V, H, N> {
+    fn mark_node_changed(&mut self, index: NodeIndex) {
+        self.changed_nodes.add(index);
+    }
+
+    fn mark_edge_changed(&mut self, index: EdgeIndex) {
+        self.changed_edges.add(index);
+    }
+
+    pub fn clear_changes(&mut self) {
+        self.changed_nodes.clear();
+        self.changed_edges.clear();
     }
 }
 
@@ -205,36 +234,33 @@ impl<'a, E: Shiftable, V: Shiftable, H, N: NodeStorageOps<NodeData = V> + Clone>
                     if rng.gen_bool(0.6) {
                         let v = NodeIndex(rng.gen_range(0..n_v.0));
 
-                        let shift = Vector2::from(if rng.gen_bool(0.5) {
-                            (step_range.sample(rng), 0.0)
-                        } else {
-                            (0.0, step_range.sample(rng))
-                        });
-                        didnothing = !st.graph[v].shift(shift, v, &mut st.vertex_points);
+                        let shift = LayoutNeighbor::axis_shift(&step_range, rng);
+                        let changed = apply_vertex_shift(&mut st, v, shift);
+                        didnothing = !changed;
                     } else {
                         let e = EdgeIndex(rng.gen_range(0..n_e.0));
-                        let shift = Vector2::from(if rng.gen_bool(0.5) {
-                            (step_range.sample(rng), 0.0)
-                        } else {
-                            (0.0, step_range.sample(rng))
-                        });
-                        didnothing = !st.graph[e].shift(shift, e, &mut st.edge_points);
+                        let shift = LayoutNeighbor::axis_shift(&step_range, rng);
+                        let changed = apply_edge_shift(&mut st, e, shift);
+                        didnothing = !changed;
                     }
                 }
                 _ => {
                     // vertex block
                     let v = NodeIndex(rng.gen_range(0..n_v.0));
 
-                    let shift: Vector2<f64> =
-                        Vector2::from((step_range.sample(rng) * 0.6, step_range.sample(rng) * 0.6));
+                    let shift = LayoutNeighbor::diagonal_shift(&step_range, rng, 0.6);
 
-                    didnothing = !st.graph[v].shift(shift, v, &mut st.vertex_points);
+                    // Cache whether a vertex move succeeded so we can mark it.
+                    let mut changed_any = apply_vertex_shift(&mut st, v, shift);
 
                     st.graph.iter_crown(v).for_each(|a| {
                         let index = st.graph[&a];
 
-                        didnothing |= !st.graph[index].shift(shift, index, &mut st.edge_points);
+                        // Propagate to incident edge control points; any change gets recorded.
+                        changed_any |= apply_edge_shift(&mut st, index, shift);
                     });
+
+                    didnothing = !changed_any;
                 } // _ => {
                   //     // everything
                   //     let e = EdgeIndex(rng.gen_range(0..n_e.0));
@@ -245,6 +271,51 @@ impl<'a, E: Shiftable, V: Shiftable, H, N: NodeStorageOps<NodeData = V> + Clone>
         }
         st
     }
+}
+
+impl LayoutNeighbor {
+    fn axis_shift(step_range: &Uniform<f64>, rng: &mut impl Rng) -> Vector2<f64> {
+        if rng.gen_bool(0.5) {
+            Vector2::from((step_range.sample(rng), 0.0))
+        } else {
+            Vector2::from((0.0, step_range.sample(rng)))
+        }
+    }
+
+    fn diagonal_shift(step_range: &Uniform<f64>, rng: &mut impl Rng, scale: f64) -> Vector2<f64> {
+        let mut sample = || step_range.sample(rng) * scale;
+        Vector2::from((sample(), sample()))
+    }
+}
+
+fn apply_vertex_shift<
+    'a,
+    E: Shiftable,
+    V: Shiftable,
+    H,
+    N: NodeStorageOps<NodeData = V> + Clone,
+>(
+    state: &mut LayoutState<'a, E, V, H, N>,
+    idx: NodeIndex,
+    shift: Vector2<f64>,
+) -> bool {
+    let changed = state.graph[idx].shift(shift, idx, &mut state.vertex_points);
+    if changed {
+        state.mark_node_changed(idx);
+    }
+    changed
+}
+
+fn apply_edge_shift<'a, E: Shiftable, V: Shiftable, H, N: NodeStorageOps<NodeData = V> + Clone>(
+    state: &mut LayoutState<'a, E, V, H, N>,
+    idx: EdgeIndex,
+    shift: Vector2<f64>,
+) -> bool {
+    let changed = state.graph[idx].shift(shift, idx, &mut state.edge_points);
+    if changed {
+        state.mark_edge_changed(idx);
+    }
+    changed
 }
 
 #[derive(Clone, Copy)]
@@ -262,73 +333,36 @@ pub struct SpringChargeEnergy {
 impl<'a, E, V, H, N: NodeStorageOps<NodeData = V> + Clone> Energy<LayoutState<'a, E, V, H, N>>
     for SpringChargeEnergy
 {
-    fn energy(&self, s: &LayoutState<'a, E, V, H, N>) -> f64 {
-        let n = s.vertex_points.len().0;
-        let m = s.edge_points.len().0;
-
-        let mut energy = 0.0;
-
-        for i in 0..n {
-            let ni = NodeIndex(i);
-            let np = s.vertex_points[ni];
-            // 1) Vertex–vertex repulsion
-            for j in (i + 1)..n {
-                let nj = NodeIndex(j);
-                let vj = s.vertex_points[nj];
-                energy += 0.5 * self.c_vv / (np.distance(vj) + self.eps);
-            }
-
-            // 2) Edge–vertex repulsion (all vertices vs all edge control points)
-            if self.c_ev != 0.0 {
-                for e in 0..m {
-                    let ei = EdgeIndex(e);
-                    let ei = s.edge_points[ei];
-                    energy += self.c_ev / (np.distance(ei) + self.eps);
-                }
-            }
-
-            // 3) Edge spring energy (only between edge points sharing a node)
-            for e in s.graph.iter_crown(ni) {
-                let ei = s.graph[&e];
-                let ep = s.edge_points[ei];
-
-                let t = self.spring_length - np.distance(ep);
-                energy += 0.5 * self.k_spring * (t * t);
-                // 4) Edge–edge local repulsion (only between edge points sharing a node)ß
-                for e in s.graph.iter_crown(ni) {
-                    let ej = s.graph[&e];
-                    if ei == ej {
-                        continue;
-                    }
-                    let ej = s.edge_points[ej];
-                    energy += 0.5 * self.c_ee_local / (ej.distance(ep) + self.eps);
-                }
-            }
-
-            // 5) Central pull (once per vertex)
-            if self.c_center != 0.0 {
-                let r = np.distance(EuclideanSpace::origin());
-                if r > 1.0 {
-                    energy += 0.5 * self.c_center / (r + self.eps);
-                }
-            }
+    fn energy(
+        &self,
+        prev: Option<(&LayoutState<'a, E, V, H, N>, f64)>,
+        next: &LayoutState<'a, E, V, H, N>,
+    ) -> f64 {
+        if !next.incremental {
+            return self.total_energy(next);
         }
 
-        // 6) Dangling edge repulsion
-        for hi in s.ext.included_iter() {
-            for hj in s.ext.included_iter() {
-                if hi >= hj {
-                    continue;
-                }
-                let hi = s.graph[&hi];
-                let hj = s.graph[&hj];
-                let pi = s.edge_points[hi];
-                let pj = s.edge_points[hj];
-                energy += 0.5 * self.dangling_charge / (pi.distance(pj) + self.eps);
+        if let Some((prev_state, prev_energy)) = prev {
+            if next.changed_nodes.is_empty() && next.changed_edges.is_empty() {
+                // No mutations since the last evaluation, so the cached value is exact.
+                return prev_energy;
             }
-        }
 
-        energy
+            // Compute only the energy terms affected by the flagged nodes/edges on both states.
+            let prev_partial =
+                self.partial_energy(prev_state, &next.changed_nodes, &next.changed_edges);
+            let next_partial = self.partial_energy(next, &next.changed_nodes, &next.changed_edges);
+
+            // Replace only the interactions influenced by the mutated nodes/edges.
+            prev_energy - prev_partial + next_partial
+        } else {
+            // First evaluation falls back to the full O(n²) pass.
+            self.total_energy(next)
+        }
+    }
+
+    fn on_accept(&self, state: &mut LayoutState<'a, E, V, H, N>) {
+        state.clear_changes();
     }
 }
 
@@ -441,6 +475,171 @@ impl Default for ParamTuning {
 }
 
 impl SpringChargeEnergy {
+    fn total_energy<'a, E, V, H, N>(&self, s: &LayoutState<'a, E, V, H, N>) -> f64
+    where
+        N: NodeStorageOps<NodeData = V> + Clone,
+    {
+        let n = s.vertex_points.len().0;
+        let m = s.edge_points.len().0;
+
+        let mut energy = 0.0;
+
+        for i in 0..n {
+            let ni = NodeIndex(i);
+            let np = s.vertex_points[ni];
+            for j in (i + 1)..n {
+                let nj = NodeIndex(j);
+                let vj = s.vertex_points[nj];
+                energy += 0.5 * self.c_vv / (np.distance(vj) + self.eps);
+            }
+
+            if self.c_ev != 0.0 {
+                for e in 0..m {
+                    let ei = EdgeIndex(e);
+                    let ep = s.edge_points[ei];
+                    energy += self.c_ev / (np.distance(ep) + self.eps);
+                }
+            }
+
+            for e in s.graph.iter_crown(ni) {
+                let ei = s.graph[&e];
+                let ep = s.edge_points[ei];
+
+                let t = self.spring_length - np.distance(ep);
+                energy += 0.5 * self.k_spring * (t * t);
+                for e in s.graph.iter_crown(ni) {
+                    let ej = s.graph[&e];
+                    if ei == ej {
+                        continue;
+                    }
+                    let ejp = s.edge_points[ej];
+                    energy += 0.5 * self.c_ee_local / (ejp.distance(ep) + self.eps);
+                }
+            }
+
+            if self.c_center != 0.0 {
+                let r = np.distance(EuclideanSpace::origin());
+                if r > 1.0 {
+                    energy += 0.5 * self.c_center / (r + self.eps);
+                }
+            }
+        }
+
+        for hi in s.ext.included_iter() {
+            for hj in s.ext.included_iter() {
+                if hi >= hj {
+                    continue;
+                }
+                let hi_idx = s.graph[&hi];
+                let hj_idx = s.graph[&hj];
+                let pi = s.edge_points[hi_idx];
+                let pj = s.edge_points[hj_idx];
+                energy += 0.5 * self.dangling_charge / (pi.distance(pj) + self.eps);
+            }
+        }
+
+        energy
+    }
+
+    /// Recompute the energy contributions that touch the mutated nodes/edges.
+    fn partial_energy<'a, E, V, H, N>(
+        &self,
+        s: &LayoutState<'a, E, V, H, N>,
+        node_changes: &SubSet<NodeIndex>,
+        edge_changes: &SubSet<EdgeIndex>,
+    ) -> f64
+    where
+        N: NodeStorageOps<NodeData = V> + Clone,
+    {
+        let n = s.vertex_points.len().0;
+        let m = s.edge_points.len().0;
+        let mut energy = 0.0;
+
+        for i in 0..n {
+            let ni = NodeIndex(i);
+            let node_changed = node_changes.includes(&ni);
+            let np = s.vertex_points[ni];
+
+            for j in (i + 1)..n {
+                let nj = NodeIndex(j);
+                if !(node_changed || node_changes.includes(&nj)) {
+                    continue;
+                }
+                let vj = s.vertex_points[nj];
+                // Vertex–vertex repulsion.
+                energy += 0.5 * self.c_vv / (np.distance(vj) + self.eps);
+            }
+
+            if self.c_ev != 0.0 {
+                for e in 0..m {
+                    let ei = EdgeIndex(e);
+                    if !(node_changed || edge_changes.includes(&ei)) {
+                        continue;
+                    }
+                    let ep = s.edge_points[ei];
+                    // Edge–vertex repulsion.
+                    energy += self.c_ev / (np.distance(ep) + self.eps);
+                }
+            }
+
+            let include_node = node_changed;
+            for hedge in s.graph.iter_crown(ni) {
+                let ei = s.graph[&hedge];
+                let edge_changed = edge_changes.includes(&ei);
+                if !(include_node || edge_changed) {
+                    continue;
+                }
+                let ep = s.edge_points[ei];
+                let t = self.spring_length - np.distance(ep);
+                // Spring term for the edge control point.
+                energy += 0.5 * self.k_spring * (t * t);
+
+                for other in s.graph.iter_crown(ni) {
+                    let ej = s.graph[&other];
+                    if ei == ej {
+                        continue;
+                    }
+                    let other_edge_changed = edge_changes.includes(&ej);
+                    if !(include_node || edge_changed || other_edge_changed) {
+                        continue;
+                    }
+                    let ejp = s.edge_points[ej];
+                    // Local edge–edge repulsion around `ni`.
+                    energy += 0.5 * self.c_ee_local / (ejp.distance(ep) + self.eps);
+                }
+            }
+
+            if include_node && self.c_center != 0.0 {
+                let r = np.distance(EuclideanSpace::origin());
+                if r > 1.0 {
+                    // Central pull acts only on moved vertices.
+                    energy += 0.5 * self.c_center / (r + self.eps);
+                }
+            }
+        }
+
+        for hi in s.ext.included_iter() {
+            let edge_i = s.graph[&hi];
+            let edge_i_changed = edge_changes.includes(&edge_i);
+            for hj in s.ext.included_iter() {
+                if hi >= hj {
+                    continue;
+                }
+                let edge_j = s.graph[&hj];
+                let edge_j_changed = edge_changes.includes(&edge_j);
+                if !(edge_i_changed || edge_j_changed) {
+                    continue;
+                }
+                let pi = s.edge_points[edge_i];
+                let pj = s.edge_points[edge_j];
+                // Dangling charge interactions.
+                energy += 0.5 * self.dangling_charge / (pi.distance(pj) + self.eps);
+            }
+        }
+
+        energy
+    }
+
     pub fn from_graph(n_nodes: usize, viewport_w: f64, viewport_h: f64, tune: ParamTuning) -> Self {
         let area = (viewport_w * viewport_h).max(1e-9);
         let spring_length = tune.length_scale * (area / (n_nodes.max(1) as f64)).sqrt();

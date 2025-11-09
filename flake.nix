@@ -229,6 +229,7 @@
           cargo-watch
           rust-analyzer
           tinymist
+          just
           # nixd
           # nil
         ];
