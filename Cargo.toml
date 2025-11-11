@@ -36,9 +36,6 @@ name = "layout_small"
 harness = false
 
 
-[[bin]]
-name = "linnet-cli"
-path = "src/bin.rs"
 [dependencies]
 bincode = { version = "2.0.1", features = ["serde"], optional = true }
 ahash = "0.8.11"
@@ -65,13 +62,6 @@ indenter = { version = "0.3.3", features = ["std"] }
 paste = "1.0.15"
 getrandom = { version = "0.2", default-features = false, features = ["custom"] }
 rand_xoshiro = "0.7.0"
-anyhow = "1.0"
-blake3 = "1.5"
-clap = { version = "4.5", features = ["derive"] }
-pathdiff = "0.2"
-serde_json = "1.0"
-walkdir = "2.5"
-rust-embed = { version = "8.4", features = ["interpolate-folder-path"] }
 
 [features]
 serde = ["dep:serde", "bitvec/serde"]
@@ -98,7 +88,7 @@ figment = "0.10.19"
 linnest = { path = "linnest" }
 
 [workspace]
-members = ["linnest"]
+members = ["clinnet","linnest"]
 
 [patch.crates-io]
 linnet = { path = "." }

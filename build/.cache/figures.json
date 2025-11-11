@@ -1,8 +1,10 @@
 {
   "figures": {
-    "folder/folder2/test3.dot": "a293475a76c6a2d2c04b19bf493cbd1144817b667b8fcba0e0f3f0acd09fe80a",
-    "folder/test3.dot": "a293475a76c6a2d2c04b19bf493cbd1144817b667b8fcba0e0f3f0acd09fe80a",
-    "test.dot": "673b347a6c73cd680aa46c06169c30425d203a7bfc34262f42ed1cc69120ed49",
-    "test2.dot": "a293475a76c6a2d2c04b19bf493cbd1144817b667b8fcba0e0f3f0acd09fe80a"
+    "folder/eedddd.dot": "b73e91857c2fc002a313bd53642345d7588a888e4caffc6bf6e7a31c9040ae3c",
+    "folder/folder2/test3.dot": "0fce064e7a1bc55f066f1ca6a234519ec60e48b04bc4759e2c56e4763fe22763",
+    "folder/test3.dot": "0fce064e7a1bc55f066f1ca6a234519ec60e48b04bc4759e2c56e4763fe22763",
+    "test copy.dot": "cacec3dfa901597fe911538f64aeeea4ea8629e273d13eb68647aa387b5533c3",
+    "test.dot": "cacec3dfa901597fe911538f64aeeea4ea8629e273d13eb68647aa387b5533c3",
+    "test2.dot": "0fce064e7a1bc55f066f1ca6a234519ec60e48b04bc4759e2c56e4763fe22763"
   }
 }

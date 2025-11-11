@@ -3,6 +3,7 @@
 #let tree = (
   name: "root",
   figures: (
+    (path: "../figs/test copy.pdf", relative: "test copy.dot", title: "test copy", name: "test copy",),
     (path: "../figs/test.pdf", relative: "test.dot", title: "test", name: "test",),
     (path: "../figs/test2.pdf", relative: "test2.dot", title: "test2", name: "test2",),
   ),
@@ -11,6 +12,7 @@
     "folder":       (
         name: "folder",
         figures: (
+          (path: "../figs/folder/eedddd.pdf", relative: "folder/eedddd.dot", title: "folder / eedddd", name: "eedddd",),
           (path: "../figs/folder/test3.pdf", relative: "folder/test3.dot", title: "folder / test3", name: "test3",),
         ),
         order: ("folder2",),
@@ -27,4 +29,3 @@
       ),
   ),
 )
-

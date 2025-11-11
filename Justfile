@@ -14,9 +14,18 @@ default: wasm
 wasm:
     cargo build -p linnest --release --target wasm32-unknown-unknown --features custom
 
+prepare-templates:
+    just wasm
+    cp target/wasm32-unknown-unknown/release/linnest.wasm clinnet/templates/linnest.wasm
+
 # Build all packages
 build:
+    just prepare-templates
     cargo build --all
+
+build-clinnet:
+    just prepare-templates
+    cargo build -p clinnet
 
 # Build release version
 build-release:

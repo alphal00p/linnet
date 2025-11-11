@@ -14,7 +14,7 @@
   #v(6pt)
   #image(fig.path, width: 100%)
   #v(6pt)
-  #text(size: 9pt, fill: gray + 30%)[#fig.relative]
+  #text(size: 9pt, fill: gray)[#fig.relative]
 ]
 
 #let heading-level(depth) = if depth + 2 > 6 { 6 } else { depth + 2 }

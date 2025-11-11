@@ -41,7 +41,7 @@
 }
 
 #if tree.figures.len() == 0 and tree.order.len() == 0 {
-  text(fill: gray + 40%)[No figures were generated.]
+  text(fill: gray)[No figures were generated.]
 } else {
   render-node(tree, (), 0)
 }

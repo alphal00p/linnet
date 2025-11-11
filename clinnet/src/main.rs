@@ -5,10 +5,12 @@ use std::fs::{self, File};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::time::Duration;
 
-use anyhow::{anyhow, bail, ensure, Context, Result};
+use anyhow::{Context, Result, anyhow, bail, ensure};
 use blake3::Hasher;
 use clap::{ArgAction, Parser};
+use indicatif::{ProgressBar, ProgressStyle};
 use pathdiff::diff_paths;
 use rust_embed::RustEmbed;
 use serde_json::{self, Map as JsonMap, Value as JsonValue};
@@ -24,6 +26,8 @@ struct EmbeddedTemplates;
 enum TemplateKind {
     Figure,
     Grid,
+    Plugin,
+    Layout,
 }
 
 impl TemplateKind {
@@ -31,6 +35,8 @@ impl TemplateKind {
         match self {
             TemplateKind::Figure => "figure.typ",
             TemplateKind::Grid => "grid.typ",
+            TemplateKind::Plugin => "linnest.wasm",
+            TemplateKind::Layout => "layout.typ",
         }
     }
 
@@ -177,6 +183,8 @@ fn run() -> Result<()> {
                 .unwrap_or(Path::new("."))
                 .join("fig-index.typ")
         });
+    let _plugin_path = ensure_plugin_asset(&build_dir)?;
+    let _layout_path = ensure_layout_asset(&build_dir)?;
 
     let dot_files = collect_dot_files(&root)?;
     if dot_files.is_empty() {
@@ -220,6 +228,17 @@ fn run() -> Result<()> {
     let mut rebuilt = 0usize;
     let mut reused = 0usize;
 
+    let progress = ProgressBar::new(plans.len() as u64);
+    progress.set_style(
+        ProgressStyle::with_template(
+            "{spinner:.green} [{elapsed_precise}] {wide_bar:.cyan/blue} {pos}/{len} {msg}",
+        )
+        .unwrap()
+        .progress_chars("#>-"),
+    );
+    progress.enable_steady_tick(Duration::from_millis(120));
+    progress.set_message("Preparing figures...");
+
     for plan in &plans {
         let key = path_key(&plan.relative);
         let hash = compute_hash(&plan.data_path, &figure_template, &style_files)?;
@@ -229,7 +248,9 @@ fn run() -> Result<()> {
             .unwrap_or(false)
         {
             reused += 1;
+            progress.set_message(format!("cached {}", plan.relative.display()));
         } else {
+            progress.set_message(format!("building {}", plan.relative.display()));
             build_figure(plan, &figure_template, &cwd)?;
             rebuilt += 1;
         }
@@ -239,7 +260,9 @@ fn run() -> Result<()> {
             relative: plan.relative.clone(),
             title: plan.title.clone(),
         });
+        progress.inc(1);
     }
+    progress.finish_with_message("figures ready");
 
     save_cache(&cache_file, &new_cache)?;
     let removed = remove_stale_outputs(&previous_cache, &new_cache, &figs_dir)?;
@@ -248,8 +271,18 @@ fn run() -> Result<()> {
         .parent()
         .map(Path::to_path_buf)
         .unwrap_or_else(|| PathBuf::from("."));
+    let spinner = ProgressBar::new_spinner();
+    spinner.set_style(
+        ProgressStyle::with_template("{spinner:.green} {msg}")
+            .unwrap()
+            .tick_chars("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"),
+    );
+    spinner.enable_steady_tick(Duration::from_millis(80));
+    spinner.set_message("Writing fig-index...");
     write_fig_index(&records, &fig_index_path, &grid_dir, cli.columns)?;
+    spinner.set_message("Compiling grid...");
     compile_grid(&grid_template, &grid_output, &cwd)?;
+    spinner.finish_with_message(format!("Grid ready -> {}", grid_output.display()));
 
     println!(
         "figures: {} built, {} reused{}",
@@ -338,6 +371,13 @@ fn feed_file(hasher: &mut Hasher, path: &Path) -> Result<()> {
 }
 
 fn build_figure(plan: &FigurePlan, template: &Path, root: &Path) -> Result<()> {
+    let template_dir = template
+        .parent()
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| PathBuf::from("."));
+    let data_rel =
+        diff_paths(&plan.data_path, &template_dir).unwrap_or_else(|| plan.data_path.clone());
+    let relative_input = data_rel.to_string_lossy().replace('\\', "/");
     let mut command = Command::new("typst");
     command
         .arg("c")
@@ -346,12 +386,9 @@ fn build_figure(plan: &FigurePlan, template: &Path, root: &Path) -> Result<()> {
         .arg("--root")
         .arg(root)
         .arg("--input")
-        .arg(format!(
-            "data=\"{}\"",
-            escape_typst_string(&plan.data_path.to_string_lossy())
-        ))
+        .arg(format!("data_path={}", relative_input))
         .arg("--input")
-        .arg(format!("title=\"{}\"", escape_typst_string(&plan.title)));
+        .arg(format!("title={}", plan.title));
 
     run_typst(
         &mut command,
@@ -526,6 +563,28 @@ fn resolve_template(requested: &Path, kind: TemplateKind, build_dir: &Path) -> R
     let contents = kind.embedded_bytes()?;
     fs::write(&target, contents.as_ref())
         .with_context(|| format!("failed to write default template {}", target.display()))?;
+    Ok(target)
+}
+
+fn ensure_plugin_asset(build_dir: &Path) -> Result<PathBuf> {
+    let target = build_dir
+        .join(TEMPLATE_SUBDIR)
+        .join(TemplateKind::Plugin.file_name());
+    ensure_parent_dir(&target)?;
+    let contents = TemplateKind::Plugin.embedded_bytes()?;
+    fs::write(&target, contents.as_ref())
+        .with_context(|| format!("failed to write embedded plugin {}", target.display()))?;
+    Ok(target)
+}
+
+fn ensure_layout_asset(build_dir: &Path) -> Result<PathBuf> {
+    let target = build_dir
+        .join(TEMPLATE_SUBDIR)
+        .join(TemplateKind::Layout.file_name());
+    ensure_parent_dir(&target)?;
+    let contents = TemplateKind::Layout.embedded_bytes()?;
+    fs::write(&target, contents.as_ref())
+        .with_context(|| format!("failed to write embedded plugin {}", target.display()))?;
     Ok(target)
 }
 
