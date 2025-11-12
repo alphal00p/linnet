@@ -13,6 +13,7 @@ use clap::{ArgAction, Parser};
 use indicatif::{ProgressBar, ProgressStyle};
 use pathdiff::diff_paths;
 use rust_embed::RustEmbed;
+use serde::{Deserialize, Serialize};
 use serde_json::{self, Map as JsonMap, Value as JsonValue};
 use walkdir::WalkDir;
 
@@ -31,6 +32,7 @@ enum TemplateKind {
 }
 
 impl TemplateKind {
+    /// Return the embedded filename associated with this template kind.
     fn file_name(self) -> &'static str {
         match self {
             TemplateKind::Figure => "figure.typ",
@@ -64,7 +66,8 @@ fn main() {
 )]
 struct Cli {
     /// Directory to scan for .dot files.
-    root: PathBuf,
+    #[arg(value_name = "ROOT")]
+    root: Option<PathBuf>,
     /// Shared Typst template used for every individual figure.
     #[arg(
         long,
@@ -96,9 +99,15 @@ struct Cli {
     /// Number of columns in the final grid.
     #[arg(long, value_name = "N", default_value_t = 3)]
     columns: usize,
+    /// Rebuild a single figure using metadata from the last full run.
+    #[arg(long, value_name = "DOT")]
+    rebuild_figure: Option<PathBuf>,
+    /// Rebuild only the grid PDF using metadata from the last run.
+    #[arg(long, action = ArgAction::SetTrue)]
+    rebuild_grid: bool,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 struct FigurePlan {
     data_path: PathBuf,
     relative: PathBuf,
@@ -106,11 +115,28 @@ struct FigurePlan {
     title: String,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 struct FigureRecord {
     output_path: PathBuf,
     relative: PathBuf,
     title: String,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+struct RunMetadata {
+    root: PathBuf,
+    cwd: PathBuf,
+    build_dir: PathBuf,
+    figs_dir: PathBuf,
+    figure_template: PathBuf,
+    grid_template: PathBuf,
+    grid_output: PathBuf,
+    fig_index_path: PathBuf,
+    cache_file: PathBuf,
+    columns: usize,
+    style_files: Vec<PathBuf>,
+    plans: Vec<FigurePlan>,
+    records: Vec<FigureRecord>,
 }
 
 #[derive(Default)]
@@ -126,14 +152,38 @@ struct FigureEntry {
     name: String,
 }
 
+/// Entry point for the `linnet` CLI: orchestrates full builds and targeted rebuilds.
 fn run() -> Result<()> {
     let cli = Cli::parse();
-    ensure!(cli.columns > 0, "columns must be greater than zero");
+    ensure!(
+        cli.columns > 0,
+        "columns must be greater than zero (received {})",
+        cli.columns
+    );
 
-    let root = canonicalize_existing(&cli.root)
-        .with_context(|| format!("failed to read root directory {}", cli.root.display()))?;
     let cwd = std::env::current_dir().context("failed to resolve working directory")?;
     let build_dir = absolutize(&cwd, &cli.build_dir);
+    let metadata_path = metadata_path(&build_dir);
+
+    if let Some(target) = cli.rebuild_figure.as_ref() {
+        let metadata = load_run_metadata(&metadata_path)?;
+        let target_abs = absolutize(&cwd, target);
+        return rebuild_single_figure(&target_abs, &metadata);
+    }
+
+    if cli.rebuild_grid {
+        let metadata = load_run_metadata(&metadata_path)?;
+        return rebuild_grid_only(&metadata);
+    }
+
+    let root_arg = cli
+        .root
+        .as_ref()
+        .ok_or_else(|| anyhow!("ROOT argument is required unless --rebuild-* is used"))?;
+
+    let root = canonicalize_existing(root_arg)
+        .with_context(|| format!("failed to read root directory {}", root_arg.display()))?;
+    let cwd = cwd;
     let figs_dir = cli
         .figs_dir
         .as_ref()
@@ -161,12 +211,21 @@ fn run() -> Result<()> {
             .with_context(|| format!("failed to create cache directory {}", parent.display()))?;
     }
 
+    let layout_asset = ensure_layout_asset(&build_dir)?;
+
     let mut style_files = Vec::new();
     for style in &cli.style {
         let canonical = canonicalize_existing(style)
             .with_context(|| format!("failed to read style file {}", style.display()))?;
         style_files.push(canonical);
     }
+    let layout_style = canonicalize_existing(&layout_asset).with_context(|| {
+        format!(
+            "failed to resolve layout template {}",
+            layout_asset.display()
+        )
+    })?;
+    style_files.push(layout_style);
     style_files.sort();
     style_files.dedup();
 
@@ -184,7 +243,6 @@ fn run() -> Result<()> {
                 .join("fig-index.typ")
         });
     let _plugin_path = ensure_plugin_asset(&build_dir)?;
-    let _layout_path = ensure_layout_asset(&build_dir)?;
 
     let dot_files = collect_dot_files(&root)?;
     if dot_files.is_empty() {
@@ -222,9 +280,32 @@ fn run() -> Result<()> {
 
     plans.sort_by(|a, b| a.relative.cmp(&b.relative));
 
+    let metadata = RunMetadata {
+        root: root.clone(),
+        cwd: cwd.clone(),
+        build_dir: build_dir.clone(),
+        figs_dir: figs_dir.clone(),
+        figure_template: figure_template.clone(),
+        grid_template: grid_template.clone(),
+        grid_output: grid_output.clone(),
+        fig_index_path: fig_index_path.clone(),
+        cache_file: cache_file.clone(),
+        columns: cli.columns,
+        style_files: style_files.clone(),
+        plans: plans.clone(),
+        records: plans
+            .iter()
+            .map(|plan| FigureRecord {
+                output_path: plan.output_path.clone(),
+                relative: plan.relative.clone(),
+                title: plan.title.clone(),
+            })
+            .collect(),
+    };
+    save_run_metadata(&metadata_path, &metadata)?;
+
     let previous_cache = load_cache(&cache_file)?;
     let mut new_cache = BTreeMap::new();
-    let mut records = Vec::new();
     let mut rebuilt = 0usize;
     let mut reused = 0usize;
 
@@ -255,22 +336,14 @@ fn run() -> Result<()> {
             rebuilt += 1;
         }
         new_cache.insert(key, hash);
-        records.push(FigureRecord {
-            output_path: plan.output_path.clone(),
-            relative: plan.relative.clone(),
-            title: plan.title.clone(),
-        });
         progress.inc(1);
     }
     progress.finish_with_message("figures ready");
 
     save_cache(&cache_file, &new_cache)?;
     let removed = remove_stale_outputs(&previous_cache, &new_cache, &figs_dir)?;
+    save_run_metadata(&metadata_path, &metadata)?;
 
-    let grid_dir = grid_template
-        .parent()
-        .map(Path::to_path_buf)
-        .unwrap_or_else(|| PathBuf::from("."));
     let spinner = ProgressBar::new_spinner();
     spinner.set_style(
         ProgressStyle::with_template("{spinner:.green} {msg}")
@@ -278,10 +351,8 @@ fn run() -> Result<()> {
             .tick_chars("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"),
     );
     spinner.enable_steady_tick(Duration::from_millis(80));
-    spinner.set_message("Writing fig-index...");
-    write_fig_index(&records, &fig_index_path, &grid_dir, cli.columns)?;
-    spinner.set_message("Compiling grid...");
-    compile_grid(&grid_template, &grid_output, &cwd)?;
+    spinner.set_message("Writing fig-index & compiling grid...");
+    run_grid_from_metadata(&metadata)?;
     spinner.finish_with_message(format!("Grid ready -> {}", grid_output.display()));
 
     println!(
@@ -299,6 +370,7 @@ fn run() -> Result<()> {
     Ok(())
 }
 
+/// Recursively gather every `.dot` file beneath `root`, sorted for deterministic runs.
 fn collect_dot_files(root: &Path) -> Result<Vec<PathBuf>> {
     let mut files = Vec::new();
     for entry in WalkDir::new(root).into_iter() {
@@ -318,10 +390,95 @@ fn collect_dot_files(root: &Path) -> Result<Vec<PathBuf>> {
     Ok(files)
 }
 
+/// Rebuild a single figure using cached metadata from the previous full run.
+fn rebuild_single_figure(target: &Path, metadata: &RunMetadata) -> Result<()> {
+    let canonical = canonicalize_existing(target)
+        .with_context(|| format!("failed to read figure source {}", target.display()))?;
+    let plan = metadata
+        .plans
+        .iter()
+        .find(|plan| plan.data_path == canonical)
+        .ok_or_else(|| anyhow!("{} is not part of the cached plan", target.display()))?;
+    build_figure(plan, &metadata.figure_template, &metadata.cwd)?;
+    let existing = load_cache(&metadata.cache_file)?;
+    let mut cache: BTreeMap<String, String> = existing.into_iter().collect();
+    let hash = compute_hash(
+        &plan.data_path,
+        &metadata.figure_template,
+        &metadata.style_files,
+    )?;
+    cache.insert(path_key(&plan.relative), hash);
+    save_cache(&metadata.cache_file, &cache)?;
+    Ok(())
+}
+
+/// Rebuild only the combined grid PDF using cached metadata.
+fn rebuild_grid_only(metadata: &RunMetadata) -> Result<()> {
+    run_grid_from_metadata(metadata)
+}
+
+/// Write `fig-index.typ` and run Typst for the grid using cached metadata.
+fn run_grid_from_metadata(metadata: &RunMetadata) -> Result<()> {
+    let grid_dir = metadata
+        .grid_template
+        .parent()
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| PathBuf::from("."));
+    write_fig_index(
+        &metadata.records,
+        &metadata.fig_index_path,
+        &grid_dir,
+        metadata.columns,
+    )?;
+    compile_grid(
+        &metadata.grid_template,
+        &metadata.grid_output,
+        &metadata.cwd,
+    )
+}
+
+/// Compute the metadata file path under the build directory.
+fn metadata_path(build_dir: &Path) -> PathBuf {
+    build_dir.join(".cache").join("run-metadata.json")
+}
+
+/// Persist the latest run metadata for future incremental rebuilds.
+fn save_run_metadata(path: &Path, metadata: &RunMetadata) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)
+            .with_context(|| format!("failed to create metadata directory {}", parent.display()))?;
+    }
+    let serialized = serde_json::to_vec_pretty(metadata).context("failed to serialize metadata")?;
+    fs::write(path, serialized)
+        .with_context(|| format!("failed to write metadata {}", path.display()))?;
+    Ok(())
+}
+
+/// Read run metadata, guiding incremental rebuilds.
+fn load_run_metadata(path: &Path) -> Result<RunMetadata> {
+    let data = match fs::read(path) {
+        Ok(bytes) => bytes,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+            bail!(
+                "run metadata missing at {} – run `linnet <root>` first",
+                path.display()
+            );
+        }
+        Err(err) => {
+            return Err(err).with_context(|| format!("failed to read metadata {}", path.display()));
+        }
+    };
+    let metadata = serde_json::from_slice(&data)
+        .with_context(|| format!("failed to parse metadata {}", path.display()))?;
+    Ok(metadata)
+}
+
+/// Canonicalize a path, returning an error if it does not exist.
 fn canonicalize_existing(path: &Path) -> Result<PathBuf> {
     Ok(fs::canonicalize(path)?)
 }
 
+/// Join `path` onto `base` unless `path` is already absolute.
 fn absolutize(base: &Path, path: &Path) -> PathBuf {
     if path.is_absolute() {
         path.to_path_buf()
@@ -330,6 +487,7 @@ fn absolutize(base: &Path, path: &Path) -> PathBuf {
     }
 }
 
+/// Derive a human-readable title from a relative DOT path.
 fn derive_title(relative: &Path) -> String {
     let mut parts = Vec::new();
     for component in relative.components() {
@@ -344,6 +502,7 @@ fn derive_title(relative: &Path) -> String {
     }
 }
 
+/// Hash the DOT data, figure template, and all style/layout files.
 fn compute_hash(data: &Path, template: &Path, styles: &[PathBuf]) -> Result<String> {
     let mut hasher = Hasher::new();
     feed_file(&mut hasher, data)?;
@@ -354,6 +513,7 @@ fn compute_hash(data: &Path, template: &Path, styles: &[PathBuf]) -> Result<Stri
     Ok(hasher.finalize().to_hex().to_string())
 }
 
+/// Feed an entire file into the running hash.
 fn feed_file(hasher: &mut Hasher, path: &Path) -> Result<()> {
     let mut file = File::open(path)
         .with_context(|| format!("failed to open {} for hashing", path.display()))?;
@@ -423,6 +583,7 @@ fn path_key(path: &Path) -> String {
     path.to_string_lossy().replace('\\', "/")
 }
 
+/// Load the per-figure hash cache from disk.
 fn load_cache(path: &Path) -> Result<HashMap<String, String>> {
     if !path.exists() {
         return Ok(HashMap::new());
@@ -446,6 +607,7 @@ fn load_cache(path: &Path) -> Result<HashMap<String, String>> {
     Ok(map)
 }
 
+/// Persist the updated per-figure hash cache.
 fn save_cache(path: &Path, cache: &BTreeMap<String, String>) -> Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)
@@ -466,6 +628,7 @@ fn save_cache(path: &Path, cache: &BTreeMap<String, String>) -> Result<()> {
     Ok(())
 }
 
+/// Delete figure PDFs that have no matching source entry anymore.
 fn remove_stale_outputs(
     previous: &HashMap<String, String>,
     current: &BTreeMap<String, String>,
@@ -492,6 +655,7 @@ fn remove_stale_outputs(
     Ok(removed)
 }
 
+/// Generate `fig-index.typ`, describing the figure tree for the grid template.
 fn write_fig_index(
     records: &[FigureRecord],
     index_path: &Path,
@@ -535,6 +699,7 @@ fn write_fig_index(
     Ok(())
 }
 
+/// Resolve a template path, writing the embedded default if the requested file does not exist.
 fn resolve_template(requested: &Path, kind: TemplateKind, build_dir: &Path) -> Result<PathBuf> {
     match fs::canonicalize(requested) {
         Ok(path) => return Ok(path),
@@ -566,6 +731,7 @@ fn resolve_template(requested: &Path, kind: TemplateKind, build_dir: &Path) -> R
     Ok(target)
 }
 
+/// Ensure the embedded linnest plugin is available under `build/templates`.
 fn ensure_plugin_asset(build_dir: &Path) -> Result<PathBuf> {
     let target = build_dir
         .join(TEMPLATE_SUBDIR)
@@ -577,14 +743,22 @@ fn ensure_plugin_asset(build_dir: &Path) -> Result<PathBuf> {
     Ok(target)
 }
 
+/// Ensure the default layout template exists unless the user already created one.
 fn ensure_layout_asset(build_dir: &Path) -> Result<PathBuf> {
     let target = build_dir
         .join(TEMPLATE_SUBDIR)
         .join(TemplateKind::Layout.file_name());
+    if target.exists() {
+        return Ok(target);
+    }
     ensure_parent_dir(&target)?;
     let contents = TemplateKind::Layout.embedded_bytes()?;
-    fs::write(&target, contents.as_ref())
-        .with_context(|| format!("failed to write embedded plugin {}", target.display()))?;
+    fs::write(&target, contents.as_ref()).with_context(|| {
+        format!(
+            "failed to write default layout template {}",
+            target.display()
+        )
+    })?;
     Ok(target)
 }
 
@@ -626,6 +800,7 @@ fn ensure_parent_dir(path: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Compile the grid Typst template into the final PDF.
 fn compile_grid(template: &Path, output: &Path, root: &Path) -> Result<()> {
     ensure_parent_dir(output)?;
     let mut cmd = Command::new("typst");

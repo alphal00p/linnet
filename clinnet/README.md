@@ -34,3 +34,16 @@ whose contents should invalidate the incremental build cache when they change.
 
 The cache lives in `build/.cache/figures.json`; deleting it forces a full rebuild. See
 `linnet --help` for the complete flag list.
+
+## Partial rebuilds
+
+After a full run, you can re-render individual figures or the final grid without rescanning DOT
+files:
+
+```bash
+# Rebuild a single figure that was part of the previous run
+linnet --build-dir build --rebuild-figure path/to/file.dot
+
+# Rebuild the grid PDF based on the cached figure metadata
+linnet --build-dir build --rebuild-grid
+```

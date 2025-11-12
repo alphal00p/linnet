@@ -10,7 +10,7 @@
 //     gamma_ee=0.3
 //     gamma_ev=0.01
 //     length_scale = 0.2
-#let layout(input,scope:(:),columns:(1fr),additional_data:(:))={
+#let layout(input,scope:(:),columns:(1fr),unit:1,additional_data:(:))={
   let a= p.layout_graph(bytes(input),cbor.encode((steps:200,step:1.2,step_shrink:0.21,temp:0.1,beta:9.1,k_spring:20.,g_center:0,gamma_dangling:50,gamma_ee:0.4,gamma_ev:0.1,length_scale:0.2,)+additional_data));
 
 
@@ -70,15 +70,15 @@
 
       if o == "Reversed"{
 
-      noed.push(edge(vertices:((data.pos.x,data.pos.y),nodelab),bend: bend * 0.5rad,..ev_sink))}else{
-        noed.push(edge(vertices:(nodelab,(data.pos.x,data.pos.y)),bend: bend * -0.5rad,..ev_source))
+      noed.push(edge(vertices:((data.pos.x*unit,data.pos.y*unit),nodelab),bend: bend * 0.5rad,..ev_sink))}else{
+        noed.push(edge(vertices:(nodelab,(data.pos.x*unit,data.pos.y*unit)),bend: bend * -0.5rad,..ev_source))
 
       }
 
       (nodelab,n.at(str(start)).pos)
     } else{
       let lab = label("exts"+str(i))
-      noed.push(node((data.pos.x,data.pos.y),name:lab,outset:-5mm,radius:5mm,fill:none))
+      noed.push(node((data.pos.x*unit,data.pos.y*unit),name:lab,outset:-5mm,radius:5mm,fill:none))
       (lab,data.pos)
     }
 
@@ -93,25 +93,25 @@
           "right"
         }
 
-      noed.push(edge(vertices:(nodelab,(data.pos.x,data.pos.y)),bend: bend * 0.5rad,..ev_source,label-side:left))}else{
-        noed.push(edge(vertices:((data.pos.x,data.pos.y),nodelab),bend: bend * -0.5rad,..ev_sink))
+      noed.push(edge(vertices:(nodelab,(data.pos.x*unit,data.pos.y*unit)),bend: bend * 0.5rad,..ev_source,label-side:left))}else{
+        noed.push(edge(vertices:((data.pos.x*unit,data.pos.y*unit),nodelab),bend: bend * -0.5rad,..ev_sink))
 
       }
 
       (nodelab,n.at(str(end)).pos)
     } else{
       let lab = label("exte"+str(i))
-      noed.push(node((data.pos.x,data.pos.y),name:lab,outset:-5mm,radius:5mm,fill:none))
+      noed.push(node((data.pos.x*unit,data.pos.y*unit),name:lab,outset:-5mm,radius:5mm,fill:none))
       (lab,data.pos)
     }
 
 
     let percentb = 1+calc.abs(bend/calc.pi)
 
-    let a  =  calc.sqrt(calc.pow(start-node-pos.x - end-node-pos.x,2)+calc.pow(start-node-pos.y - end-node-pos.y,2))*2.5mm*percentb
+    let a  =  calc.sqrt(calc.pow(start-node-pos.x - end-node-pos.x,2)+calc.pow(start-node-pos.y - end-node-pos.y,2))*2.5mm*percentb*unit
 
-    noed.push(node(pos:(start-node-pos.x,start-node-pos.y),name:snmlab,outset:a))
-    noed.push(node(pos:(end-node-pos.x,end-node-pos.y),name:enmlab,outset:a))
+    noed.push(node(pos:(start-node-pos.x*unit,start-node-pos.y*unit),name:snmlab,outset:a))
+    noed.push(node(pos:(end-node-pos.x*unit,end-node-pos.y*unit),name:enmlab,outset:a))
 
 
     let shift = if bend != 0.{
