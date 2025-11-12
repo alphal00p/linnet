@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.2](https://github.com/alphal00p/linnet/compare/linnet-v0.13.1...linnet-v0.13.2) - 2025-11-12
+
+### Other
+
+- update to symbolica 0.20
+- better templates
+- clinnet for nested dots to pdf
+- Add Figment integration for configuration handling
+
 ## [0.13.1](https://github.com/alphal00p/linnet/compare/linnet-v0.13.0...linnet-v0.13.1) - 2025-11-05
 
 ### Other

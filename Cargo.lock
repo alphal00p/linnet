@@ -422,7 +422,7 @@ checksum = "a1d728cc89cf3aee9ff92b05e62b19ee65a02b5702cff7d5a377e32c6ae29d8d"
 
 [[package]]
 name = "clinnet"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "blake3",
@@ -995,7 +995,7 @@ dependencies = [
 
 [[package]]
 name = "linnet"
-version = "0.13.1"
+version = "0.13.2"
 dependencies = [
  "ahash",
  "bincode 2.0.1",
@@ -2102,7 +2102,7 @@ dependencies = [
 [[package]]
 name = "wasm-minimal-protocol"
 version = "0.1.0"
-source = "git+https://github.com/astrale-sharp/wasm-minimal-protocol#bb9ccd6b3f4bc554ffec61b89d7d8f15af6236b9"
+source = "git+https://github.com/astrale-sharp/wasm-minimal-protocol#c51acd43095fe9da8fa943e064618e486fd2b58d"
 dependencies = [
  "proc-macro2",
  "quote",
