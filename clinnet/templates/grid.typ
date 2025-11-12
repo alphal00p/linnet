@@ -10,8 +10,6 @@
   fill: luma(98%),
   width: 100%,
 )[
-  #text(size: 13pt, weight: "semibold")[#fig.title]
-  #v(6pt)
   #image(fig.path, width: 100%)
   #v(6pt)
   #text(size: 9pt, fill: gray)[#fig.relative]

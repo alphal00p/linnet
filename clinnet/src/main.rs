@@ -112,14 +112,12 @@ struct FigurePlan {
     data_path: PathBuf,
     relative: PathBuf,
     output_path: PathBuf,
-    title: String,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
 struct FigureRecord {
     output_path: PathBuf,
     relative: PathBuf,
-    title: String,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -148,7 +146,6 @@ struct FolderNode {
 struct FigureEntry {
     path: String,
     relative: String,
-    title: String,
     name: String,
 }
 
@@ -269,12 +266,10 @@ fn run() -> Result<()> {
                 )
             })?;
         }
-        let title = derive_title(&relative);
         plans.push(FigurePlan {
             data_path,
             relative,
             output_path,
-            title,
         });
     }
 
@@ -298,7 +293,6 @@ fn run() -> Result<()> {
             .map(|plan| FigureRecord {
                 output_path: plan.output_path.clone(),
                 relative: plan.relative.clone(),
-                title: plan.title.clone(),
             })
             .collect(),
     };
@@ -539,6 +533,7 @@ fn build_figure(plan: &FigurePlan, template: &Path, root: &Path) -> Result<()> {
         diff_paths(&plan.data_path, &template_dir).unwrap_or_else(|| plan.data_path.clone());
     let relative_input = data_rel.to_string_lossy().replace('\\', "/");
     let mut command = Command::new("typst");
+    let title = derive_title(&plan.relative);
     command
         .arg("c")
         .arg(template)
@@ -548,7 +543,7 @@ fn build_figure(plan: &FigurePlan, template: &Path, root: &Path) -> Result<()> {
         .arg("--input")
         .arg(format!("data_path={}", relative_input))
         .arg("--input")
-        .arg(format!("title={}", plan.title));
+        .arg(format!("title={}", title));
 
     run_typst(
         &mut command,
@@ -682,7 +677,6 @@ fn write_fig_index(
         let entry = FigureEntry {
             path: rel_path.to_string_lossy().replace('\\', "/"),
             relative: rel_display,
-            title: record.title.clone(),
             name: file_stem,
         };
         entries.push((folder_parts, entry));
@@ -694,7 +688,7 @@ fn write_fig_index(
     }
 
     write!(file, "#let tree = ")?;
-    write_folder_node(&mut file, "root", &root, 0, false)?;
+    write_folder_node(&mut file, &root, 0, false)?;
     writeln!(file)?;
     Ok(())
 }
@@ -824,7 +818,6 @@ fn insert_entry(node: &mut FolderNode, folders: &[String], entry: FigureEntry) {
 
 fn write_folder_node(
     file: &mut File,
-    name: &str,
     node: &FolderNode,
     indent: usize,
     trailing_comma: bool,
@@ -833,7 +826,6 @@ fn write_folder_node(
     writeln!(file, "{indent_str}(")?;
     let field_indent = indent + 2;
     let field_str = indent_spaces(field_indent);
-    writeln!(file, "{field_str}name: {},", typst_string_literal(name))?;
     write_figures_field(file, &node.figures, field_indent)?;
     let child_names: Vec<String> = node.children.keys().cloned().collect();
     writeln!(
@@ -848,7 +840,7 @@ fn write_folder_node(
         let key_indent = indent_spaces(field_indent + 2);
         for (child_name, child_node) in &node.children {
             write!(file, "{key_indent}{}: ", typst_string_literal(child_name))?;
-            write_folder_node(file, child_name, child_node, field_indent + 4, true)?;
+            write_folder_node(file, child_node, field_indent + 4, true)?;
         }
         writeln!(file, "{field_str}),")?;
     }
@@ -871,10 +863,9 @@ fn write_figures_field(file: &mut File, figures: &[FigureEntry], indent: usize) 
         for figure in figures {
             writeln!(
                 file,
-                "{entry_str}(path: {}, relative: {}, title: {}, name: {},),",
+                "{entry_str}(path: {}, relative: {}, name: {},),",
                 typst_string_literal(&figure.path),
                 typst_string_literal(&figure.relative),
-                typst_string_literal(&figure.title),
                 typst_string_literal(&figure.name)
             )?;
         }
