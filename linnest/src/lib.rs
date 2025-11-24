@@ -304,6 +304,7 @@ pub struct TypstNode {
     pos: Point2<f64>,
     constraints: PointConstraint,
     shift: Option<Vector2<f64>>,
+    statements: BTreeMap<String, String>,
     eval: Option<String>,
 }
 
@@ -313,6 +314,7 @@ impl Default for TypstNode {
             pos: Point2::origin(),
             constraints: PointConstraint::default(),
             shift: None,
+            statements: BTreeMap::new(),
             eval: None,
         }
     }
@@ -372,6 +374,7 @@ impl TypstNode {
         let (pos, constraints) = init_points[nid];
 
         Self {
+            statements: data.statements,
             pos,
             constraints,
             shift,
@@ -416,6 +419,7 @@ pub struct TypstEdge {
     eval_source: Option<String>,
     mom_eval: Option<String>,
     shift: Option<Vector2<f64>>,
+    statements: BTreeMap<String, String>,
     pub constraints: PointConstraint,
 }
 impl Shiftable for TypstEdge {
@@ -439,6 +443,7 @@ impl Default for TypstEdge {
             eval_sink: None,
             eval_source: None,
             mom_eval: None,
+            statements: BTreeMap::new(),
             constraints: PointConstraint::default(),
         }
     }
@@ -525,6 +530,7 @@ impl TypstEdge {
                 eval_source,
                 mom_eval,
                 shift,
+                statements: d.statements,
                 ..Default::default()
             }
         })
@@ -595,6 +601,9 @@ impl TypstHedge {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct TypstGraph {
     graph: HedgeGraph<TypstEdge, TypstNode, TypstHedge>,
+    global_eval: Option<String>,
+    name: String,
+    global_statements: BTreeMap<String, String>,
     layout_config: LayoutConfig,
 }
 
@@ -652,8 +661,23 @@ impl TypstGraph {
 
         let merged_figment = merge_with_overrides(figment, &dot.global_data.statements);
         let config = LayoutConfig::from_figment(&merged_figment);
+
+        let mut global_eval: Option<String> = dot.global_data.statements.get("eval").cloned();
+
+        if let Some(g) = &mut global_eval {
+            let clean_template = g
+                .strip_prefix('"')
+                .unwrap_or(&g)
+                .strip_suffix('"')
+                .unwrap_or(&g);
+            *g = expand_template(clean_template, &dot.global_data.statements);
+        }
+
         Self {
             graph,
+            global_eval,
+            name: dot.global_data.name,
+            global_statements: dot.global_data.statements,
             layout_config: config,
         }
     }
@@ -1281,6 +1305,9 @@ impl TypstGraph {
         CBORTypstGraph {
             edges: self.new_edgevec(|e, i, _p| EdgeData::new(e.clone(), self.orientation(i))),
             nodes: self.new_nodevec(|_id, _h, v| v.clone()),
+            global_eval: self.global_eval.clone(),
+            name: self.name.clone(),
+            global_statements: self.global_statements.clone(),
         }
     }
 
@@ -1345,6 +1372,9 @@ pub fn layout_graph(arg: &[u8], arg2: &[u8]) -> Result<Vec<u8>, String> {
 pub struct CBORTypstGraph {
     edges: EdgeVec<EdgeData<TypstEdge>>,
     nodes: NodeVec<TypstNode>,
+    global_eval: Option<String>,
+    name: String,
+    global_statements: BTreeMap<String, String>,
 }
 
 impl CBORTypstGraph {

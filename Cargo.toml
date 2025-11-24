@@ -50,11 +50,11 @@ rand = { version = "0.8.5", features = ["small_rng"] }
 ref-ops = "0.2.5"
 serde = { version = "1.0", features = ["derive"], optional = true }
 figment = { version = "0.10.19" }
-symbolica = { version = "0.20", optional = true, default-features = false }
+symbolica = { version = "1", optional = true, default-features = false }
 thiserror = "2.0.11"
 derive_more = "0.99.17"
 # hibit_tree = "0.1.0-alpha.3"
-dot-parser = "0.5.1"
+dot-parser = "0.5"
 kurbo = "0.11.1"
 piet = "0.7.0"
 bincode-trait-derive = "0.1.1"

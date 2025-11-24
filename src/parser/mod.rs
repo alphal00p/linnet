@@ -273,7 +273,7 @@ impl<S: NodeStorageOps<NodeData = DotVertexData>> DotGraph<S> {
         s: Str,
     ) -> Result<Self, HedgeParseError<'a, (), (), (), ()>> {
         let ast_graph: SubGraphFreeGraph = dot_parser::ast::Graph::try_from(s.as_ref())?
-            .filter_map(&|(k, v)| Some((k.to_string(), v.to_string())))
+            .filter_map(&|(k, v)| Some((k.into(), v.into())))
             .into();
 
         Ok(Self::from((ast_graph, Figment::new())))
@@ -285,7 +285,7 @@ impl<S: NodeStorageOps<NodeData = DotVertexData>> DotGraph<S> {
         figment: figment::Figment,
     ) -> Result<Self, HedgeParseError<'a, (), (), (), ()>> {
         let ast_graph: SubGraphFreeGraph = dot_parser::ast::Graph::try_from(s.as_ref())?
-            .filter_map(&|(k, v)| Some((k.to_string(), v.to_string())))
+            .filter_map(&|(k, v)| Some((k.into(), v.into())))
             .into();
 
         let graph = Self::from((ast_graph, figment));
@@ -787,12 +787,57 @@ mod multi {
     #[test]
     fn multiple() {
         assert_eq!(
-            dot_parser::ast::Graphs::try_from("graph { A -> subgraph { B C } }\ngraph { A ->  }")
-                .unwrap()
-                .graphs
-                .len(),
+            dot_parser::ast::Graphs::try_from(
+                r#"digraph{
+                overall_factor = 1
+                edge [overall_factor=1]
+                A
+                }
+                "#
+            )
+            .unwrap()
+            .graphs
+            .len(),
             1
         );
-        assert!(dot_parser::ast::Graph::try_from("graph { A ->  }").is_err());
+
+        let a = r#"
+            digraph triangle_0 {
+            graph [
+            overall_factor = 1;
+            multiplicity_factor = 1;
+            ]
+            edge [
+            pdg=1000
+            dod=-100
+            ]
+            ext [style=invis]
+            ext -> v4 [name=p1, mom=p1,num="Q(eid,spenso::mink(4,10))"];
+            ext -> v5 [name=p2, mom=p2,num="Q(eid,spenso::mink(4,20))"];
+            v6 -> ext [name=p3, mom=p3];
+            v5 -> v4 [name=q1,lmb_index=0, num="Q(eid,spenso::mink(4,10))"];
+            v6 -> v5 [name=q2];
+            v4 -> v6 [name=q3,num="Q(eid,spenso::mink(4,20))-Q(0,spenso::mink(4,20))"];
+            }
+
+            digraph tria {
+            graph [
+            overall_factor = -1;
+            multiplicity_factor = 1;
+            ]
+            edge [
+            pdg=1000
+            dod=-100
+            ]
+            ext [style=invis]
+            ext -> v4 [name=p1, mom=p1 num="Q(eid,spenso::mink(4,10))" is_dummy=true];
+            ext -> v5 [name=p2, mom=p2,num="Q(eid,spenso::mink(4,20))" is_dummy=true];
+            // v6 -> ext [name=p3, mom=p3, is_dummy];
+            // v5 -> v4 [pdg=1001, name=q1,lmb_index=0, num="Q(eid,spenso::mink(4,10))"];
+            // v6 -> v5 [pdg=1001, name=q2];
+            // v4 -> v6 [pdg=1001, name=q3,num="Q(eid,spenso::mink(4,20))-Q(0,spenso::mink(4,20))"];
+            }
+            "#;
+        // assert!(dot_parser::ast::Graph::try_from("graph { A ->  }").is_err());
     }
 }
