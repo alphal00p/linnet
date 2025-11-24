@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.3](https://github.com/alphal00p/linnet/compare/linnet-v0.13.2...linnet-v0.13.3) - 2025-11-24
+
+### Other
+
+- update symbolica
+
 ## [0.13.2](https://github.com/alphal00p/linnet/compare/linnet-v0.13.1...linnet-v0.13.2) - 2025-11-12
 
 ### Other
