@@ -718,6 +718,9 @@ fn resolve_template(requested: &Path, kind: TemplateKind, build_dir: &Path) -> R
         );
     }
 
+    if target.exists() {
+        return Ok(target);
+    }
     ensure_parent_dir(&target)?;
     let contents = kind.embedded_bytes()?;
     fs::write(&target, contents.as_ref())
@@ -730,6 +733,9 @@ fn ensure_plugin_asset(build_dir: &Path) -> Result<PathBuf> {
     let target = build_dir
         .join(TEMPLATE_SUBDIR)
         .join(TemplateKind::Plugin.file_name());
+    if target.exists() {
+        return Ok(target);
+    }
     ensure_parent_dir(&target)?;
     let contents = TemplateKind::Plugin.embedded_bytes()?;
     fs::write(&target, contents.as_ref())
