@@ -677,7 +677,15 @@ impl TypstGraph {
             graph,
             global_eval,
             name: dot.global_data.name,
-            global_statements: dot.global_data.statements,
+            global_statements: dot
+                .global_data
+                .statements
+                .into_iter()
+                .map(|(k, v)| {
+                    let clean_value = v.trim().trim_matches('"').to_string();
+                    (k, clean_value)
+                })
+                .collect(),
             layout_config: config,
         }
     }
