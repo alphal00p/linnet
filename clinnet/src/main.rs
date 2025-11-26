@@ -69,15 +69,11 @@ struct Cli {
     #[arg(value_name = "ROOT")]
     root: Option<PathBuf>,
     /// Shared Typst template used for every individual figure.
-    #[arg(
-        long,
-        value_name = "FILE",
-        default_value = "build/templates/figure.typ"
-    )]
-    figure_template: PathBuf,
+    #[arg(long, value_name = "FILE")]
+    figure_template: Option<PathBuf>,
     /// Typst template used for the grid document.
-    #[arg(long, value_name = "FILE", default_value = "build/templates/grid.typ")]
-    grid_template: PathBuf,
+    #[arg(long, value_name = "FILE")]
+    grid_template: Option<PathBuf>,
     /// Base directory that stores build artifacts.
     #[arg(long, value_name = "DIR", default_value = "build")]
     build_dir: PathBuf,
@@ -196,8 +192,16 @@ fn run() -> Result<()> {
         .as_ref()
         .map(|path| absolutize(&cwd, path))
         .unwrap_or_else(|| build_dir.join("grid.pdf"));
-    let requested_figure_template = absolutize(&cwd, &cli.figure_template);
-    let requested_grid_template = absolutize(&cwd, &cli.grid_template);
+    let requested_figure_template = cli
+        .figure_template
+        .as_ref()
+        .map(|path| absolutize(&cwd, path))
+        .unwrap_or_else(|| build_dir.join("templates").join("figure.typ"));
+    let requested_grid_template = cli
+        .grid_template
+        .as_ref()
+        .map(|path| absolutize(&cwd, path))
+        .unwrap_or_else(|| build_dir.join("templates").join("grid.typ"));
 
     fs::create_dir_all(&build_dir)
         .with_context(|| format!("failed to create build directory {}", build_dir.display()))?;
