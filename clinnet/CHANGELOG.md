@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.3](https://github.com/alphal00p/linnet/compare/clinnet-v0.1.2...clinnet-v0.1.3) - 2025-11-26
+
+### Other
+
+- don't overwrite existing templates
+- strip quotes strings for typst
+
 ## [0.1.2](https://github.com/alphal00p/linnet/compare/clinnet-v0.1.1...clinnet-v0.1.2) - 2025-11-24
 
 ### Other

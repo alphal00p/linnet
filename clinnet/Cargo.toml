@@ -1,6 +1,6 @@
 [package]
 name = "clinnet"
-version = "0.1.2"
+version = "0.1.3"
 edition = "2024"
 description = "Incrementally render Typst figures from DOT graphs and assemble them into a grid PDF."
 license = "MIT"
