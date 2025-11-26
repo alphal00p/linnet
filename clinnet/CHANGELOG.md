@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.4](https://github.com/alphal00p/linnet/compare/clinnet-v0.1.3...clinnet-v0.1.4) - 2025-11-26
+
+### Other
+
+- Make figure and grid templates optional with defaults
+
 ## [0.1.3](https://github.com/alphal00p/linnet/compare/clinnet-v0.1.2...clinnet-v0.1.3) - 2025-11-26
 
 ### Other
