@@ -87,8 +87,8 @@ struct Cli {
     #[arg(long, value_name = "FILE")]
     fig_index: Option<PathBuf>,
     /// Destination PDF for the final grid (defaults to <build_dir>/grid.pdf).
-    #[arg(long, value_name = "FILE")]
-    grid_output: Option<PathBuf>,
+    #[arg(long, short = 'o', value_name = "FILE")]
+    output_path: Option<PathBuf>,
     /// Extra files whose contents influence incremental rebuilds (e.g., style snippets).
     #[arg(long, value_name = "FILE", action = ArgAction::Append)]
     style: Vec<PathBuf>,
@@ -188,7 +188,7 @@ fn run() -> Result<()> {
         .map(|path| absolutize(&cwd, path))
         .unwrap_or_else(|| build_dir.join(".cache").join("figures.json"));
     let grid_output = cli
-        .grid_output
+        .output_path
         .as_ref()
         .map(|path| absolutize(&cwd, path))
         .unwrap_or_else(|| build_dir.join("grid.pdf"));

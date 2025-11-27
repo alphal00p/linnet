@@ -9,8 +9,8 @@ use linnet::{
         layout::{
             simulatedanneale::{anneal, GeoSchedule, SAConfig},
             spring::{
-                Constraint, LayoutNeighbor, ParamTuning, PointConstraint, Shiftable,
-                SpringChargeEnergy,
+                Constraint, LayoutNeighbor, ParamTuning, PointConstraint, ShiftDirection,
+                Shiftable, SpringChargeEnergy,
             },
         },
         nodestore::NodeStorageOps,
@@ -69,38 +69,41 @@ impl PinConstraint {
                 },
             ),
             PinConstraint::LinkX(group) => {
+                let (group_name, direction) = Self::parse_direction(group);
                 let reference = *map
-                    .entry(format!("link_x_{}", group))
+                    .entry(format!("link_x_{}", group_name))
                     .or_insert_with(|| index);
                 (
                     Point2::new(0.0, 0.0),
                     PointConstraint {
-                        x: Constraint::Grouped(reference),
+                        x: Constraint::Grouped(reference, direction),
                         y: Constraint::Free,
                     },
                 )
             }
             PinConstraint::LinkY(group) => {
+                let (group_name, direction) = Self::parse_direction(group);
                 let reference = *map
-                    .entry(format!("link_y_{}", group))
+                    .entry(format!("link_y_{}", group_name))
                     .or_insert_with(|| index);
                 (
                     Point2::new(0.0, 0.0),
                     PointConstraint {
-                        y: Constraint::Grouped(reference),
+                        y: Constraint::Grouped(reference, direction),
                         x: Constraint::Free,
                     },
                 )
             }
             PinConstraint::LinkBoth(group) => {
+                let (group_name, direction) = Self::parse_direction(group);
                 let reference = *map
-                    .entry(format!("link_{}", group))
+                    .entry(format!("link_{}", group_name))
                     .or_insert_with(|| index);
                 (
                     Point2::new(0.0, 0.0),
                     PointConstraint {
-                        x: Constraint::Grouped(reference),
-                        y: Constraint::Grouped(reference),
+                        x: Constraint::Grouped(reference, direction),
+                        y: Constraint::Grouped(reference, direction),
                     },
                 )
             }
@@ -118,6 +121,16 @@ impl PinConstraint {
                     },
                 )
             }
+        }
+    }
+
+    fn parse_direction(group: &str) -> (&str, ShiftDirection) {
+        if group.starts_with('+') {
+            (&group[1..], ShiftDirection::PositiveOnly)
+        } else if group.starts_with('-') {
+            (&group[1..], ShiftDirection::NegativeOnly)
+        } else {
+            (group, ShiftDirection::Any)
         }
     }
 

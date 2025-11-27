@@ -32,11 +32,18 @@ impl Default for PointConstraint {
     }
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+pub enum ShiftDirection {
+    Any,
+    PositiveOnly,
+    NegativeOnly,
+}
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum Constraint {
     Fixed,
     Free,
-    Grouped(usize),
+    Grouped(usize, ShiftDirection),
 }
 
 impl Default for Constraint {
@@ -52,6 +59,14 @@ pub trait Shiftable {
         index: I,
         values: &mut R,
     ) -> bool;
+}
+
+fn apply_directional_shift(shift_val: f64, direction: ShiftDirection) -> f64 {
+    match direction {
+        ShiftDirection::Any => shift_val,
+        ShiftDirection::PositiveOnly => shift_val.abs(),
+        ShiftDirection::NegativeOnly => -shift_val.abs(),
+    }
 }
 
 impl Shiftable for PointConstraint {
@@ -77,64 +92,75 @@ impl Shiftable for PointConstraint {
                 values[index].x += shift.x;
                 changed = true;
             }
-            (Constraint::Grouped(r), Constraint::Fixed) => {
+            (Constraint::Grouped(r, dir), Constraint::Fixed) => {
                 let i = r.into();
                 if i != index {
                     values[index].x = values[i].x;
                 } else {
-                    values[index].x += shift.x;
-                    changed = true;
+                    let x_shift = apply_directional_shift(shift.x, dir);
+                    values[index].x += x_shift;
+                    changed = x_shift != 0.0;
                 }
             }
-            (Constraint::Grouped(r), Constraint::Free) => {
+            (Constraint::Grouped(r, dir), Constraint::Free) => {
                 let i = r.into();
                 if i != index {
                     values[index].x = values[i].x;
                     values[index].y += shift.y;
                     changed = true;
                 } else {
-                    values[index] += shift;
-                    changed = true;
+                    let x_shift = apply_directional_shift(shift.x, dir);
+                    values[index].x += x_shift;
+                    values[index].y += shift.y;
+                    changed = x_shift != 0.0 || shift.y != 0.0;
                 }
             }
 
-            (Constraint::Fixed, Constraint::Grouped(r)) => {
+            (Constraint::Fixed, Constraint::Grouped(r, dir)) => {
                 let i = r.into();
                 if i != index {
                     values[index].y = values[i].y;
                 } else {
-                    values[index].y += shift.y;
-                    changed = true;
+                    let y_shift = apply_directional_shift(shift.y, dir);
+                    values[index].y += y_shift;
+                    changed = y_shift != 0.0;
                 }
             }
-            (Constraint::Free, Constraint::Grouped(r)) => {
+            (Constraint::Free, Constraint::Grouped(r, dir)) => {
                 let i = r.into();
                 if i != index {
                     values[index].y = values[i].y;
                     values[index].x += shift.x;
                     changed = true;
                 } else {
-                    values[index] += shift;
-                    changed = true;
+                    let y_shift = apply_directional_shift(shift.y, dir);
+                    values[index].x += shift.x;
+                    values[index].y += y_shift;
+                    changed = shift.x != 0.0 || y_shift != 0.0;
                 }
             }
-            (Constraint::Grouped(xi), Constraint::Grouped(yi)) => {
+            (Constraint::Grouped(xi, x_dir), Constraint::Grouped(yi, y_dir)) => {
                 let ix = xi.into();
                 let iy = yi.into();
                 if ix != index && iy != index {
                     values[index].x = values[ix].x;
                     values[index].y = values[iy].y;
                 } else if ix == index && iy != index {
-                    values[index].x += shift.x;
+                    let x_shift = apply_directional_shift(shift.x, x_dir);
+                    values[index].x += x_shift;
                     values[index].y = values[iy].y;
-                    changed = true;
+                    changed = x_shift != 0.0;
                 } else if ix != index && iy == index {
+                    let y_shift = apply_directional_shift(shift.y, y_dir);
                     values[index].x = values[ix].x;
-                    values[index].y += shift.y;
-                    changed = true;
+                    values[index].y += y_shift;
+                    changed = y_shift != 0.0;
                 } else {
-                    values[index] += shift;
-                    changed = true;
+                    let x_shift = apply_directional_shift(shift.x, x_dir);
+                    let y_shift = apply_directional_shift(shift.y, y_dir);
+                    values[index].x += x_shift;
+                    values[index].y += y_shift;
+                    changed = x_shift != 0.0 || y_shift != 0.0;
                 }
             }
         }
