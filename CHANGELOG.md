@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.0](https://github.com/alphal00p/linnet/compare/linnet-v0.13.3...linnet-v0.14.0) - 2025-11-28
+
+### Other
+
+- change output name and make it short, and add directional groups
+
 ## [0.13.3](https://github.com/alphal00p/linnet/compare/linnet-v0.13.2...linnet-v0.13.3) - 2025-11-24
 
 ### Other
