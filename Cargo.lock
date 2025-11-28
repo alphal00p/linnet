@@ -422,7 +422,7 @@ checksum = "a1d728cc89cf3aee9ff92b05e62b19ee65a02b5702cff7d5a377e32c6ae29d8d"
 
 [[package]]
 name = "clinnet"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "anyhow",
  "blake3",
@@ -997,7 +997,7 @@ dependencies = [
  "ciborium",
  "figment",
  "getrandom 0.2.15",
- "linnet",
+ "linnet 0.13.3",
  "rand 0.8.5",
  "rand_xoshiro",
  "serde",
@@ -1008,6 +1008,36 @@ dependencies = [
 [[package]]
 name = "linnet"
 version = "0.13.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "636a5571737c37035e674262ea57574108a33314f94955e7b6f1547fe85f6c6b"
+dependencies = [
+ "ahash",
+ "bincode-trait-derive",
+ "bitvec",
+ "by_address",
+ "cgmath",
+ "derive_more 0.99.19",
+ "dot-parser",
+ "duplicate",
+ "figment",
+ "frostfire",
+ "getrandom 0.2.15",
+ "indenter",
+ "indexmap",
+ "itertools 0.14.0",
+ "kurbo",
+ "paste",
+ "piet",
+ "rand 0.8.5",
+ "rand_xoshiro",
+ "ref-ops",
+ "serde",
+ "thiserror",
+]
+
+[[package]]
+name = "linnet"
+version = "0.14.0"
 dependencies = [
  "ahash",
  "bincode 2.0.1",
