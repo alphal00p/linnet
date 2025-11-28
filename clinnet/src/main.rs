@@ -95,6 +95,9 @@ struct Cli {
     /// Number of columns in the final grid.
     #[arg(long, value_name = "N", default_value_t = 3)]
     columns: usize,
+    /// Add a string key-value pair visible through `sys.inputs` in Typst.
+    #[arg(long, value_name = "key=value", action = ArgAction::Append, value_parser = parse_input_pair)]
+    input: Vec<(String, String)>,
     /// Rebuild a single figure using metadata from the last full run.
     #[arg(long, value_name = "DOT")]
     rebuild_figure: Option<PathBuf>,
@@ -129,6 +132,7 @@ struct RunMetadata {
     cache_file: PathBuf,
     columns: usize,
     style_files: Vec<PathBuf>,
+    input: Vec<(String, String)>,
     plans: Vec<FigurePlan>,
     records: Vec<FigureRecord>,
 }
@@ -291,6 +295,7 @@ fn run() -> Result<()> {
         cache_file: cache_file.clone(),
         columns: cli.columns,
         style_files: style_files.clone(),
+        input: cli.input.clone(),
         plans: plans.clone(),
         records: plans
             .iter()
@@ -320,7 +325,7 @@ fn run() -> Result<()> {
 
     for plan in &plans {
         let key = path_key(&plan.relative);
-        let hash = compute_hash(&plan.data_path, &figure_template, &style_files)?;
+        let hash = compute_hash(&plan.data_path, &figure_template, &style_files, &cli.input)?;
         if previous_cache
             .get(&key)
             .map(|old| old == &hash)
@@ -330,7 +335,7 @@ fn run() -> Result<()> {
             progress.set_message(format!("cached {}", plan.relative.display()));
         } else {
             progress.set_message(format!("building {}", plan.relative.display()));
-            build_figure(plan, &figure_template, &cwd)?;
+            build_figure(plan, &figure_template, &root, &cli.input)?;
             rebuilt += 1;
         }
         new_cache.insert(key, hash);
@@ -397,13 +402,19 @@ fn rebuild_single_figure(target: &Path, metadata: &RunMetadata) -> Result<()> {
         .iter()
         .find(|plan| plan.data_path == canonical)
         .ok_or_else(|| anyhow!("{} is not part of the cached plan", target.display()))?;
-    build_figure(plan, &metadata.figure_template, &metadata.cwd)?;
+    build_figure(
+        &plan,
+        &metadata.figure_template,
+        &metadata.root,
+        &metadata.input,
+    )?;
     let existing = load_cache(&metadata.cache_file)?;
     let mut cache: BTreeMap<String, String> = existing.into_iter().collect();
     let hash = compute_hash(
         &plan.data_path,
         &metadata.figure_template,
         &metadata.style_files,
+        &metadata.input,
     )?;
     cache.insert(path_key(&plan.relative), hash);
     save_cache(&metadata.cache_file, &cache)?;
@@ -431,7 +442,8 @@ fn run_grid_from_metadata(metadata: &RunMetadata) -> Result<()> {
     compile_grid(
         &metadata.grid_template,
         &metadata.grid_output,
-        &metadata.cwd,
+        &metadata.root,
+        &metadata.input,
     )
 }
 
@@ -501,12 +513,27 @@ fn derive_title(relative: &Path) -> String {
 }
 
 /// Hash the DOT data, figure template, and all style/layout files.
-fn compute_hash(data: &Path, template: &Path, styles: &[PathBuf]) -> Result<String> {
+fn compute_hash(
+    data: &Path,
+    template: &Path,
+    styles: &[PathBuf],
+    inputs: &[(String, String)],
+) -> Result<String> {
     let mut hasher = Hasher::new();
     feed_file(&mut hasher, data)?;
     feed_file(&mut hasher, template)?;
     for style in styles {
         feed_file(&mut hasher, style)?;
+    }
+    // Include input variables in the hash to invalidate cache when they change
+    // Sort inputs for consistent hashing regardless of command line order
+    let mut sorted_inputs = inputs.to_vec();
+    sorted_inputs.sort_by(|a, b| a.0.cmp(&b.0));
+    for (key, value) in sorted_inputs {
+        hasher.update(key.as_bytes());
+        hasher.update(b"=");
+        hasher.update(value.as_bytes());
+        hasher.update(b"\n");
     }
     Ok(hasher.finalize().to_hex().to_string())
 }
@@ -528,7 +555,12 @@ fn feed_file(hasher: &mut Hasher, path: &Path) -> Result<()> {
     Ok(())
 }
 
-fn build_figure(plan: &FigurePlan, template: &Path, root: &Path) -> Result<()> {
+fn build_figure(
+    plan: &FigurePlan,
+    template: &Path,
+    root: &Path,
+    input_args: &[(String, String)],
+) -> Result<()> {
     let template_dir = template
         .parent()
         .map(Path::to_path_buf)
@@ -548,6 +580,11 @@ fn build_figure(plan: &FigurePlan, template: &Path, root: &Path) -> Result<()> {
         .arg(format!("data_path={}", relative_input))
         .arg("--input")
         .arg(format!("title={}", title));
+
+    // Add additional input arguments
+    for (key, value) in input_args {
+        command.arg("--input").arg(format!("{}={}", key, value));
+    }
 
     run_typst(
         &mut command,
@@ -805,7 +842,12 @@ fn ensure_parent_dir(path: &Path) -> Result<()> {
 }
 
 /// Compile the grid Typst template into the final PDF.
-fn compile_grid(template: &Path, output: &Path, root: &Path) -> Result<()> {
+fn compile_grid(
+    template: &Path,
+    output: &Path,
+    root: &Path,
+    input_args: &[(String, String)],
+) -> Result<()> {
     ensure_parent_dir(output)?;
     let mut cmd = Command::new("typst");
     cmd.arg("c")
@@ -813,6 +855,12 @@ fn compile_grid(template: &Path, output: &Path, root: &Path) -> Result<()> {
         .arg(output)
         .arg("--root")
         .arg(root);
+
+    // Add additional input arguments
+    for (key, value) in input_args {
+        cmd.arg("--input").arg(format!("{}={}", key, value));
+    }
+
     run_typst(&mut cmd, &format!("compiling grid {}", output.display()))
 }
 
@@ -886,4 +934,20 @@ fn write_figures_field(file: &mut File, figures: &[FigureEntry], indent: usize) 
 
 fn indent_spaces(indent: usize) -> String {
     " ".repeat(indent)
+}
+
+/// Parses key/value pairs split by the first equal sign.
+///
+/// This function will return an error if the argument contains no equals sign
+/// or the key (before the equals sign) is empty.
+fn parse_input_pair(raw: &str) -> Result<(String, String), String> {
+    let (key, val) = raw
+        .split_once('=')
+        .ok_or("input must be a key and a value separated by an equal sign")?;
+    let key = key.trim().to_owned();
+    if key.is_empty() {
+        return Err("the key was missing or empty".to_owned());
+    }
+    let val = val.trim().to_owned();
+    Ok((key, val))
 }
