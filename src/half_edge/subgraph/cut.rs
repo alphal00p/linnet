@@ -944,3 +944,65 @@ impl<E> PossiblyCutEdge<E> {
         self.flow = flow.into();
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::{dot, parser::DotGraph};
+
+    use super::*;
+
+    #[test]
+    fn test_roundrip() {
+        let gr: DotGraph = dot!(
+            digraph {
+              num = "1";
+              overall_factor = "(AutG(1))^(-1)*InternalFermionLoopSign(-1)";
+              0[int_id=V_71];
+              1[int_id=V_71];
+              2[int_id=V_98];
+              3[int_id=V_98];
+
+              ext0 [style=invis];
+              2:0-> ext0 [id=0 is_cut=0 label="e-"];
+              ext1 [style=invis];
+              ext1-> 3:1 [id=1 is_cut=0 label="e+"];
+              ext2 [style=invis];
+              2:2-> ext2 [id=6 dir=back is_cut=2 label="e+"];
+              ext3 [style=invis];
+              ext3-> 3:3 [id=7 dir=back is_cut=2 label="e-"];
+              0:4-> 1:5 [id=4 dir=back  label="d~"];
+              0:6-> 1:7 [id=5  label="d"];
+              0:8-> 3:9 [id=2 dir=none  label="a"];
+              1:10-> 2:11 [id=3 dir=none  label="a"];
+            }
+        )
+        .unwrap();
+
+        let mut a = gr.graph.map(
+            |_, _, v| v,
+            |inv, _, _, ei, e| {
+                e.map(|a| {
+                    if let Some(is_cut) = a.get::<_, usize>("is_cut") {
+                        let is_cut_h = Hedge(is_cut.unwrap());
+                        let mut flow = inv.flow(is_cut_h);
+                        let eid = inv[is_cut_h];
+                        if eid != ei {
+                            flow = -flow;
+                        }
+                        let mut e = PossiblyCutEdge::uncut(1, eid);
+                        e.cut(flow);
+                        e
+                    } else {
+                        PossiblyCutEdge::uncut(1, ei)
+                    }
+                })
+            },
+            |_, h| h,
+        );
+
+        println!("{}", a.debug_cut_dot());
+        a.glue_back_strict();
+
+        println!("{}", a.debug_cut_dot());
+    }
+}

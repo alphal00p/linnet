@@ -453,6 +453,24 @@ impl<T> SmartEdgeVec<T> {
         )
     }
 
+    fn update_edge_references(&mut self, old_edge_id: EdgeIndex, new_edge_id: EdgeIndex) {
+        for (_, d) in self.involution.iter_mut() {
+            match d {
+                InvolutiveMapping::Source { data, .. } => {
+                    if data.data == old_edge_id {
+                        data.data = new_edge_id;
+                    }
+                }
+                InvolutiveMapping::Identity { data, .. } => {
+                    if data.data == old_edge_id {
+                        data.data = new_edge_id;
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
     fn connect_identities(
         &mut self,
         source: Hedge,
@@ -463,43 +481,49 @@ impl<T> SmartEdgeVec<T> {
         let source_edge_id = g.involution[source];
         let sink_edge_id = g.involution[sink];
         let last = EdgeIndex(g.data.len().0.checked_sub(1).unwrap());
-        let second_last = EdgeIndex(g.data.len().0.checked_sub(2).unwrap());
 
-        let mut remaps: [Option<(EdgeIndex, EdgeIndex)>; 2] = [None, None];
-
-        // If sink_edge_id.0 is already the last, swap it to second-last first.
-        if sink_edge_id == last {
-            g.data.swap(sink_edge_id, second_last); // swap last and second last
-
-            if source_edge_id != second_last {
-                g.data.swap(source_edge_id, last);
-
-                // now we need to remap any pointers to second_last, to source_edge_id
-                remaps[0] = Some((second_last, source_edge_id));
-            }
-        } else {
-            g.data.swap(source_edge_id, last);
-            g.data.swap(sink_edge_id, second_last);
-
-            if source_edge_id == second_last {
-                remaps[0] = Some((last, sink_edge_id));
+        // Always keep the edge with smaller index, remove the one with larger index
+        let (keep_edge_id, remove_edge_id, keep_hedge, remove_hedge) =
+            if source_edge_id < sink_edge_id {
+                (source_edge_id, sink_edge_id, source, sink)
             } else {
-                remaps[0] = Some((last, source_edge_id));
-                remaps[1] = Some((second_last, sink_edge_id));
-            }
+                (sink_edge_id, source_edge_id, sink, source)
+            };
+
+        // At most one swap: move the edge to be removed to the end
+        if remove_edge_id != last {
+            g.data.swap(remove_edge_id, last);
+            // Update references to 'last' -> 'remove_edge_id'
+            g.update_edge_references(last, remove_edge_id);
         }
 
-        let source_data = EdgeData::new(g.data.pop().unwrap().0, g.involution.orientation(source));
-
-        let sink_data = EdgeData::new(g.data.pop().unwrap().0, g.involution.orientation(sink));
-        let (merge_flow, merge_data) = merge_fn(
-            g.involution.flow(source),
-            source_data,
-            g.involution.flow(sink),
-            sink_data,
+        // Extract data by popping from end and swapping to avoid Clone requirement
+        let remove_data = EdgeData::new(
+            g.data.pop().unwrap().0, // Remove from last position
+            g.involution.orientation(remove_hedge),
         );
 
-        let new_edge_data = EdgeData::new(g.data.len(), merge_data.orientation);
+        // If we need to keep an edge that's not at the (new) end, swap it to the end first
+        let current_last = EdgeIndex(g.data.len().0.checked_sub(1).unwrap());
+        if keep_edge_id != current_last {
+            g.data.swap(keep_edge_id, current_last);
+            g.update_edge_references(keep_edge_id, current_last);
+            g.update_edge_references(current_last, keep_edge_id);
+        }
+
+        let keep_data = EdgeData::new(
+            g.data.pop().unwrap().0, // Remove from (new) last position
+            g.involution.orientation(keep_hedge),
+        );
+
+        let (merge_flow, merged_data) = merge_fn(
+            g.involution.flow(keep_hedge),
+            keep_data,
+            g.involution.flow(remove_hedge),
+            remove_data,
+        );
+
+        // Update the kept edge with merged data
         let pair = match merge_flow {
             Flow::Sink => HedgePair::Paired {
                 source: sink,
@@ -508,37 +532,12 @@ impl<T> SmartEdgeVec<T> {
             Flow::Source => HedgePair::Paired { source, sink },
         };
 
-        g.data.push((merge_data.data, pair));
+        // Push the merged result back - it will be at the new "end" position
+        let final_edge_id = g.data.len();
+        g.data.push((merged_data.data, pair));
 
-        for (_, d) in g.involution.iter_mut() {
-            match d {
-                InvolutiveMapping::Source { data, .. } => {
-                    if let Some((old, new)) = &remaps[0] {
-                        if data.data == *old {
-                            data.data = *new;
-                        }
-                    }
-                    if let Some((old, new)) = &remaps[1] {
-                        if data.data == *old {
-                            data.data = *new;
-                        }
-                    }
-                }
-                InvolutiveMapping::Identity { data, .. } => {
-                    if let Some((old, new)) = &remaps[0] {
-                        if data.data == *old {
-                            data.data = *new;
-                        }
-                    }
-                    if let Some((old, new)) = &remaps[1] {
-                        if data.data == *old {
-                            data.data = *new;
-                        }
-                    }
-                }
-                _ => {}
-            }
-        }
+        // Update involution to point to the final position
+        let new_edge_data = EdgeData::new(final_edge_id, merged_data.orientation);
         g.involution
             .connect_identities(source, sink, |_, _, _, _| (merge_flow, new_edge_data))
             .unwrap();

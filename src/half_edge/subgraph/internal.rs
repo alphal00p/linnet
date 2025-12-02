@@ -360,18 +360,20 @@ impl InternalSubGraph {
         mut filter: SuBitGraph,
         graph: &HedgeGraph<E, V, H, N>,
     ) -> Self {
-        for (j, _, _) in graph.iter_edges() {
-            match j {
-                HedgePair::Paired { source, sink } => {
-                    if filter.includes(&source) || filter.includes(&sink) {
-                        filter.add(source);
-                        filter.add(sink);
-                    }
-                }
-                HedgePair::Unpaired { hedge, .. } => filter.sub(hedge),
-                _ => {}
+        let mut to_add = SuBitGraph::empty(filter.size());
+        let mut to_remove = SuBitGraph::empty(filter.size());
+
+        for i in filter.included_iter() {
+            if !filter.includes(&graph.inv(i)) {
+                to_add.add(graph.inv(i));
+            } else if i == graph.inv(i) {
+                // unpaired hedge
+                to_remove.add(i);
             }
         }
+
+        filter.union_with(&to_add);
+
         InternalSubGraph {
             filter,
             loopcount: None,
@@ -382,18 +384,17 @@ impl InternalSubGraph {
         mut filter: SuBitGraph,
         graph: &HedgeGraph<E, V, H, N>,
     ) -> Self {
-        for (j, _, _) in graph.iter_edges() {
-            match j {
-                HedgePair::Paired { source, sink } => {
-                    if filter.includes(&source) && filter.includes(&sink) {
-                        filter.add(source);
-                        filter.add(sink);
-                    }
-                }
-                HedgePair::Unpaired { hedge, .. } => filter.sub(hedge),
-                _ => {}
+        let mut to_remove = SuBitGraph::empty(filter.size());
+
+        for i in filter.included_iter() {
+            if !filter.includes(&graph.inv(i)) {
+                to_remove.add(i);
+            } else if i == graph.inv(i) {
+                // unpaired hedge
+                to_remove.add(i);
             }
         }
+        filter.subtract_with(&to_remove);
 
         InternalSubGraph {
             filter,

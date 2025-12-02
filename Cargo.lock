@@ -997,42 +997,12 @@ dependencies = [
  "ciborium",
  "figment",
  "getrandom 0.2.15",
- "linnet 0.13.3",
+ "linnet",
  "rand 0.8.5",
  "rand_xoshiro",
  "serde",
  "thiserror",
  "wasm-minimal-protocol",
-]
-
-[[package]]
-name = "linnet"
-version = "0.13.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "636a5571737c37035e674262ea57574108a33314f94955e7b6f1547fe85f6c6b"
-dependencies = [
- "ahash",
- "bincode-trait-derive",
- "bitvec",
- "by_address",
- "cgmath",
- "derive_more 0.99.19",
- "dot-parser",
- "duplicate",
- "figment",
- "frostfire",
- "getrandom 0.2.15",
- "indenter",
- "indexmap",
- "itertools 0.14.0",
- "kurbo",
- "paste",
- "piet",
- "rand 0.8.5",
- "rand_xoshiro",
- "ref-ops",
- "serde",
- "thiserror",
 ]
 
 [[package]]
