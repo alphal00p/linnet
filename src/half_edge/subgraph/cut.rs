@@ -965,11 +965,11 @@ mod tests {
               ext0 [style=invis];
               2:0-> ext0 [id=0 is_cut=0 label="e-"];
               ext1 [style=invis];
-              ext1-> 3:1 [id=1 is_cut=0 label="e+"];
+              ext1-> 3:3 [id=6 is_cut=0 label="e+"];
               ext2 [style=invis];
-              2:2-> ext2 [id=6 dir=back is_cut=2 label="e+"];
+              2:2-> ext2 [id=1 dir=back is_cut=2 label="e+"];
               ext3 [style=invis];
-              ext3-> 3:3 [id=7 dir=back is_cut=2 label="e-"];
+              ext3-> 3:1 [id=7 dir=back is_cut=2 label="e-"];
               0:4-> 1:5 [id=4 dir=back  label="d~"];
               0:6-> 1:7 [id=5  label="d"];
               0:8-> 3:9 [id=2 dir=none  label="a"];
@@ -1000,9 +1000,50 @@ mod tests {
             |_, h| h,
         );
 
-        println!("{}", a.debug_cut_dot());
+        // println!("{}", a.debug_cut_dot());
         a.glue_back_strict();
 
-        println!("{}", a.debug_cut_dot());
+        fn from(e: &PossiblyCutEdge<i32>) -> DotEdgeData {
+            let mut data = DotEdgeData::empty();
+
+            data.add_statement(
+                "cut_flow",
+                match e.flow {
+                    Orientation::Default => "aligned",
+                    Orientation::Reversed => "reversed",
+                    Orientation::Undirected => "uncut",
+                },
+            );
+
+            let edge_id: usize = e.index.into();
+            data.add_statement("edge_id", edge_id.to_string());
+            data
+        }
+
+        let mut out = String::new();
+        a.dot_serialize_fmt(&mut out, (), &|h| h.clone(), &from, &|v| v.clone())
+            .unwrap();
+
+        insta::assert_snapshot!(out,@r"
+        digraph {
+          0[int_id=V_71];
+          1[int_id=V_71];
+          2[int_id=V_98];
+          3[int_id=V_98];
+
+          2:0	-> 3:3	 [id=0  cut_flow=aligned edge_id=0];
+          3:1	-> 2:2	 [id=1 dir=back  cut_flow=aligned edge_id=1];
+          0:8	-> 3:9	 [id=2 dir=none  cut_flow=uncut edge_id=2];
+          1:10	-> 2:11	 [id=3 dir=none  cut_flow=uncut edge_id=3];
+          0:4	-> 1:5	 [id=4 dir=back  cut_flow=uncut edge_id=4];
+          0:6	-> 1:7	 [id=5  cut_flow=uncut edge_id=5];
+        }
+        ");
+
+        let olda = a.clone();
+
+        a.round_trip_glue();
+
+        assert_eq!(a, olda);
     }
 }

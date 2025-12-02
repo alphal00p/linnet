@@ -473,8 +473,8 @@ impl<T> SmartEdgeVec<T> {
 
     fn connect_identities(
         &mut self,
-        source: Hedge,
-        sink: Hedge,
+        mut source: Hedge,
+        mut sink: Hedge,
         merge_fn: impl Fn(Flow, EdgeData<T>, Flow, EdgeData<T>) -> (Flow, EdgeData<T>),
     ) {
         let g = self;
@@ -505,11 +505,8 @@ impl<T> SmartEdgeVec<T> {
 
         // If we need to keep an edge that's not at the (new) end, swap it to the end first
         let current_last = EdgeIndex(g.data.len().0.checked_sub(1).unwrap());
-        if keep_edge_id != current_last {
-            g.data.swap(keep_edge_id, current_last);
-            g.update_edge_references(keep_edge_id, current_last);
-            g.update_edge_references(current_last, keep_edge_id);
-        }
+
+        g.data.swap(keep_edge_id, current_last);
 
         let keep_data = EdgeData::new(
             g.data.pop().unwrap().0, // Remove from (new) last position
@@ -524,20 +521,18 @@ impl<T> SmartEdgeVec<T> {
         );
 
         // Update the kept edge with merged data
-        let pair = match merge_flow {
-            Flow::Sink => HedgePair::Paired {
-                source: sink,
-                sink: source,
-            },
-            Flow::Source => HedgePair::Paired { source, sink },
+        if let Flow::Sink = merge_flow {
+            std::mem::swap(&mut sink, &mut source);
         };
 
+        let pair = HedgePair::Paired { source, sink };
+
         // Push the merged result back - it will be at the new "end" position
-        let final_edge_id = g.data.len();
         g.data.push((merged_data.data, pair));
+        g.data.swap(keep_edge_id, current_last);
 
         // Update involution to point to the final position
-        let new_edge_data = EdgeData::new(final_edge_id, merged_data.orientation);
+        let new_edge_data = EdgeData::new(keep_edge_id, merged_data.orientation);
         g.involution
             .connect_identities(source, sink, |_, _, _, _| (merge_flow, new_edge_data))
             .unwrap();
