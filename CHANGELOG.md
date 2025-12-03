@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.1](https://github.com/alphal00p/linnet/compare/linnet-v0.14.0...linnet-v0.14.1) - 2025-12-03
+
+### Other
+
+- Add parallel processing and directional constraints
+- update test
+- only swap one edge when connecting identities
+
 ## [0.14.0](https://github.com/alphal00p/linnet/compare/linnet-v0.13.3...linnet-v0.14.0) - 2025-11-28
 
 ### Other
