@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.6](https://github.com/alphal00p/linnet/compare/clinnet-v0.1.5...clinnet-v0.1.6) - 2025-12-03
+
+### Other
+
+- Add parallel processing and directional constraints
+- add inputs
+
 ## [0.1.5](https://github.com/alphal00p/linnet/compare/clinnet-v0.1.4...clinnet-v0.1.5) - 2025-11-28
 
 ### Other
