@@ -5,13 +5,16 @@ use std::fs::{self, File};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{Context, Result, anyhow, bail, ensure};
 use blake3::Hasher;
 use clap::{ArgAction, Parser};
 use indicatif::{ProgressBar, ProgressStyle};
+use parking_lot::Mutex as ParkingMutex;
 use pathdiff::diff_paths;
+use rayon::prelude::*;
 use rust_embed::RustEmbed;
 use serde::{Deserialize, Serialize};
 use serde_json::{self, Map as JsonMap, Value as JsonValue};
@@ -59,6 +62,42 @@ fn main() {
     }
 }
 
+fn check_typst_version() -> Result<()> {
+    let output = Command::new("typst")
+        .arg("--version")
+        .output()
+        .context("failed to run 'typst --version'. Is typst installed and in PATH?")?;
+
+    if !output.status.success() {
+        bail!("typst --version failed");
+    }
+
+    let version_output = String::from_utf8_lossy(&output.stdout);
+    let version_line = version_output.lines().next().unwrap_or("unknown");
+
+    println!("Using {}", version_line);
+
+    // Check for minimum version (0.11.0 introduced some breaking changes)
+    if let Some(version_part) = version_line.split_whitespace().nth(1) {
+        let version = version_part.split(' ').next().unwrap_or("0.0.0");
+        if version.starts_with("0.") {
+            let parts: Vec<&str> = version.split('.').collect();
+            if parts.len() >= 2 {
+                if let (Ok(major), Ok(minor)) = (parts[0].parse::<u32>(), parts[1].parse::<u32>()) {
+                    if major == 0 && minor < 11 {
+                        eprintln!(
+                            "Warning: Typst version {} may not be fully supported. Consider upgrading to 0.11.0 or later.",
+                            version
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
 #[derive(Parser, Debug)]
 #[command(
     name = "linnet",
@@ -104,6 +143,12 @@ struct Cli {
     /// Rebuild only the grid PDF using metadata from the last run.
     #[arg(long, action = ArgAction::SetTrue)]
     rebuild_grid: bool,
+    /// Disable parallel processing (process figures sequentially).
+    #[arg(long, action = ArgAction::SetTrue)]
+    no_parallel: bool,
+    /// Number of parallel jobs (0 = use all available cores).
+    #[arg(long, short = 'j', value_name = "N", default_value_t = 0)]
+    jobs: usize,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -157,6 +202,17 @@ fn run() -> Result<()> {
         "columns must be greater than zero (received {})",
         cli.columns
     );
+
+    // Check typst availability and version early
+    check_typst_version()?;
+
+    // Configure rayon thread pool
+    if let Some(threads) = if cli.jobs > 0 { Some(cli.jobs) } else { None } {
+        rayon::ThreadPoolBuilder::new()
+            .num_threads(threads)
+            .build_global()
+            .context("failed to configure thread pool")?;
+    }
 
     let cwd = std::env::current_dir().context("failed to resolve working directory")?;
     let build_dir = absolutize(&cwd, &cli.build_dir);
@@ -308,11 +364,11 @@ fn run() -> Result<()> {
     save_run_metadata(&metadata_path, &metadata)?;
 
     let previous_cache = load_cache(&cache_file)?;
-    let mut new_cache = BTreeMap::new();
-    let mut rebuilt = 0usize;
-    let mut reused = 0usize;
+    let new_cache = Arc::new(ParkingMutex::new(BTreeMap::new()));
+    let rebuilt = Arc::new(ParkingMutex::new(0usize));
+    let reused = Arc::new(ParkingMutex::new(0usize));
 
-    let progress = ProgressBar::new(plans.len() as u64);
+    let progress = Arc::new(ProgressBar::new(plans.len() as u64));
     progress.set_style(
         ProgressStyle::with_template(
             "{spinner:.green} [{elapsed_precise}] {wide_bar:.cyan/blue} {pos}/{len} {msg}",
@@ -323,28 +379,74 @@ fn run() -> Result<()> {
     progress.enable_steady_tick(Duration::from_millis(120));
     progress.set_message("Preparing figures...");
 
-    for plan in &plans {
-        let key = path_key(&plan.relative);
-        let hash = compute_hash(&plan.data_path, &figure_template, &style_files, &cli.input)?;
-        if previous_cache
-            .get(&key)
-            .map(|old| old == &hash)
-            .unwrap_or(false)
-        {
-            reused += 1;
-            progress.set_message(format!("cached {}", plan.relative.display()));
-        } else {
-            progress.set_message(format!("building {}", plan.relative.display()));
-            build_figure(plan, &figure_template, &root, &cli.input)?;
-            rebuilt += 1;
-        }
-        new_cache.insert(key, hash);
-        progress.inc(1);
-    }
+    // Process figures in parallel or sequential based on CLI flags
+    let results: Result<Vec<_>> = if cli.no_parallel {
+        // Sequential processing
+        plans
+            .iter()
+            .map(|plan| {
+                let key = path_key(&plan.relative);
+                let hash =
+                    compute_hash(&plan.data_path, &figure_template, &style_files, &cli.input)?;
+                let needs_rebuild = !previous_cache
+                    .get(&key)
+                    .map(|old| old == &hash)
+                    .unwrap_or(false);
+
+                if needs_rebuild {
+                    progress.set_message(format!("building {}", plan.relative.display()));
+                    build_figure(plan, &figure_template, &root, &cli.input)?;
+                    *rebuilt.lock() += 1;
+                } else {
+                    progress.set_message(format!("cached {}", plan.relative.display()));
+                    *reused.lock() += 1;
+                }
+
+                new_cache.lock().insert(key.clone(), hash.clone());
+                progress.inc(1);
+                Ok((key, hash))
+            })
+            .collect()
+    } else {
+        // Parallel processing
+        plans
+            .par_iter()
+            .map(|plan| {
+                let key = path_key(&plan.relative);
+                let hash =
+                    compute_hash(&plan.data_path, &figure_template, &style_files, &cli.input)?;
+                let needs_rebuild = !previous_cache
+                    .get(&key)
+                    .map(|old| old == &hash)
+                    .unwrap_or(false);
+
+                if needs_rebuild {
+                    progress.set_message(format!("building {}", plan.relative.display()));
+                    build_figure(plan, &figure_template, &root, &cli.input)?;
+                    *rebuilt.lock() += 1;
+                } else {
+                    progress.set_message(format!("cached {}", plan.relative.display()));
+                    *reused.lock() += 1;
+                }
+
+                new_cache.lock().insert(key.clone(), hash.clone());
+                progress.inc(1);
+                Ok((key, hash))
+            })
+            .collect()
+    };
+
+    // Check if any parallel processing failed
+    results?;
+
     progress.finish_with_message("figures ready");
 
-    save_cache(&cache_file, &new_cache)?;
-    let removed = remove_stale_outputs(&previous_cache, &new_cache, &figs_dir)?;
+    let final_cache = Arc::try_unwrap(new_cache).unwrap().into_inner();
+    let rebuilt = Arc::try_unwrap(rebuilt).unwrap().into_inner();
+    let reused = Arc::try_unwrap(reused).unwrap().into_inner();
+
+    save_cache(&cache_file, &final_cache)?;
+    let removed = remove_stale_outputs(&previous_cache, &final_cache, &figs_dir)?;
     save_run_metadata(&metadata_path, &metadata)?;
 
     let spinner = ProgressBar::new_spinner();
@@ -589,21 +691,89 @@ fn build_figure(
     run_typst(
         &mut command,
         &format!("building {}", plan.relative.display()),
+        Some((plan, template, root)),
     )
 }
 
-fn run_typst(command: &mut Command, description: &str) -> Result<()> {
+fn run_typst(
+    command: &mut Command,
+    description: &str,
+    context: Option<(&FigurePlan, &Path, &Path)>,
+) -> Result<()> {
     let output = command
         .output()
         .with_context(|| format!("failed to run typst while {description}"))?;
+
     if !output.status.success() {
         let stdout = String::from_utf8_lossy(&output.stdout);
         let stderr = String::from_utf8_lossy(&output.stderr);
-        bail!(
-            "typst failed while {description}:\nstdout:\n{}\nstderr:\n{}",
-            stdout.trim(),
-            stderr.trim()
-        );
+
+        // Build detailed error message
+        let mut error_msg = format!("typst failed while {description}");
+
+        // Show the command that was executed
+        let cmd_str = format!("{:?}", command);
+        error_msg.push_str(&format!("\n\nCommand executed:\n{}", cmd_str));
+
+        // Add context-specific diagnostics
+        if let Some((plan, template, root)) = context {
+            error_msg.push_str(&format!("\n\nDiagnostic information:"));
+            error_msg.push_str(&format!("\n  - Input file: {}", plan.data_path.display()));
+            error_msg.push_str(&format!("\n  - Template: {}", template.display()));
+            error_msg.push_str(&format!("\n  - Root directory: {}", root.display()));
+            error_msg.push_str(&format!(
+                "\n  - Output path: {}",
+                plan.output_path.display()
+            ));
+
+            // Check if files exist
+            if !plan.data_path.exists() {
+                error_msg.push_str(&format!("\n  - ERROR: Input file does not exist!"));
+            }
+            if !template.exists() {
+                error_msg.push_str(&format!("\n  - ERROR: Template file does not exist!"));
+            }
+            if !root.exists() {
+                error_msg.push_str(&format!("\n  - ERROR: Root directory does not exist!"));
+            }
+
+            // Check if root contains the template
+            if let Ok(template_canonical) = template.canonicalize() {
+                if let Ok(root_canonical) = root.canonicalize() {
+                    if !template_canonical.starts_with(&root_canonical) {
+                        error_msg.push_str(&format!(
+                            "\n  - WARNING: Template is outside root directory"
+                        ));
+                        error_msg.push_str(&format!("\n    This may cause 'source file must be contained in project root' errors"));
+                        error_msg.push_str(&format!("\n    Consider using --root with a parent directory of both template and data files"));
+                    }
+                }
+            }
+        }
+
+        // Add common solutions
+        if stderr.contains("source file must be contained in project root") {
+            error_msg.push_str(&format!("\n\nCommon solutions for 'project root' errors:"));
+            error_msg.push_str(&format!("\n  1. Ensure --root points to a directory that contains both templates and data files"));
+            error_msg.push_str(&format!(
+                "\n  2. Use absolute paths or adjust the working directory"
+            ));
+            error_msg.push_str(&format!(
+                "\n  3. Check that template and input files are in the same directory tree"
+            ));
+        }
+
+        if stderr.contains("not found") || stderr.contains("No such file") {
+            error_msg.push_str(&format!(
+                "\n\nFile not found - check that all paths are correct and files exist"
+            ));
+        }
+
+        // Add the actual typst output
+        error_msg.push_str(&format!("\n\nTypst stdout:\n{}", stdout.trim()));
+        error_msg.push_str(&format!("\n\nTypst stderr:\n{}", stderr.trim()));
+
+        bail!("{}", error_msg);
     }
     Ok(())
 }
@@ -861,7 +1031,11 @@ fn compile_grid(
         cmd.arg("--input").arg(format!("{}={}", key, value));
     }
 
-    run_typst(&mut cmd, &format!("compiling grid {}", output.display()))
+    run_typst(
+        &mut cmd,
+        &format!("compiling grid {}", output.display()),
+        None,
+    )
 }
 
 fn insert_entry(node: &mut FolderNode, folders: &[String], entry: FigureEntry) {
