@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.8](https://github.com/alphal00p/linnet/compare/clinnet-v0.1.7...clinnet-v0.1.8) - 2025-12-04
+
+### Other
+
+- redo cli to have subcommands
+
 ## [0.1.7](https://github.com/alphal00p/linnet/compare/clinnet-v0.1.6...clinnet-v0.1.7) - 2025-12-04
 
 ### Other
