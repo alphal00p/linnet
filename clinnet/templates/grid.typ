@@ -1,5 +1,5 @@
 // Default grid template that mirrors the folder hierarchy of generated figures.
-#import "fig-index.typ": tree, cols
+#import "fig-index.typ": tree
 
 #set page(margin: 12mm)
 
@@ -25,7 +25,7 @@
 
   if node.figures.len() > 0 {
     grid(
-      columns: cols,
+      columns: eval(sys.inputs.at("columns", default: "3")),
       gutter: 12pt,
       ..node.figures.map(render-card)
     )

@@ -8,7 +8,7 @@ use std::process::Command;
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::{Context, Result, anyhow, bail, ensure};
+use anyhow::{Context, Result, anyhow, bail};
 use blake3::Hasher;
 use clap::{ArgAction, Parser};
 use indicatif::{ProgressBar, ProgressStyle};
@@ -104,18 +104,41 @@ fn check_typst_version() -> Result<()> {
     about = "Incrementally render Typst figures for every .dot file and assemble them into a grid PDF."
 )]
 struct Cli {
+    #[command(subcommand)]
+    command: Option<Commands>,
+
+    /// Base directory that stores build artifacts.
+    #[arg(long, value_name = "DIR", default_value = "build")]
+    build_dir: PathBuf,
+    /// Disable parallel processing (process figures sequentially).
+    #[arg(long, action = ArgAction::SetTrue)]
+    no_parallel: bool,
+    /// Number of parallel jobs (0 = use all available cores).
+    #[arg(long, short = 'j', value_name = "N", default_value_t = 0)]
+    jobs: usize,
+}
+
+#[derive(Parser, Debug)]
+enum Commands {
+    /// Draw all figures and grid (default behavior)
+    Draw(DrawArgs),
+    /// Redraw a single figure using cached metadata
+    RedrawFigure(RedrawFigureArgs),
+    /// Redraw only the grid PDF using cached metadata
+    RedrawGrid(RedrawGridArgs),
+}
+
+#[derive(Parser, Debug)]
+struct DrawArgs {
     /// Directory to scan for .dot files.
     #[arg(value_name = "ROOT")]
-    root: Option<PathBuf>,
+    root: PathBuf,
     /// Shared Typst template used for every individual figure.
     #[arg(long, value_name = "FILE")]
     figure_template: Option<PathBuf>,
     /// Typst template used for the grid document.
     #[arg(long, value_name = "FILE")]
     grid_template: Option<PathBuf>,
-    /// Base directory that stores build artifacts.
-    #[arg(long, value_name = "DIR", default_value = "build")]
-    build_dir: PathBuf,
     /// Directory for the generated figure PDFs (defaults to <build_dir>/figs).
     #[arg(long, value_name = "DIR")]
     figs_dir: Option<PathBuf>,
@@ -125,30 +148,44 @@ struct Cli {
     /// Path for the generated fig-index.typ (defaults to the directory of grid_template).
     #[arg(long, value_name = "FILE")]
     fig_index: Option<PathBuf>,
-    /// Destination PDF for the final grid (defaults to <build_dir>/grid.pdf).
-    #[arg(long, short = 'o', value_name = "FILE")]
-    output_path: Option<PathBuf>,
     /// Extra files whose contents influence incremental rebuilds (e.g., style snippets).
     #[arg(long, value_name = "FILE", action = ArgAction::Append)]
     style: Vec<PathBuf>,
-    /// Number of columns in the final grid.
-    #[arg(long, value_name = "N", default_value_t = 3)]
-    columns: usize,
+    #[command(flatten)]
+    output_args: OutputArgs,
+    #[command(flatten)]
+    input_args: InputArgs,
+}
+
+#[derive(Parser, Debug)]
+struct OutputArgs {
+    /// Destination PDF for the final grid (defaults to <build_dir>/grid.pdf).
+    #[arg(long, short = 'o', value_name = "FILE")]
+    output_path: Option<PathBuf>,
+}
+
+#[derive(Parser, Debug)]
+struct InputArgs {
     /// Add a string key-value pair visible through `sys.inputs` in Typst.
     #[arg(long, value_name = "key=value", action = ArgAction::Append, value_parser = parse_input_pair)]
     input: Vec<(String, String)>,
-    /// Rebuild a single figure using metadata from the last full run.
-    #[arg(long, value_name = "DOT")]
-    rebuild_figure: Option<PathBuf>,
-    /// Rebuild only the grid PDF using metadata from the last run.
-    #[arg(long, action = ArgAction::SetTrue)]
-    rebuild_grid: bool,
-    /// Disable parallel processing (process figures sequentially).
-    #[arg(long, action = ArgAction::SetTrue)]
-    no_parallel: bool,
-    /// Number of parallel jobs (0 = use all available cores).
-    #[arg(long, short = 'j', value_name = "N", default_value_t = 0)]
-    jobs: usize,
+}
+
+#[derive(Parser, Debug)]
+struct RedrawFigureArgs {
+    /// Path to the .dot file to rebuild
+    #[arg(value_name = "DOT")]
+    target: PathBuf,
+    #[command(flatten)]
+    input_args: InputArgs,
+}
+
+#[derive(Parser, Debug)]
+struct RedrawGridArgs {
+    #[command(flatten)]
+    output_args: OutputArgs,
+    #[command(flatten)]
+    input_args: InputArgs,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -175,7 +212,7 @@ struct RunMetadata {
     grid_output: PathBuf,
     fig_index_path: PathBuf,
     cache_file: PathBuf,
-    columns: usize,
+
     style_files: Vec<PathBuf>,
     input: Vec<(String, String)>,
     plans: Vec<FigurePlan>,
@@ -197,11 +234,6 @@ struct FigureEntry {
 /// Entry point for the `linnet` CLI: orchestrates full builds and targeted rebuilds.
 fn run() -> Result<()> {
     let cli = Cli::parse();
-    ensure!(
-        cli.columns > 0,
-        "columns must be greater than zero (received {})",
-        cli.columns
-    );
 
     // Check typst availability and version early
     check_typst_version()?;
@@ -218,46 +250,55 @@ fn run() -> Result<()> {
     let build_dir = absolutize(&cwd, &cli.build_dir);
     let metadata_path = metadata_path(&build_dir);
 
-    if let Some(target) = cli.rebuild_figure.as_ref() {
-        let metadata = load_run_metadata(&metadata_path)?;
-        let target_abs = absolutize(&cwd, target);
-        return rebuild_single_figure(&target_abs, &metadata, &cli.input);
+    match &cli.command {
+        Some(Commands::RedrawFigure(args)) => {
+            let metadata = load_run_metadata(&metadata_path)?;
+            let target_abs = absolutize(&cwd, &args.target);
+            return rebuild_single_figure(&target_abs, &metadata, &args.input_args.input);
+        }
+        Some(Commands::RedrawGrid(args)) => {
+            let metadata = load_run_metadata(&metadata_path)?;
+            return rebuild_grid_with_overrides(&metadata, args, &cwd);
+        }
+        Some(Commands::Draw(_)) => {
+            // Continue with draw logic using args
+        }
+        None => {
+            bail!("Use subcommands: 'draw <ROOT>', 'redraw-figure <DOT>', or 'redraw-grid'");
+        }
     }
 
-    if cli.rebuild_grid {
-        let metadata = load_run_metadata(&metadata_path)?;
-        return rebuild_grid_only(&metadata);
-    }
+    // Extract draw args for draw command only
+    let draw_args = match &cli.command {
+        Some(Commands::Draw(args)) => args,
+        _ => unreachable!(), // We handle all cases above
+    };
 
-    let root_arg = cli
-        .root
-        .as_ref()
-        .ok_or_else(|| anyhow!("ROOT argument is required unless --rebuild-* is used"))?;
-
-    let root = canonicalize_existing(root_arg)
-        .with_context(|| format!("failed to read root directory {}", root_arg.display()))?;
+    let root = canonicalize_existing(&draw_args.root)
+        .with_context(|| format!("failed to read root directory {}", draw_args.root.display()))?;
     let cwd = cwd;
-    let figs_dir = cli
+    let figs_dir = draw_args
         .figs_dir
         .as_ref()
         .map(|path| absolutize(&cwd, path))
         .unwrap_or_else(|| build_dir.join("figs"));
-    let cache_file = cli
+    let cache_file = draw_args
         .cache_file
         .as_ref()
         .map(|path| absolutize(&cwd, path))
         .unwrap_or_else(|| build_dir.join(".cache").join("figures.json"));
-    let grid_output = cli
+    let grid_output = draw_args
+        .output_args
         .output_path
         .as_ref()
         .map(|path| absolutize(&cwd, path))
         .unwrap_or_else(|| build_dir.join("grid.pdf"));
-    let requested_figure_template = cli
+    let requested_figure_template = draw_args
         .figure_template
         .as_ref()
         .map(|path| absolutize(&cwd, path))
         .unwrap_or_else(|| build_dir.join("templates").join("figure.typ"));
-    let requested_grid_template = cli
+    let requested_grid_template = draw_args
         .grid_template
         .as_ref()
         .map(|path| absolutize(&cwd, path))
@@ -275,7 +316,7 @@ fn run() -> Result<()> {
     let layout_asset = ensure_layout_asset(&build_dir)?;
 
     let mut style_files = Vec::new();
-    for style in &cli.style {
+    for style in &draw_args.style {
         let canonical = canonicalize_existing(style)
             .with_context(|| format!("failed to read style file {}", style.display()))?;
         style_files.push(canonical);
@@ -293,7 +334,7 @@ fn run() -> Result<()> {
     let figure_template =
         resolve_template(&requested_figure_template, TemplateKind::Figure, &build_dir)?;
     let grid_template = resolve_template(&requested_grid_template, TemplateKind::Grid, &build_dir)?;
-    let fig_index_path = cli
+    let fig_index_path = draw_args
         .fig_index
         .as_ref()
         .map(|path| absolutize(&cwd, path))
@@ -349,9 +390,9 @@ fn run() -> Result<()> {
         grid_output: grid_output.clone(),
         fig_index_path: fig_index_path.clone(),
         cache_file: cache_file.clone(),
-        columns: cli.columns,
+
         style_files: style_files.clone(),
-        input: cli.input.clone(),
+        input: draw_args.input_args.input.clone(),
         plans: plans.clone(),
         records: plans
             .iter()
@@ -386,8 +427,12 @@ fn run() -> Result<()> {
             .iter()
             .map(|plan| {
                 let key = path_key(&plan.relative);
-                let hash =
-                    compute_hash(&plan.data_path, &figure_template, &style_files, &cli.input)?;
+                let hash = compute_hash(
+                    &plan.data_path,
+                    &figure_template,
+                    &style_files,
+                    &draw_args.input_args.input,
+                )?;
                 let needs_rebuild = !previous_cache
                     .get(&key)
                     .map(|old| old == &hash)
@@ -395,7 +440,7 @@ fn run() -> Result<()> {
 
                 if needs_rebuild {
                     progress.set_message(format!("building {}", plan.relative.display()));
-                    build_figure(plan, &figure_template, &root, &cli.input)?;
+                    build_figure(plan, &figure_template, &root, &draw_args.input_args.input)?;
                     *rebuilt.lock() += 1;
                 } else {
                     progress.set_message(format!("cached {}", plan.relative.display()));
@@ -413,8 +458,12 @@ fn run() -> Result<()> {
             .par_iter()
             .map(|plan| {
                 let key = path_key(&plan.relative);
-                let hash =
-                    compute_hash(&plan.data_path, &figure_template, &style_files, &cli.input)?;
+                let hash = compute_hash(
+                    &plan.data_path,
+                    &figure_template,
+                    &style_files,
+                    &draw_args.input_args.input,
+                )?;
                 let needs_rebuild = !previous_cache
                     .get(&key)
                     .map(|old| old == &hash)
@@ -422,7 +471,7 @@ fn run() -> Result<()> {
 
                 if needs_rebuild {
                     progress.set_message(format!("building {}", plan.relative.display()));
-                    build_figure(plan, &figure_template, &root, &cli.input)?;
+                    build_figure(plan, &figure_template, &root, &draw_args.input_args.input)?;
                     *rebuilt.lock() += 1;
                 } else {
                     progress.set_message(format!("cached {}", plan.relative.display()));
@@ -495,7 +544,7 @@ fn collect_dot_files(root: &Path) -> Result<Vec<PathBuf>> {
     Ok(files)
 }
 
-/// Rebuild a single figure using cached metadata from the previous full run.
+/// Redraw a single figure using cached metadata from the previous full draw.
 fn rebuild_single_figure(
     target: &Path,
     metadata: &RunMetadata,
@@ -509,7 +558,7 @@ fn rebuild_single_figure(
         .find(|plan| plan.data_path == canonical)
         .ok_or_else(|| anyhow!("{} is not part of the cached plan", target.display()))?;
 
-    println!("Rebuilding figure: {}", plan.relative.display());
+    println!("Redrawing figure: {}", plan.relative.display());
     println!("  Input: {}", plan.data_path.display());
     println!("  Output: {}", plan.output_path.display());
     if !current_inputs.is_empty() {
@@ -534,23 +583,49 @@ fn rebuild_single_figure(
     save_cache(&metadata.cache_file, &cache)?;
 
     println!(
-        "Figure rebuilt successfully: {}",
+        "Figure redrawn successfully: {}",
         plan.output_path.display()
     );
     Ok(())
 }
 
-/// Rebuild only the combined grid PDF using cached metadata.
-fn rebuild_grid_only(metadata: &RunMetadata) -> Result<()> {
-    println!("Rebuilding grid using cached metadata...");
-    println!("  Output: {}", metadata.grid_output.display());
-    println!("  Using {} cached figure(s)", metadata.records.len());
+/// Redraw grid with CLI overrides for output path and inputs.
+fn rebuild_grid_with_overrides(
+    metadata: &RunMetadata,
+    args: &RedrawGridArgs,
+    cwd: &Path,
+) -> Result<()> {
+    // Create modified metadata with CLI overrides
+    let mut modified_metadata = metadata.clone();
 
-    run_grid_from_metadata(metadata)?;
+    // Override output path if specified
+    if let Some(output_path) = args.output_args.output_path.as_ref() {
+        modified_metadata.grid_output = absolutize(cwd, output_path);
+    }
+
+    // Override inputs if specified
+    if !args.input_args.input.is_empty() {
+        modified_metadata.input = args.input_args.input.clone();
+    }
+
+    println!("Redrawing grid with overrides...");
+    println!("  Output: {}", modified_metadata.grid_output.display());
+    println!(
+        "  Using {} cached figure(s)",
+        modified_metadata.records.len()
+    );
+    if !modified_metadata.input.is_empty() {
+        println!("  Input arguments:");
+        for (key, value) in &modified_metadata.input {
+            println!("    {}={}", key, value);
+        }
+    }
+
+    run_grid_from_metadata(&modified_metadata)?;
 
     println!(
-        "Grid rebuilt successfully: {}",
-        metadata.grid_output.display()
+        "Grid redrawn successfully: {}",
+        modified_metadata.grid_output.display()
     );
     Ok(())
 }
@@ -562,12 +637,7 @@ fn run_grid_from_metadata(metadata: &RunMetadata) -> Result<()> {
         .parent()
         .map(Path::to_path_buf)
         .unwrap_or_else(|| PathBuf::from("."));
-    write_fig_index(
-        &metadata.records,
-        &metadata.fig_index_path,
-        &grid_dir,
-        metadata.columns,
-    )?;
+    write_fig_index(&metadata.records, &metadata.fig_index_path, &grid_dir)?;
     compile_grid(
         &metadata.grid_template,
         &metadata.grid_output,
@@ -889,17 +959,11 @@ fn remove_stale_outputs(
 }
 
 /// Generate `fig-index.typ`, describing the figure tree for the grid template.
-fn write_fig_index(
-    records: &[FigureRecord],
-    index_path: &Path,
-    grid_dir: &Path,
-    columns: usize,
-) -> Result<()> {
+fn write_fig_index(records: &[FigureRecord], index_path: &Path, grid_dir: &Path) -> Result<()> {
     ensure_parent_dir(index_path)?;
     let mut file = File::create(index_path)
         .with_context(|| format!("failed to create {}", index_path.display()))?;
     writeln!(file, "// Auto-generated by linnet. Do not edit manually.")?;
-    writeln!(file, "#let cols = {}", columns)?;
 
     let mut entries = Vec::new();
     for record in records {
