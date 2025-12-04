@@ -221,7 +221,7 @@ fn run() -> Result<()> {
     if let Some(target) = cli.rebuild_figure.as_ref() {
         let metadata = load_run_metadata(&metadata_path)?;
         let target_abs = absolutize(&cwd, target);
-        return rebuild_single_figure(&target_abs, &metadata);
+        return rebuild_single_figure(&target_abs, &metadata, &cli.input);
     }
 
     if cli.rebuild_grid {
@@ -496,7 +496,11 @@ fn collect_dot_files(root: &Path) -> Result<Vec<PathBuf>> {
 }
 
 /// Rebuild a single figure using cached metadata from the previous full run.
-fn rebuild_single_figure(target: &Path, metadata: &RunMetadata) -> Result<()> {
+fn rebuild_single_figure(
+    target: &Path,
+    metadata: &RunMetadata,
+    current_inputs: &[(String, String)],
+) -> Result<()> {
     let canonical = canonicalize_existing(target)
         .with_context(|| format!("failed to read figure source {}", target.display()))?;
     let plan = metadata
@@ -504,11 +508,19 @@ fn rebuild_single_figure(target: &Path, metadata: &RunMetadata) -> Result<()> {
         .iter()
         .find(|plan| plan.data_path == canonical)
         .ok_or_else(|| anyhow!("{} is not part of the cached plan", target.display()))?;
+
+    println!("Rebuilding figure: {}", plan.relative.display());
+    println!("  Input: {}", plan.data_path.display());
+    println!("  Output: {}", plan.output_path.display());
+    if !current_inputs.is_empty() {
+        println!("  Using {} current input argument(s)", current_inputs.len());
+    }
+
     build_figure(
         &plan,
         &metadata.figure_template,
         &metadata.root,
-        &metadata.input,
+        current_inputs,
     )?;
     let existing = load_cache(&metadata.cache_file)?;
     let mut cache: BTreeMap<String, String> = existing.into_iter().collect();
@@ -516,16 +528,31 @@ fn rebuild_single_figure(target: &Path, metadata: &RunMetadata) -> Result<()> {
         &plan.data_path,
         &metadata.figure_template,
         &metadata.style_files,
-        &metadata.input,
+        current_inputs,
     )?;
     cache.insert(path_key(&plan.relative), hash);
     save_cache(&metadata.cache_file, &cache)?;
+
+    println!(
+        "Figure rebuilt successfully: {}",
+        plan.output_path.display()
+    );
     Ok(())
 }
 
 /// Rebuild only the combined grid PDF using cached metadata.
 fn rebuild_grid_only(metadata: &RunMetadata) -> Result<()> {
-    run_grid_from_metadata(metadata)
+    println!("Rebuilding grid using cached metadata...");
+    println!("  Output: {}", metadata.grid_output.display());
+    println!("  Using {} cached figure(s)", metadata.records.len());
+
+    run_grid_from_metadata(metadata)?;
+
+    println!(
+        "Grid rebuilt successfully: {}",
+        metadata.grid_output.display()
+    );
+    Ok(())
 }
 
 /// Write `fig-index.typ` and run Typst for the grid using cached metadata.
