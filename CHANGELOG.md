@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.0](https://github.com/alphal00p/linnet/compare/linnet-v0.14.1...linnet-v0.15.0) - 2025-12-08
+
+### Other
+
+- Refactor Figment handling and improve data merging logic
+- *(clinnet)* release v0.1.8
+
 ## [0.14.1](https://github.com/alphal00p/linnet/compare/linnet-v0.14.0...linnet-v0.14.1) - 2025-12-03
 
 ### Other
