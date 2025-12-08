@@ -672,8 +672,12 @@ impl TypstGraph {
             TypstHedge::parse,
         );
 
-        let merged_figment = merge_with_overrides(figment, &dot.global_data.statements);
-        let config = LayoutConfig::from_figment(&merged_figment);
+        let figment = Figment::from(Serialized::from(
+            dot.global_data.statements.clone(),
+            Profile::Default,
+        ));
+
+        let config = LayoutConfig::from_figment(&figment);
 
         let mut global_eval: Option<String> = dot.global_data.statements.get("eval").cloned();
 
@@ -1900,7 +1904,7 @@ pub fn layout_graph(arg: &[u8], arg2: &[u8]) -> Result<Vec<u8>, String> {
     let cbor_map: ciborium::Value = ciborium::de::from_reader(arg2)
         .map_err(|e| format!("Failed to deserialize CBOR value: {}", e))?;
 
-    let figment = Figment::from(Serialized::from(cbor_map, Profile::Default));
+    let figment = Figment::from(Serialized::from(cbor_map.clone(), Profile::Default));
 
     let dots = DotGraphSet::from_string_with_figment(dot_string, figment.clone())
         .map_err(|a| a.to_string())?
@@ -1908,7 +1912,7 @@ pub fn layout_graph(arg: &[u8], arg2: &[u8]) -> Result<Vec<u8>, String> {
 
     let mut graphs = Vec::new();
     for g in dots {
-        let mut typst_graph = TypstGraph::from_dot(g, &figment);
+        let mut typst_graph = TypstGraph::from_dot(g, &Figment::new());
 
         typst_graph.layout();
         graphs.push((
@@ -1918,8 +1922,15 @@ pub fn layout_graph(arg: &[u8], arg2: &[u8]) -> Result<Vec<u8>, String> {
     }
 
     let mut buffer = Vec::new();
-    ciborium::ser::into_writer(&graphs, &mut buffer).map_err(|a| a.to_string())?;
+    ciborium::ser::into_writer(&TypstOutput { graphs, cbor_map }, &mut buffer)
+        .map_err(|a| a.to_string())?;
     Ok(buffer)
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct TypstOutput {
+    graphs: Vec<(CBORTypstGraph, String)>,
+    cbor_map: ciborium::Value,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

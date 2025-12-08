@@ -1478,6 +1478,8 @@ pub enum InvolutionError {
     NotPaired,
     #[error("Involutino is non -involutive for {0}")]
     NonInvolutive(Hedge),
+    #[error("Other:{0}")]
+    Other(String),
 }
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -1669,7 +1671,7 @@ impl<E> Involution<E> {
         source_idx: Hedge,
         sink_idx: Hedge,
         merge_fn: impl FnOnce(Flow, EdgeData<E>, Flow, EdgeData<E>) -> (Flow, EdgeData<E>),
-    ) -> Result<(), InvolutionError>
+    ) -> Result<HedgePair, InvolutionError>
     where
         E: Clone,
     {
@@ -1691,6 +1693,10 @@ impl<E> Involution<E> {
                             },
                         );
                         self.set(sink_idx, InvolutiveMapping::Sink { source_idx });
+                        Ok(HedgePair::Paired {
+                            source: source_idx,
+                            sink: sink_idx,
+                        })
                     }
                     Flow::Sink => {
                         self.set(
@@ -1706,10 +1712,15 @@ impl<E> Involution<E> {
                                 sink_idx: source_idx,
                             },
                         );
+                        Ok(HedgePair::Paired {
+                            source: sink_idx,
+                            sink: source_idx,
+                        })
                     }
                 }
+            } else {
+                Err(InvolutionError::Other(format!("Data is None")))
             }
-            Ok(())
         } else {
             Err(InvolutionError::NotIdentity)
         }

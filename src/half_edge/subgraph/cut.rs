@@ -1045,5 +1045,90 @@ mod tests {
         a.round_trip_glue();
 
         assert_eq!(a, olda);
+
+
+        let gr: DotGraph = dot!(
+            digraph {
+              num = "1";
+              overall_factor = "(AutG(1))^(-1)";
+              0[int_id=V_74];
+              1[int_id=V_74];
+              2[int_id=V_74];
+              3[int_id=V_74];
+              4[int_id=V_71];
+              5[int_id=V_71];
+              ext0 [style=invis];
+              ext0-> 5:0 [id=0 dir=none is_cut=0 is_dummy=false particle="a"];
+              0:1-> 1:2 [id=1 dir=back  is_dummy=false particle="d~"];
+              0:3-> 1:4 [id=2  is_dummy=false particle="d"];
+              0:5-> 3:6 [id=3 dir=none  is_dummy=false particle="g"];
+              1:7-> 2:8 [id=4 dir=none  is_dummy=false particle="g"];
+              2:9-> 4:10 [id=5 dir=back  is_dummy=false particle="d~"];
+              2:11-> 5:12 [id=6  is_dummy=false particle="d"];
+              3:13-> 4:14 [id=7  is_dummy=false particle="d"];
+              3:15-> 5:16 [id=8 dir=back  is_dummy=false particle="d~"];
+              ext9 [style=invis];
+              4:17-> ext9 [id=9 dir=none is_cut=0 is_dummy=false particle="a"];
+              }
+        )
+        .unwrap();
+
+
+        let mut a = gr.graph.map(
+            |_, _, v| v,
+            |inv, _, _, ei, e| {
+                e.map(|a| {
+                    if let Some(is_cut) = a.get::<_, usize>("is_cut") {
+                        let is_cut_h = Hedge(is_cut.unwrap());
+                        let mut flow = inv.flow(is_cut_h);
+                        let eid = inv[is_cut_h];
+                        if eid != ei {
+                            flow = -flow;
+                        }
+                        let mut e = PossiblyCutEdge::uncut(1, eid);
+                        e.cut(flow);
+                        e
+                    } else {
+                        PossiblyCutEdge::uncut(1, ei)
+                    }
+                })
+            },
+            |_, h| h,
+        );
+
+        // println!("{}", a.debug_cut_dot());
+        a.glue_back_strict();
+
+
+        let mut out = String::new();
+        a.dot_serialize_fmt(&mut out, (), &|h| h.clone(), &from, &|v| v.clone())
+            .unwrap();
+
+        insta::assert_snapshot!(out,@r"
+        digraph {
+          0[int_id=V_74];
+          1[int_id=V_74];
+          2[int_id=V_74];
+          3[int_id=V_74];
+          4[int_id=V_71];
+          5[int_id=V_71];
+
+          5:0	-> 4:17	 [id=0 dir=none  cut_flow=aligned edge_id=0];
+          0:1	-> 1:2	 [id=1 dir=back  cut_flow=uncut edge_id=1];
+          0:3	-> 1:4	 [id=2  cut_flow=uncut edge_id=2];
+          0:5	-> 3:6	 [id=3 dir=none  cut_flow=uncut edge_id=3];
+          1:7	-> 2:8	 [id=4 dir=none  cut_flow=uncut edge_id=4];
+          2:9	-> 4:10	 [id=5 dir=back  cut_flow=uncut edge_id=5];
+          2:11	-> 5:12	 [id=6  cut_flow=uncut edge_id=6];
+          3:13	-> 4:14	 [id=7  cut_flow=uncut edge_id=7];
+          3:15	-> 5:16	 [id=8 dir=back  cut_flow=uncut edge_id=8];
+        }
+        ");
+
+        let olda = a.clone();
+
+        a.round_trip_glue();
+
+        assert_eq!(a, olda);
     }
 }

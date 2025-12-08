@@ -519,23 +519,14 @@ impl<T> SmartEdgeVec<T> {
             g.involution.flow(remove_hedge),
             remove_data,
         );
-
-        // Update the kept edge with merged data
-        if let Flow::Sink = merge_flow {
-            std::mem::swap(&mut sink, &mut source);
-        };
-
-        let pair = HedgePair::Paired { source, sink };
-
-        // Push the merged result back - it will be at the new "end" position
-        g.data.push((merged_data.data, pair));
-        g.data.swap(keep_edge_id, current_last);
-
         // Update involution to point to the final position
         let new_edge_data = EdgeData::new(keep_edge_id, merged_data.orientation);
-        g.involution
+        let pair = g
+            .involution
             .connect_identities(source, sink, |_, _, _, _| (merge_flow, new_edge_data))
             .unwrap();
+        g.data.push((merged_data.data, pair));
+        g.data.swap(keep_edge_id, current_last);
     }
 
     pub(crate) fn sew(
