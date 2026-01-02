@@ -1113,7 +1113,7 @@ mod tests {
           4[int_id=V_71];
           5[int_id=V_71];
 
-          5:0	-> 4:17	 [id=0 dir=none  cut_flow=aligned edge_id=0];
+          4:17	-> 5:0	 [id=0 dir=none  cut_flow=aligned edge_id=0];
           0:1	-> 1:2	 [id=1 dir=back  cut_flow=uncut edge_id=1];
           0:3	-> 1:4	 [id=2  cut_flow=uncut edge_id=2];
           0:5	-> 3:6	 [id=3 dir=none  cut_flow=uncut edge_id=3];

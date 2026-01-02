@@ -2785,6 +2785,7 @@ pub enum HedgeGraphError {
     // ParseError(#[from] PestError),
 }
 
+pub mod algorithms;
 pub mod hedgevec;
 pub mod tree;
 pub mod typed_vec;

@@ -9,7 +9,7 @@ use crate::half_edge::{
 
 use super::{subgraph_free::Edge, DotHedgeData, GlobalData, NodeIdOrDangling};
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct DotEdgeData {
     pub statements: BTreeMap<String, String>,
     pub local_statements: BTreeMap<String, String>,
@@ -111,7 +111,15 @@ impl DotEdgeData {
     {
         self.statements.get(key).map(|s| s.parse())
     }
+}
 
+impl Default for DotEdgeData {
+    fn default() -> Self {
+        Self::empty()
+    }
+}
+
+impl DotEdgeData {
     pub fn from_parser(
         edge: Edge,
         map: &BTreeMap<String, NodeIdOrDangling>,
