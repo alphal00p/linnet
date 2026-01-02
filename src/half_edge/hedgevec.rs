@@ -471,10 +471,11 @@ impl<T> SmartEdgeVec<T> {
         }
     }
 
+    /// The first two arguments of the merge function correspond to the source hedge, and the second two to the sink hedge.
     fn connect_identities(
         &mut self,
-        mut source: Hedge,
-        mut sink: Hedge,
+        source: Hedge,
+        sink: Hedge,
         merge_fn: impl Fn(Flow, EdgeData<T>, Flow, EdgeData<T>) -> (Flow, EdgeData<T>),
     ) {
         let g = self;
@@ -483,10 +484,12 @@ impl<T> SmartEdgeVec<T> {
         let last = EdgeIndex(g.data.len().0.checked_sub(1).unwrap());
 
         // Always keep the edge with smaller index, remove the one with larger index
+        let mut swapped = false;
         let (keep_edge_id, remove_edge_id, keep_hedge, remove_hedge) =
             if source_edge_id < sink_edge_id {
                 (source_edge_id, sink_edge_id, source, sink)
             } else {
+                swapped = true;
                 (sink_edge_id, source_edge_id, sink, source)
             };
 
@@ -513,12 +516,23 @@ impl<T> SmartEdgeVec<T> {
             g.involution.orientation(keep_hedge),
         );
 
-        let (merge_flow, merged_data) = merge_fn(
-            g.involution.flow(keep_hedge),
-            keep_data,
-            g.involution.flow(remove_hedge),
-            remove_data,
-        );
+        let (merge_flow, merged_data) = if swapped {
+            merge_fn(
+                g.involution.flow(remove_hedge),
+                remove_data,
+                g.involution.flow(keep_hedge),
+                keep_data,
+            )
+        } else {
+            merge_fn(
+                g.involution.flow(keep_hedge),
+                keep_data,
+                g.involution.flow(remove_hedge),
+                remove_data,
+            )
+        };
+
+        // println!("merge_flow{merge_flow:?},source{source},sink{sink}");
         // Update involution to point to the final position
         let new_edge_data = EdgeData::new(keep_edge_id, merged_data.orientation);
         let pair = g

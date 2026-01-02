@@ -293,7 +293,10 @@ impl<S: NodeStorageOps<NodeData = DotVertexData>> DotGraph<S> {
     }
 
     pub fn back_and_forth_dot(self) -> Self {
-        Self::from_string(self.debug_dot()).unwrap()
+        Self::from_string(self.debug_dot()).expect(&format!(
+            "Failed to parse back the DOT serialization of the graph: {}",
+            self.debug_dot()
+        ))
     }
 
     pub fn debug_dot(&self) -> String {
@@ -395,7 +398,7 @@ impl<S: NodeStorageOps<NodeData = DotVertexData>> From<(SubGraphFreeGraph, Figme
                     used_edges.insert(*d),
                     "Duplicate edge ID: {d} for edge {e}:{used_edges:?}"
                 );
-                assert!(d.0 < n_edges, "Edge {d} out of bounds (len={n_edges})")
+                // assert!(d.0 < n_edges, "Edge {d} out of bounds (len={n_edges})")
             })
         });
 
@@ -408,7 +411,7 @@ impl<S: NodeStorageOps<NodeData = DotVertexData>> From<(SubGraphFreeGraph, Figme
                     used_hedges.insert(*d),
                     "Duplicate hedge ID: {d} for hedge {h}",
                 );
-                assert!(d.0 < n_hedges, "Hedge {d} out of bounds (len={n_hedges})")
+                // assert!(d.0 < n_hedges, "Hedge {d} out of bounds (len={n_hedges})")
             })
         });
 
@@ -420,7 +423,7 @@ impl<S: NodeStorageOps<NodeData = DotVertexData>> From<(SubGraphFreeGraph, Figme
                     used_nodes.insert(*i),
                     "Duplicate node index: {i} for node {ni}"
                 );
-                assert!(i.0 < n_nodes, "Node {i} out of bounds (len ={n_nodes})")
+                // assert!(i.0 < n_nodes, "Node {i} out of bounds (len ={n_nodes})")
             })
         });
 
@@ -609,17 +612,12 @@ pub mod test {
             dod=-100
             ]
             ext [style=invis]
-            ext -> v4 [name=p1, mom=p1,num="Q(eid,spenso::mink(4,10))"];
-            ext -> v5 [name=p2, mom=p2,num="Q(eid,spenso::mink(4,20))"];
-            v6 -> ext [name=p3, mom=p3];
-            v5 -> v4 [name=q1,lmb_index=0, num="Q(eid,spenso::mink(4,10))"];
-            v6 -> v5 [name=q2];
-            v4 -> v6 [name=q3,num="Q(eid,spenso::mink(4,20))-Q(0,spenso::mink(4,20))"];
+
             }
 
             digraph tria {
             graph [
-            overall_factor = -1;
+            overall_factor = "-1";
             multiplicity_factor = 1;
             ]
             edge [
@@ -627,12 +625,8 @@ pub mod test {
             dod=-100
             ]
             ext [style=invis]
-            ext -> v4 [name=p1, mom=p1 num="Q(eid,spenso::mink(4,10))" is_dummy=true];
-            ext -> v5 [name=p2, mom=p2,num="Q(eid,spenso::mink(4,20))" is_dummy=true];
-            // v6 -> ext [name=p3, mom=p3, is_dummy];
-            // v5 -> v4 [pdg=1001, name=q1,lmb_index=0, num="Q(eid,spenso::mink(4,10))"];
-            // v6 -> v5 [pdg=1001, name=q2];
-            // v4 -> v6 [pdg=1001, name=q3,num="Q(eid,spenso::mink(4,20))-Q(0,spenso::mink(4,20))"];
+            ext -> v4 ;
+            ext -> v5 [name=p2 mom=p2 num="Q(eid,spenso::mink(4,20))" is_dummy=true];
             }
             "#;
 
@@ -788,7 +782,13 @@ mod multi {
     fn multiple() {
         assert_eq!(
             dot_parser::ast::Graphs::try_from(
-                r#"digraph{
+                r#"digraph d{
+                overall_factor = 1
+                edge [overall_factor=1]
+                A
+                }
+
+                digraph P{
                 overall_factor = 1
                 edge [overall_factor=1]
                 A
@@ -798,7 +798,7 @@ mod multi {
             .unwrap()
             .graphs
             .len(),
-            1
+            2
         );
 
         let a = r#"

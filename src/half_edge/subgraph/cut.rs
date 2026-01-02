@@ -636,6 +636,7 @@ impl<E, V, H, N: NodeStorageOps<NodeData = V>> CutGraph<E, V, H, N> {
             |lf, ld, rf, rd| {
                 let lo: Flow = ld.data.flow.try_into().unwrap();
                 let ro: Flow = rd.data.flow.try_into().unwrap();
+                // println!("lf{lf:?},lo{lo:?},rf{rf:?},ro{ro:?}");
                 debug_assert_eq!(lo, -ro);
                 debug_assert_eq!(lf, -rf);
 
@@ -952,7 +953,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_roundrip() {
+    fn test_roundtrip() {
         let gr: DotGraph = dot!(
             digraph {
               num = "1";
@@ -1024,28 +1025,27 @@ mod tests {
         a.dot_serialize_fmt(&mut out, (), &|h| h.clone(), &from, &|v| v.clone())
             .unwrap();
 
-        insta::assert_snapshot!(out,@r"
+        insta::assert_snapshot!(out,@r#"
         digraph {
           0[int_id=V_71];
           1[int_id=V_71];
           2[int_id=V_98];
           3[int_id=V_98];
 
-          2:0	-> 3:3	 [id=0  cut_flow=aligned edge_id=0];
-          3:1	-> 2:2	 [id=1 dir=back  cut_flow=aligned edge_id=1];
-          0:8	-> 3:9	 [id=2 dir=none  cut_flow=uncut edge_id=2];
-          1:10	-> 2:11	 [id=3 dir=none  cut_flow=uncut edge_id=3];
-          0:4	-> 1:5	 [id=4 dir=back  cut_flow=uncut edge_id=4];
-          0:6	-> 1:7	 [id=5  cut_flow=uncut edge_id=5];
+          2:0	-> 3:3	 [id=0  cut_flow="aligned" edge_id="0"];
+          2:2	-> 3:1	 [id=1 dir=back  cut_flow="aligned" edge_id="1"];
+          0:8	-> 3:9	 [id=2 dir=none  cut_flow="uncut" edge_id="2"];
+          1:10	-> 2:11	 [id=3 dir=none  cut_flow="uncut" edge_id="3"];
+          0:4	-> 1:5	 [id=4 dir=back  cut_flow="uncut" edge_id="4"];
+          0:6	-> 1:7	 [id=5  cut_flow="uncut" edge_id="5"];
         }
-        ");
+        "#);
 
         let olda = a.clone();
 
         a.round_trip_glue();
 
         assert_eq!(a, olda);
-
 
         let gr: DotGraph = dot!(
             digraph {
@@ -1058,7 +1058,7 @@ mod tests {
               4[int_id=V_71];
               5[int_id=V_71];
               ext0 [style=invis];
-              ext0-> 5:0 [id=0 dir=none is_cut=0 is_dummy=false particle="a"];
+              ext0-> 5:0 [id=9 dir=none is_cut=0 is_dummy=false particle="a"];
               0:1-> 1:2 [id=1 dir=back  is_dummy=false particle="d~"];
               0:3-> 1:4 [id=2  is_dummy=false particle="d"];
               0:5-> 3:6 [id=3 dir=none  is_dummy=false particle="g"];
@@ -1066,23 +1066,24 @@ mod tests {
               2:9-> 4:10 [id=5 dir=back  is_dummy=false particle="d~"];
               2:11-> 5:12 [id=6  is_dummy=false particle="d"];
               3:13-> 4:14 [id=7  is_dummy=false particle="d"];
-              3:15-> 5:16 [id=8 dir=back  is_dummy=false particle="d~"];
+              3:15-> 5:16 [id=0 dir=back  is_dummy=false particle="d~"];
               ext9 [style=invis];
-              4:17-> ext9 [id=9 dir=none is_cut=0 is_dummy=false particle="a"];
+              4:1002-> ext9 [id=8 dir=none is_cut=0 is_dummy=false particle="a"];
               }
         )
         .unwrap();
-
 
         let mut a = gr.graph.map(
             |_, _, v| v,
             |inv, _, _, ei, e| {
                 e.map(|a| {
                     if let Some(is_cut) = a.get::<_, usize>("is_cut") {
-                        let is_cut_h = Hedge(is_cut.unwrap());
+                        let is_cut_val = is_cut.unwrap();
+                        let is_cut_h = Hedge(is_cut_val);
                         let mut flow = inv.flow(is_cut_h);
                         let eid = inv[is_cut_h];
                         if eid != ei {
+                            //a split edge with is_cut not set at the hedge id of it..
                             flow = -flow;
                         }
                         let mut e = PossiblyCutEdge::uncut(1, eid);
@@ -1099,12 +1100,11 @@ mod tests {
         // println!("{}", a.debug_cut_dot());
         a.glue_back_strict();
 
-
         let mut out = String::new();
         a.dot_serialize_fmt(&mut out, (), &|h| h.clone(), &from, &|v| v.clone())
             .unwrap();
 
-        insta::assert_snapshot!(out,@r"
+        insta::assert_snapshot!(out,@r#"
         digraph {
           0[int_id=V_74];
           1[int_id=V_74];
@@ -1113,22 +1113,29 @@ mod tests {
           4[int_id=V_71];
           5[int_id=V_71];
 
-          4:17	-> 5:0	 [id=0 dir=none  cut_flow=aligned edge_id=0];
-          0:1	-> 1:2	 [id=1 dir=back  cut_flow=uncut edge_id=1];
-          0:3	-> 1:4	 [id=2  cut_flow=uncut edge_id=2];
-          0:5	-> 3:6	 [id=3 dir=none  cut_flow=uncut edge_id=3];
-          1:7	-> 2:8	 [id=4 dir=none  cut_flow=uncut edge_id=4];
-          2:9	-> 4:10	 [id=5 dir=back  cut_flow=uncut edge_id=5];
-          2:11	-> 5:12	 [id=6  cut_flow=uncut edge_id=6];
-          3:13	-> 4:14	 [id=7  cut_flow=uncut edge_id=7];
-          3:15	-> 5:16	 [id=8 dir=back  cut_flow=uncut edge_id=8];
+          3:15	-> 5:16	 [id=0 dir=back  cut_flow="uncut" edge_id="0"];
+          0:1	-> 1:2	 [id=1 dir=back  cut_flow="uncut" edge_id="1"];
+          0:3	-> 1:4	 [id=2  cut_flow="uncut" edge_id="2"];
+          0:5	-> 3:6	 [id=3 dir=none  cut_flow="uncut" edge_id="3"];
+          1:7	-> 2:8	 [id=4 dir=none  cut_flow="uncut" edge_id="4"];
+          2:9	-> 4:10	 [id=5 dir=back  cut_flow="uncut" edge_id="5"];
+          2:11	-> 5:12	 [id=6  cut_flow="uncut" edge_id="6"];
+          3:13	-> 4:14	 [id=7  cut_flow="uncut" edge_id="7"];
+          4:17	-> 5:0	 [id=8 dir=none  cut_flow="aligned" edge_id="9"];
         }
-        ");
+        "#);
 
         let olda = a.clone();
 
         a.round_trip_glue();
+        let mut out = String::new();
+        a.dot_serialize_fmt(&mut out, (), &|h| h.clone(), &from, &|v| v.clone())
+            .unwrap();
 
-        assert_eq!(a, olda);
+        let mut out2 = String::new();
+        olda.dot_serialize_fmt(&mut out, (), &|h| h.clone(), &from, &|v| v.clone())
+            .unwrap();
+
+        assert_eq!(a, olda, "{}\nvs\n{}", out, out2);
     }
 }

@@ -321,9 +321,9 @@ macro_rules! define_indexed_vec {
         impl ::std::convert::TryFrom<$Vec<Option<$Idx>>> for $crate::permutation::Permutation{
             type Error = ();
             fn try_from(vec: $Vec<Option<$Idx>>) -> Result<Self, Self::Error> {
-                let new_vec:Vec<usize> = vec.into_iter().map(|(i,e)| e.ok_or(()).map(|e|(i,e))).collect::<Result<$Vec<$Idx>, ()>>()?.into_iter().map(|(_,x)| usize::from(x)).collect();
+                // let new_vec:Vec<usize> = vec.into_iter().map(|(i,e)| e.ok_or(()).map(|e|(i,e))).collect::<Result<$Vec<$Idx>, ()>>()?.into_iter().map(|(_,x)| usize::from(x)).collect();
 
-                Ok($crate::permutation::Permutation::from_map(new_vec))
+                Ok($crate::permutation::Permutation::sort(&vec.0))
             }
         }
     };

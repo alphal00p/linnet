@@ -46,7 +46,7 @@ impl Display for DotEdgeData {
             if !first {
                 write!(f, " ")?;
             }
-            write!(f, "{key}={value}")?;
+            write!(f, "{key}=\"{value}\"")?;
             first = false;
         }
 

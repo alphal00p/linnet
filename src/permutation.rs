@@ -1601,7 +1601,10 @@ mod tests {
 
     #[test]
     fn test_apply_slice() {
-        let p = Permutation::from_map(vec![2, 1, 3, 0]);
+        let map = vec![2, 1, 3, 0];
+        let pp = Permutation::sort(&map);
+        let p = Permutation::from_map(map);
+        assert_eq!(p, pp);
         let data = vec![10, 20, 30, 40];
         let permuted = p.apply_slice(&data);
         assert_eq!(permuted, vec![40, 20, 10, 30]);
