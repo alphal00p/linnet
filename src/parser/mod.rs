@@ -104,6 +104,19 @@ use crate::{
     permutation::Permutation,
 };
 
+/// Strips surrounding quotes from a string if present
+pub(crate) fn strip_quotes(s: &str) -> &str {
+    if s.len() >= 2 {
+        let chars: Vec<char> = s.chars().collect();
+        if (chars[0] == '"' && chars[chars.len() - 1] == '"')
+            || (chars[0] == '\'' && chars[chars.len() - 1] == '\'')
+        {
+            return &s[1..s.len() - 1];
+        }
+    }
+    s
+}
+
 pub mod set;
 pub use set::GraphSet;
 
@@ -273,7 +286,7 @@ impl<S: NodeStorageOps<NodeData = DotVertexData>> DotGraph<S> {
         s: Str,
     ) -> Result<Self, HedgeParseError<'a, (), (), (), ()>> {
         let ast_graph: SubGraphFreeGraph = dot_parser::ast::Graph::try_from(s.as_ref())?
-            .filter_map(&|(k, v)| Some((k.into(), v.into())))
+            .filter_map(&|(k, v)| Some((k.into(), strip_quotes(&v).to_string())))
             .into();
 
         Ok(Self::from((ast_graph, Figment::new())))
@@ -285,7 +298,7 @@ impl<S: NodeStorageOps<NodeData = DotVertexData>> DotGraph<S> {
         figment: figment::Figment,
     ) -> Result<Self, HedgeParseError<'a, (), (), (), ()>> {
         let ast_graph: SubGraphFreeGraph = dot_parser::ast::Graph::try_from(s.as_ref())?
-            .filter_map(&|(k, v)| Some((k.into(), v.into())))
+            .filter_map(&|(k, v)| Some((k.into(), strip_quotes(&v).to_string())))
             .into();
 
         let graph = Self::from((ast_graph, figment));
@@ -560,7 +573,7 @@ pub mod test {
         parser::{DotGraph, DotVertexData},
     };
 
-    use super::GraphSet;
+    use super::{strip_quotes, GraphSet};
 
     #[test]
     fn orientations() {
@@ -773,6 +786,35 @@ pub mod test {
         let sub: SuBitGraph = aligned.compass_subgraph(Some(dot_parser::ast::CompassPt::S));
 
         println!("{}", aligned.dot_of(&sub));
+    }
+
+    #[test]
+    fn test_quote_stripping() {
+        let s = r#"digraph G {
+            graph [title="Graph Title"];
+            A [label="Quoted Label"];
+            A -> B [label="Edge Label"];
+        }"#;
+
+        let graph: DotGraph = DotGraph::from_string(s).unwrap();
+
+        // Check that quotes are stripped from global graph attributes
+        assert_eq!(
+            graph.global_data.statements.get("title").unwrap(),
+            "Graph Title"
+        );
+
+        // Check that quotes are stripped from node attributes
+        let node_a = graph
+            .iter_nodes()
+            .find(|(_, _, data)| data.statements.contains_key("label"))
+            .unwrap()
+            .2;
+        assert_eq!(node_a.statements.get("label").unwrap(), "Quoted Label");
+
+        // Check that quotes are stripped from edge attributes
+        let edge = graph.iter_edges().next().unwrap().2.data;
+        assert_eq!(edge.statements.get("label").unwrap(), "Edge Label");
     }
 }
 

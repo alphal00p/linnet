@@ -4,7 +4,7 @@ use itertools::Either;
 
 use crate::half_edge::NodeIndex;
 
-use super::GlobalData;
+use super::{strip_quotes, GlobalData};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DotVertexData {
@@ -101,8 +101,8 @@ impl DotVertexData {
                             is_dangling = true
                         }
                     }
-                    "id" => index = Some(NodeIndex(value.parse::<usize>().unwrap())),
-                    _ => return Some((key, value)),
+                    "id" => index = Some(NodeIndex(strip_quotes(&value).parse::<usize>().unwrap())),
+                    _ => return Some((key, strip_quotes(&value).to_string())),
                 }
                 None
             })

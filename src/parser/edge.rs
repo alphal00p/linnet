@@ -7,7 +7,7 @@ use crate::half_edge::{
     involution::{EdgeIndex, Flow, Orientation},
 };
 
-use super::{subgraph_free::Edge, DotHedgeData, GlobalData, NodeIdOrDangling};
+use super::{strip_quotes, subgraph_free::Edge, DotHedgeData, GlobalData, NodeIdOrDangling};
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct DotEdgeData {
@@ -23,10 +23,10 @@ impl FromIterator<(String, String)> for DotEdgeData {
             .into_iter()
             .filter_map(|(k, v)| match k.as_str() {
                 "id" => {
-                    edge_id = Some(EdgeIndex::from(v.parse::<usize>().unwrap()));
+                    edge_id = Some(EdgeIndex::from(strip_quotes(&v).parse::<usize>().unwrap()));
                     None
                 }
-                _ => Some((k, v)),
+                _ => Some((k, strip_quotes(&v).to_string())),
             })
             .collect();
 
@@ -137,21 +137,22 @@ impl DotEdgeData {
         let local_statements = edge.attr.clone().into_iter().collect();
         let mut statements = global_data.edge_statements.clone();
         statements.extend(edge.attr.into_iter().filter_map(|(key, value)| {
+            let stripped_value = strip_quotes(&value);
             match key.as_str() {
-                "dir" => match value.as_str() {
+                "dir" => match stripped_value {
                     "forward" => orientation = Orientation::Default,
                     "back" => orientation = Orientation::Reversed,
                     "none" => orientation = Orientation::Undirected,
                     _ => panic!("Invalid edge direction"),
                 },
                 "source" => {
-                    source_data.statement = Some(value);
+                    source_data.statement = Some(stripped_value.to_string());
                 }
                 "sink" => {
-                    sink_data.statement = Some(value);
+                    sink_data.statement = Some(stripped_value.to_string());
                 }
                 _ => {
-                    return Some((key, value));
+                    return Some((key, stripped_value.to_string()));
                 }
             }
             None

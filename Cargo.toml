@@ -54,7 +54,7 @@ symbolica = { version = "1", optional = true, default-features = false }
 thiserror = "2.0.11"
 derive_more = "0.99.17"
 # hibit_tree = "0.1.0-alpha.3"
-dot-parser = "0.6"
+dot-parser = "0.5"
 kurbo = "0.11.1"
 piet = "0.7.0"
 bincode-trait-derive = "0.1.1"
@@ -92,4 +92,4 @@ members = ["clinnet","linnest"]
 
 [patch.crates-io]
 linnet = { path = "." }
-dot-parser = {git = "https://codeberg.org/bromind/dot-parser", rev="5521f1ba03fd840913dd18aa85446a2cdbb50ac4"}
+# dot-parser = {git = "https://codeberg.org/bromind/dot-parser", rev="5521f1ba03fd840913dd18aa85446a2cdbb50ac4"}

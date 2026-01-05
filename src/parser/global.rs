@@ -3,6 +3,8 @@ use std::{collections::BTreeMap, fmt::Display};
 use dot_parser::{ast::AttrStmt, canonical::IDEq};
 use figment::Figment;
 
+use super::strip_quotes;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct GlobalData {
@@ -142,30 +144,39 @@ impl TryFrom<(Vec<AttrStmt<(String, String)>>, Vec<IDEq>)> for GlobalData {
             match attr_stmt {
                 AttrStmt::Graph(l) => {
                     for l in l.elems {
-                        statements.extend(l);
+                        statements.extend(
+                            l.into_iter()
+                                .map(|(k, v)| (k, strip_quotes(&v).to_string())),
+                        );
                     }
                 }
                 AttrStmt::Node(l) => {
                     for l in l.elems {
-                        node_statements.extend(l);
+                        node_statements.extend(
+                            l.into_iter()
+                                .map(|(k, v)| (k, strip_quotes(&v).to_string())),
+                        );
                     }
                 }
                 AttrStmt::Edge(l) => {
                     for l in l.elems {
-                        edge_statements.extend(l);
+                        edge_statements.extend(
+                            l.into_iter()
+                                .map(|(k, v)| (k, strip_quotes(&v).to_string())),
+                        );
                     }
                 }
             }
         }
 
         for e in value.1 {
-            statements.insert(e.lhs, e.rhs);
+            statements.insert(e.lhs, strip_quotes(&e.rhs).to_string());
         }
 
         let mut name = String::new();
         statements.retain(|k, v| {
             if k.as_str() == "name" {
-                name = v.clone();
+                name = strip_quotes(v).to_string();
                 false
             } else {
                 true

@@ -4,7 +4,7 @@ use dot_parser::ast::{CompassPt, Port};
 
 use crate::half_edge::involution::{Flow, Hedge};
 
-use super::subgraph_free::PortExt;
+use super::{strip_quotes, subgraph_free::PortExt};
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct DotHedgeData {
@@ -72,7 +72,7 @@ impl Display for DotHedgeData {
 impl From<Option<String>> for DotHedgeData {
     fn from(statement: Option<String>) -> Self {
         DotHedgeData {
-            statement,
+            statement: statement.map(|s| strip_quotes(&s).to_string()),
             ..Default::default()
         }
     }
