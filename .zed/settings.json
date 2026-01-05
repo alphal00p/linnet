@@ -10,36 +10,40 @@
     "enabled": true,
     "show_type_hints": true,
     "show_parameter_hints": false,
-    "show_other_hints": true
+    "show_other_hints": true,
+  },
+  "assistant": {
+    "default_context_files": [".agent/README.md", ".agent/notes.md"],
+    "auto_include_project_files": ["README.md", "Cargo.toml"],
   },
   "lsp": {
     "rust-analyzer": {
       "initialization_options": {
         "cargo": {
-          "features": ["drawing", "bincode", "symbolica"]
+          "features": ["drawing", "bincode", "symbolica"],
         },
         "inlayHints": {
           "maxLength": null,
           "lifetimeElisionHints": {
             "enable": "never",
-            "useParameterNames": true
+            "useParameterNames": true,
           },
           "closureReturnTypeHints": {
-            "enable": "always"
-          }
+            "enable": "always",
+          },
         },
         "check": {
           "onSave": true,
           "features": ["drawing", "bincode", "symbolica"],
-          "command": "check"
-        }
-      }
+          "command": "check",
+        },
+      },
     },
     "tinymist": {
       "settings": {
         "exportPdf": "onSave",
-        "outputPath": "$root/$name"
-      }
-    }
-  }
+        "outputPath": "$root/$name",
+      },
+    },
+  },
 }

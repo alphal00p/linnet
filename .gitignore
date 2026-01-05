@@ -3,3 +3,8 @@ result*
 /.direnv
 /build
 /test
+
+# Agent notes - keep the markdown files, ignore temporary files
+/.agent/*.tmp
+/.agent/*.bak
+/.agent/temp_*

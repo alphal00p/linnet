@@ -1,4 +1,5 @@
 # Aliases for common commands
+
 alias b := build
 alias t := test
 alias ta := test-all
@@ -57,7 +58,7 @@ check-all:
 
 # Run binary with arguments
 run *args:
-    cargo run --bin linnet-cli -- {{args}}
+    cargo run --bin linnet-cli -- {{ args }}
 
 # Format all code
 fmt:
@@ -109,3 +110,21 @@ insta-test:
 
 # Full release preparation
 release-prep: fmt clippy test-all check-docs wasm
+
+# =============================================================================
+# Agent Notes
+# =============================================================================
+
+# Open agent notes for editing
+notes:
+    ${EDITOR:-vim} .agent/notes.md
+
+# Open agent knowledge base
+knowledge:
+    ${EDITOR:-vim} .agent/README.md
+
+# Quick note - add timestamped entry to notes
+note text:
+    echo "\n### $(date '+%Y-%m-%d %H:%M')" >> .agent/notes.md
+    echo "{{ text }}" >> .agent/notes.md
+    echo "" >> .agent/notes.md
