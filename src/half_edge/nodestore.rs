@@ -60,6 +60,12 @@ pub trait NodeStorageOps: NodeStorage + Swap<Hedge> + Swap<NodeIndex> {
         n_hedges: usize,
     ) -> Self;
 
+    fn build_with_mapping<I: IntoIterator<Item = HedgeNodeBuilder<ND>>, ND>(
+        nodes: I,
+        n_hedges: usize,
+        map_data: impl FnMut(ND) -> Self::NodeData,
+    ) -> Self;
+
     fn add_dangling_edge(self, source: NodeIndex) -> Result<Self, HedgeGraphError>;
 
     fn random(sources: &[Self::Neighbors], sinks: &[Self::Neighbors]) -> Self

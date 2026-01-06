@@ -129,6 +129,19 @@ impl<E, V, H> HedgeGraphBuilder<E, V, H> {
         self.into()
     }
 
+    pub fn build_with_map<V2, N: NodeStorageOps<NodeData = V2>>(
+        self,
+        map: impl FnMut(V) -> V2,
+    ) -> HedgeGraph<E, V2, H, N> {
+        let len: Hedge = self.involution.len();
+
+        HedgeGraph {
+            node_store: N::build_with_mapping(self.nodes, len.0, map),
+            edge_store: SmartEdgeVec::new(self.involution),
+            hedge_data: self.hedge_data,
+        }
+    }
+
     pub fn add_node(&mut self, data: V) -> NodeIndex {
         let index = self.nodes.len();
         self.nodes.push(HedgeNodeBuilder {

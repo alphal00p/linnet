@@ -141,6 +141,23 @@ impl<V, P: ForestNodeStore + ForestNodeStorePreorder + Clone> NodeStorageOps for
         .unwrap()
     }
 
+    fn build_with_mapping<
+        I: IntoIterator<Item = crate::half_edge::builder::HedgeNodeBuilder<ND>>,
+        ND,
+    >(
+        nodes: I,
+        n_hedges: usize,
+        mut map_data: impl FnMut(ND) -> Self::NodeData,
+    ) -> Self {
+        Forest::from_bitvec_partition(nodes.into_iter().map(|n| {
+            (
+                map_data(n.data),
+                SuBitGraph::from_hedge_iter(n.hedges.into_iter(), n_hedges),
+            )
+        }))
+        .unwrap()
+    }
+
     fn drain(self) -> impl Iterator<Item = (NodeIndex, Self::NodeData)> {
         self.roots
             .into_iter()

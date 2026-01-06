@@ -622,6 +622,32 @@ impl<N> NodeStorageOps for NodeStorageVec<N> {
         }
     }
 
+    fn build_with_mapping<I: IntoIterator<Item = HedgeNodeBuilder<ND>>, ND>(
+        node_iter: I,
+        n_hedges: usize,
+        mut map_data: impl FnMut(ND) -> Self::NodeData,
+    ) -> Self {
+        let mut nodes: NodeVec<SuBitGraph> = NodeVec::new();
+        let mut node_data = NodeVec::new();
+        let mut hedgedata: HedgeVec<_> = vec![None; n_hedges].into();
+
+        for (i, n) in node_iter.into_iter().enumerate() {
+            for h in &n.hedges {
+                hedgedata[*h] = Some(NodeIndex(i));
+            }
+            nodes.push(n.to_base(n_hedges));
+            node_data.push(map_data(n.data));
+        }
+
+        let hedge_data = hedgedata.into_iter().map(|(_, x)| x.unwrap()).collect();
+
+        NodeStorageVec {
+            node_data,
+            hedge_data,
+            nodes,
+        }
+    }
+
     fn iter_nodes(
         &self,
     ) -> impl Iterator<Item = (NodeIndex, Self::NeighborsIter<'_>, &Self::NodeData)> {

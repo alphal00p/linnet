@@ -356,6 +356,17 @@ impl<V> NodeStorageOps for UnionFindNodeStore<V> {
         NodeStorageVec::build(nodes, n_hedges).into()
     }
 
+    fn build_with_mapping<
+        I: IntoIterator<Item = crate::half_edge::builder::HedgeNodeBuilder<ND>>,
+        ND,
+    >(
+        nodes: I,
+        n_hedges: usize,
+        map_data: impl FnMut(ND) -> Self::NodeData,
+    ) -> Self {
+        NodeStorageVec::build_with_mapping(nodes, n_hedges, map_data).into()
+    }
+
     fn drain(self) -> impl Iterator<Item = (NodeIndex, Self::NodeData)> {
         self.nodes
             .drain_set_data()

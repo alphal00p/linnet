@@ -28,7 +28,11 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 
 use crate::half_edge::{
-    involution::Flow, nodestore::NodeStorageOps, subgraph::ModifySubSet, HedgeGraph, NodeIndex,
+    builder::HedgeGraphBuilder,
+    involution::{Flow, Orientation},
+    nodestore::NodeStorageOps,
+    subgraph::{ModifySubSet, SuBitGraph},
+    HedgeGraph, NoData, NodeIndex,
 };
 
 use super::topological_order::TopoError;
@@ -51,6 +55,72 @@ pub enum TransitiveError {
     /// This can happen during edge addition or removal operations.
     #[error("Graph structure error")]
     GraphStructure,
+}
+
+impl<V, S: NodeStorageOps<NodeData = V, Base = SuBitGraph>> HedgeGraph<NoData, V, NoData, S> {
+    pub fn poset<I: IntoIterator<Item = V>>(nodes: I) -> Self
+    where
+        V: PartialOrd,
+    {
+        let mut builder = HedgeGraphBuilder::new();
+        let mut nodes: Vec<Option<V>> = nodes.into_iter().map(Some).collect();
+
+        // Create nodes in the graph
+        let mut node_indices = HashMap::new();
+        for (i, node) in nodes.iter().enumerate() {
+            let idx = builder.add_node(i);
+            node_indices.insert(i, idx);
+        }
+
+        // Add ALL order relations first (complete partial order graph)
+        for (i, a) in nodes.iter().enumerate() {
+            for (j, b) in nodes.iter().enumerate() {
+                if i != j && a < b {
+                    builder.add_edge(node_indices[&i], node_indices[&j], NoData {}, true);
+                }
+            }
+        }
+        builder.build_with_map::<V, S>(|i| nodes[i].take().unwrap())
+    }
+    pub fn hasse_diagram<I: IntoIterator<Item = V>>(nodes: I) -> Self
+    where
+        V: PartialOrd + Clone,
+    {
+        use crate::half_edge::builder::HedgeGraphBuilder;
+        use crate::half_edge::involution::Orientation;
+
+        let mut builder = HedgeGraphBuilder::new();
+        let nodes: Vec<V> = nodes.into_iter().collect();
+
+        // Create nodes in the graph
+        let mut node_indices = HashMap::new();
+        for (i, node) in nodes.iter().enumerate() {
+            let idx = builder.add_node(node.clone());
+            node_indices.insert(i, idx);
+        }
+
+        // Add ALL order relations first (complete partial order graph)
+        for (i, a) in nodes.iter().enumerate() {
+            for (j, b) in nodes.iter().enumerate() {
+                if i != j && a < b {
+                    builder.add_edge(
+                        node_indices[&i],
+                        node_indices[&j],
+                        NoData {},
+                        Orientation::Default,
+                    );
+                }
+            }
+        }
+
+        // Build the complete graph and apply transitive reduction
+        let complete_graph = builder.build();
+
+        // Apply transitive reduction to get the Hasse diagram
+        complete_graph
+            .transitive_reduction()
+            .expect("Partial order should be acyclic")
+    }
 }
 
 impl<E, V, H, N: NodeStorageOps<NodeData = V, Base = crate::half_edge::subgraph::SuBitGraph>>
@@ -366,7 +436,11 @@ impl<E, V, H, N: NodeStorageOps<NodeData = V, Base = crate::half_edge::subgraph:
 
 #[cfg(test)]
 mod tests {
-    use crate::{dot, half_edge::nodestore::NodeStorageOps, parser::DotGraph};
+    use crate::{
+        dot,
+        half_edge::{nodestore::NodeStorageOps, HedgeGraph, NoData},
+        parser::DotGraph,
+    };
 
     #[test]
     fn test_transitive_closure_simple() {
@@ -1095,5 +1169,24 @@ mod tests {
             assert!(graph.graph.is_reachable(iso_a_idx, iso_c_idx));
             assert!(!graph.graph.is_reachable(iso_c_idx, iso_a_idx));
         }
+    }
+
+    #[test]
+    fn test_hasse_diagram() {
+        // Create a simple partial order: 1 < 2, 1 < 3, 2 < 4, 3 < 4
+        // The Hasse diagram should have edges: 1->2, 2->3, 3->4
+        let nodes = vec![1, 2, 3, 4];
+        let hasse: HedgeGraph<NoData, i32> = HedgeGraph::hasse_diagram(nodes);
+
+        // println!("{}", hasse.clone().transitive_closure().unwrap().base_dot());
+
+        // Should have 4 nodes
+        assert_eq!(hasse.n_nodes(), 4);
+
+        // Should have 4 edges in the Hasse diagram (covering relations only)
+        assert_eq!(hasse.n_edges(), 3);
+
+        // Verify the graph is acyclic
+        assert!(hasse.transitive_closure().is_ok());
     }
 }

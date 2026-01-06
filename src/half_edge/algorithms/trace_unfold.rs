@@ -9,7 +9,7 @@ use indexmap::IndexSet;
 use crate::half_edge::builder::HedgeGraphBuilder;
 use crate::half_edge::involution::{EdgeIndex, Flow};
 use crate::half_edge::nodestore::NodeStorageOps;
-use crate::half_edge::{HedgeGraph, NodeIndex};
+use crate::half_edge::{HedgeGraph, NoData, NodeIndex};
 
 /// Ops must be owned, hashable, and totally ordered for canonicalization.
 pub trait Op: Clone + Eq + Ord {}
@@ -23,35 +23,46 @@ pub trait Key<K> {
     fn key(&self, e: EdgeIndex) -> K;
 }
 
-impl<E: Ord + Hash, H, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, H, N> {
-    pub fn trace_unfold<'a, K, M: NodeStorageOps<NodeData = usize>>(
-        &'a self,
+pub trait TraceUnfold<Key>: Independence<HiddenData<Key, EdgeIndex>> + Sized
+where
+    Key: Eq + Hash + Clone + Ord,
+{
+    type EdgeData: Ord + Hash;
+    type NodeData;
+    type NodeStorage: NodeStorageOps<NodeData = Self::NodeData>;
+    type HedgeData;
+
+    fn graph(
+        &self,
+    ) -> &HedgeGraph<Self::EdgeData, Self::NodeData, Self::HedgeData, Self::NodeStorage>;
+
+    fn key(&self, e: EdgeIndex) -> Key;
+
+    fn trace_unfold<M: NodeStorageOps<NodeData = usize>>(
+        &self,
         start: NodeIndex,
-    ) -> HedgeGraph<(), TraceKey<K, EdgeIndex>, (), M::OpStorage<TraceKey<K, EdgeIndex>>>
-    where
-        Self: Independence<HiddenData<K, EdgeIndex>>,
-        Self: Key<K>,
-        K: Eq + Hash + Clone + Ord,
+    ) -> HedgeGraph<NoData, TraceKey<Key, EdgeIndex>, NoData, M::OpStorage<TraceKey<Key, EdgeIndex>>>
     {
         let root = (start, TraceKey::empty());
         let mut q = VecDeque::new();
-        let mut traces: IndexSet<(NodeIndex, TraceKey<K, EdgeIndex>)> = IndexSet::new();
-        let mut builder: HedgeGraphBuilder<(), usize, ()> = HedgeGraphBuilder::new();
+        let mut traces: IndexSet<(NodeIndex, TraceKey<Key, EdgeIndex>)> = IndexSet::new();
+        let mut builder: HedgeGraphBuilder<NoData, usize, NoData> = HedgeGraphBuilder::new();
         let (ind, _) = traces.insert_full(root);
         let nid = builder.add_node(ind);
         q.push_back((nid, start, TraceKey::empty()));
+        let g = self.graph();
 
         while let Some((bnid, nid, key)) = q.pop_front() {
-            for hedge in self.iter_crown(nid) {
-                if self.flow(hedge) == Flow::Source {
-                    if let Some(to_node) = self.involved_node_id(hedge) {
-                        let edge = self.key(self[&hedge]);
+            for hedge in g.iter_crown(nid) {
+                if g.flow(hedge) == Flow::Source {
+                    if let Some(to_node) = g.involved_node_id(hedge) {
+                        let edge = self.key(g[&hedge]);
 
-                        let new_key: TraceKey<K, EdgeIndex> = key.push(
+                        let new_key: TraceKey<Key, EdgeIndex> = key.push(
                             self,
                             HiddenData {
                                 order: edge,
-                                data: self[&hedge],
+                                data: g[&hedge],
                             },
                         );
 
@@ -62,7 +73,7 @@ impl<E: Ord + Hash, H, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, H, N
                             q.push_back((bbnid, to_node, new_key.clone()))
                         }
 
-                        builder.add_edge(bnid, NodeIndex(ind), (), true);
+                        builder.add_edge(bnid, NodeIndex(ind), NoData {}, true);
                     }
                 }
             }
@@ -70,7 +81,7 @@ impl<E: Ord + Hash, H, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, H, N
 
         builder.build::<M>().map(
             |_, _, v| {
-                let mut trace: TraceKey<K, EdgeIndex> = TraceKey::empty();
+                let mut trace: TraceKey<Key, EdgeIndex> = TraceKey::empty();
                 let v = &mut traces.get_index_mut2(v).unwrap().1;
                 std::mem::swap(v, &mut trace);
                 trace
@@ -78,6 +89,28 @@ impl<E: Ord + Hash, H, V, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, H, N
             |_, _, _, _, a| a,
             |_, h| h,
         )
+    }
+}
+
+impl<E: Ord + Hash, H, V, N: NodeStorageOps<NodeData = V>, K: Eq + Hash + Clone + Ord>
+    TraceUnfold<K> for HedgeGraph<E, V, H, N>
+where
+    Self: Independence<HiddenData<K, EdgeIndex>>,
+    Self: Key<K>,
+{
+    type EdgeData = E;
+    type NodeData = V;
+    type NodeStorage = N;
+    type HedgeData = H;
+
+    fn graph(
+        &self,
+    ) -> &HedgeGraph<Self::EdgeData, Self::NodeData, Self::HedgeData, Self::NodeStorage> {
+        self
+    }
+
+    fn key(&self, e: EdgeIndex) -> K {
+        Key::key(self, e)
     }
 }
 
@@ -331,11 +364,11 @@ mod tests {
         })
         .unwrap();
 
-        let g: HedgeGraph<(), TraceKey<String, EdgeIndex>, ()> = graph
+        let g: HedgeGraph<NoData, TraceKey<String, EdgeIndex>> = graph
             .graph
             .transitive_closure()
             .unwrap()
-            .trace_unfold::<_, NodeStorageVec<usize>>(NodeIndex(0));
+            .trace_unfold::<NodeStorageVec<usize>>(NodeIndex(0));
         let mut output = String::new();
         g.dot_impl_fmt(
             &mut output,
