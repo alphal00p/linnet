@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.1](https://github.com/alphal00p/linnet/compare/linnet-v0.15.0...linnet-v0.15.1) - 2026-01-05
+
+### Fixed
+
+- fixed ordering problem in merge function and make ordering based on sorting not on direct map
+
+### Other
+
+- update quote stripping
+- Add agent context files and update project tooling
+- Add graph algorithms module with topological sort and transitive ops
+
 ## [0.15.0](https://github.com/alphal00p/linnet/compare/linnet-v0.14.1...linnet-v0.15.0) - 2025-12-08
 
 ### Other
