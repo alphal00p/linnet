@@ -1721,6 +1721,26 @@ impl<E, V, H, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, H, N> {
         cycle_cover
     }
 
+    pub fn non_bridges_of<S: SubSetLike<Base = SuBitGraph> + SubGraphLike>(
+        &self,
+        subgraph: &S,
+    ) -> SuBitGraph {
+        let (c, _) = self.cycle_basis_of(subgraph);
+        let mut cycle_cover: SuBitGraph = self.empty_subgraph();
+        for cycle in c {
+            cycle_cover.union_with(&cycle.filter);
+        }
+
+        cycle_cover
+    }
+
+    pub fn bridges_of<S: SubSetLike<Base = SuBitGraph> + SubGraphLike>(
+        &self,
+        subgraph: &S,
+    ) -> SuBitGraph {
+        subgraph.included().subtract(&self.non_bridges_of(subgraph))
+    }
+
     pub fn bridges(&self) -> SuBitGraph {
         self.non_bridges().complement(self)
     }
@@ -2043,6 +2063,16 @@ impl<E, V, H, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, H, N> {
     pub fn cycle_basis(&self) -> (Vec<Cycle>, SimpleTraversalTree) {
         self.paton_cycle_basis(&self.full_graph(), &self.node_id(Hedge(0)), None)
             .unwrap()
+    }
+
+    pub fn cycle_basis_of<S: SubSetLike<Base = SuBitGraph> + SubGraphLike>(
+        &self,
+        subgraph: &S,
+    ) -> (Vec<Cycle>, SimpleTraversalTree) {
+        let Some((n, _, _)) = self.iter_nodes_of(subgraph).next() else {
+            return (vec![], SimpleTraversalTree::empty(self));
+        };
+        self.paton_cycle_basis(subgraph, &n, None).unwrap()
     }
 
     pub fn order_basis(&self, basis: &[HedgeNode]) -> Vec<Vec<InternalSubGraph>> {
