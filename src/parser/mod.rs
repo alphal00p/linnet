@@ -411,7 +411,7 @@ impl<S: NodeStorageOps<NodeData = DotVertexData>> From<(SubGraphFreeGraph, Figme
                     used_edges.insert(*d),
                     "Duplicate edge ID: {d} for edge {e}:{used_edges:?}"
                 );
-                // assert!(d.0 < n_edges, "Edge {d} out of bounds (len={n_edges})")
+                assert!(d.0 < n_edges, "Edge {d} out of bounds (len={n_edges})")
             })
         });
 
@@ -424,7 +424,7 @@ impl<S: NodeStorageOps<NodeData = DotVertexData>> From<(SubGraphFreeGraph, Figme
                     used_hedges.insert(*d),
                     "Duplicate hedge ID: {d} for hedge {h}",
                 );
-                // assert!(d.0 < n_hedges, "Hedge {d} out of bounds (len={n_hedges})")
+                assert!(d.0 < n_hedges, "Hedge {d} out of bounds (len={n_hedges})")
             })
         });
 
@@ -436,7 +436,7 @@ impl<S: NodeStorageOps<NodeData = DotVertexData>> From<(SubGraphFreeGraph, Figme
                     used_nodes.insert(*i),
                     "Duplicate node index: {i} for node {ni}"
                 );
-                // assert!(i.0 < n_nodes, "Node {i} out of bounds (len ={n_nodes})")
+                assert!(i.0 < n_nodes, "Node {i} out of bounds (len ={n_nodes})")
             })
         });
 

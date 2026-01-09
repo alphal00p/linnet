@@ -1068,7 +1068,7 @@ mod tests {
               3:13-> 4:14 [id=7  is_dummy=false particle="d"];
               3:15-> 5:16 [id=0 dir=back  is_dummy=false particle="d~"];
               ext9 [style=invis];
-              4:1002-> ext9 [id=8 dir=none is_cut=0 is_dummy=false particle="a"];
+              4:17-> ext9 [id=8 dir=none is_cut=0 is_dummy=false particle="a"];
               }
         )
         .unwrap();
