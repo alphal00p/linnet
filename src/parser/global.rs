@@ -85,9 +85,9 @@ impl Display for GlobalData {
         if !self.statements.is_empty() {
             for (key, value) in &self.statements {
                 if let Some(indent) = f.width() {
-                    writeln!(f, "{}{key} = {value};", vec![" "; indent].join(""))?;
+                    writeln!(f, "{}{key} = \"{value}\";", vec![" "; indent].join(""))?;
                 } else {
-                    write!(f, "\n{key} = {value};")?;
+                    write!(f, "\n{key} = \"{value}\";")?;
                 }
             }
         }
@@ -104,7 +104,7 @@ impl Display for GlobalData {
                 if !first {
                     write!(f, ", ")?;
                 }
-                write!(f, "{key} = {value}")?;
+                write!(f, "{key} = \"{value}\"")?;
                 first = false;
             }
             writeln!(f, "]")?;
@@ -122,7 +122,7 @@ impl Display for GlobalData {
                 if !first {
                     write!(f, ", ")?;
                 }
-                write!(f, "{key} = {value}")?;
+                write!(f, "{key} = \"{value}\"")?;
                 first = false;
             }
             writeln!(f, "]")?;

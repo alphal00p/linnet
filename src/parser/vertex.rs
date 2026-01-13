@@ -140,7 +140,7 @@ impl Display for DotVertexData {
             if !first {
                 write!(f, " ")?;
             }
-            write!(f, "{key}={value}")?;
+            write!(f, "{key}=\"{value}\"")?;
             first = false;
         }
         Ok(())

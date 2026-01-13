@@ -1027,10 +1027,10 @@ mod tests {
 
         insta::assert_snapshot!(out,@r#"
         digraph {
-          0[int_id=V_71];
-          1[int_id=V_71];
-          2[int_id=V_98];
-          3[int_id=V_98];
+          0[int_id="V_71"];
+          1[int_id="V_71"];
+          2[int_id="V_98"];
+          3[int_id="V_98"];
 
           2:0	-> 3:3	 [id=0  cut_flow="aligned" edge_id="0"];
           2:2	-> 3:1	 [id=1 dir=back  cut_flow="aligned" edge_id="1"];
@@ -1106,12 +1106,12 @@ mod tests {
 
         insta::assert_snapshot!(out,@r#"
         digraph {
-          0[int_id=V_74];
-          1[int_id=V_74];
-          2[int_id=V_74];
-          3[int_id=V_74];
-          4[int_id=V_71];
-          5[int_id=V_71];
+          0[int_id="V_74"];
+          1[int_id="V_74"];
+          2[int_id="V_74"];
+          3[int_id="V_74"];
+          4[int_id="V_71"];
+          5[int_id="V_71"];
 
           3:15	-> 5:16	 [id=0 dir=back  cut_flow="uncut" edge_id="0"];
           0:1	-> 1:2	 [id=1 dir=back  cut_flow="uncut" edge_id="1"];

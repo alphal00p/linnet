@@ -202,14 +202,15 @@ impl<O, D> TraceKey<O, D> {
         levels.push(vec![op]);
         Self { levels }
     }
-}
 
-/// Display as Foata-like levels: {A,C} · {B} · {D,E}; empty = ∅
-impl<O, D> Display for TraceKey<O, D>
-where
-    O: Op + Display,
-{
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    pub fn write_foata_like<W: fmt::Write>(
+        &self,
+        f: &mut W,
+        mut map: impl FnMut(&O) -> String,
+    ) -> fmt::Result
+    where
+        O: Op,
+    {
         if self.levels.is_empty() {
             return write!(f, "∅");
         }
@@ -223,11 +224,21 @@ where
                 if j > 0 {
                     write!(f, ",")?;
                 }
-                write!(f, "{}", op.order)?;
+                write!(f, "{}", map(&op.order))?;
             }
             write!(f, "}}")?;
         }
         Ok(())
+    }
+}
+
+/// Display as Foata-like levels: {A,C} · {B} · {D,E}; empty = ∅
+impl<O, D> Display for TraceKey<O, D>
+where
+    O: Op + Display,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.write_foata_like(f, |o| o.to_string())
     }
 }
 
