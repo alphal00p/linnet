@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.1](https://github.com/alphal00p/linnet/compare/linnet-v0.16.0...linnet-v0.16.1) - 2026-01-13
+
+### Other
+
+- Quote string values in graph and parser outputs
+- revert edge, node and hedge index order to be direct (not based on sort)
+
 ## [0.16.0](https://github.com/alphal00p/linnet/compare/linnet-v0.15.1...linnet-v0.16.0) - 2026-01-08
 
 ### Other
