@@ -21,8 +21,6 @@ wasm-minimal-protocol = { git = "https://github.com/astrale-sharp/wasm-minimal-p
 getrandom = { version = "0.2", default-features = false, features = ["custom"] }
 thiserror = "2.0.16"
 rand = "0.8.5"
-bitvec = "1.0.1"
-rand_xoshiro = "0.7.0"
 figment = "0.10.19"
 
 [lib]

@@ -230,6 +230,7 @@
           rust-analyzer
           tinymist
           just
+          cargo-machete
           # nixd
           # nil
         ];
