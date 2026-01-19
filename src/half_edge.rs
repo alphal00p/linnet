@@ -142,29 +142,31 @@ impl std::fmt::Display for NodeIndex {
 /// representation of the current subset index. On a 64-bit system, this
 /// could theoretically support up to 64 elements, but practically, iterating
 /// 2^64 items is not feasible. The comment "n < 64" suggests a practical limit.
-pub struct PowersetIterator {
+pub struct PowersetIterator<ID = Hedge> {
     /// The total number of subsets, equal to 2^(number of elements).
     size: usize,
     /// The current subset index, ranging from 0 to `size - 1`.
     /// Each bit in `current` corresponds to an element's presence in the subset.
     current: usize,
+    id: std::marker::PhantomData<ID>,
 }
 
-impl PowersetIterator {
+impl<ID> PowersetIterator<ID> {
     pub fn new(n_elements: u8) -> Self {
         PowersetIterator {
             size: 1 << n_elements,
             current: 0,
+            id: std::marker::PhantomData,
         }
     }
 }
 
-impl Iterator for PowersetIterator {
-    type Item = SuBitGraph;
+impl<ID> Iterator for PowersetIterator<ID> {
+    type Item = SubSet<ID>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.current < self.size {
-            let out = SuBitGraph::from_usize(self.current);
+            let out = SubSet::from_usize(self.current);
             self.current += 1;
             Some(out)
         } else {
@@ -1970,21 +1972,39 @@ impl<E, V, H, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, H, N> {
 
         let exts = self.internal_crown(subgraph);
 
-        if let Some((root_node, _, _)) = self.iter_nodes_of(subgraph).next() {
-            let tree = SimpleTraversalTree::depth_first_traverse(self, subgraph, &root_node, None)
-                .unwrap();
-            let mut nodes = tree.node_order();
-            nodes.remove(0);
-
-            let mut included = subgraph.included().clone();
-            for h in exts.included_iter() {
-                included.sub(h);
-            }
-
-            ref_self.contract_edge_for_spanning(nodes, included)
-        } else {
-            vec![]
+        if subgraph.is_empty() {
+            return vec![];
         }
+        let mut visited_edges: SuBitGraph = self.empty_subgraph();
+
+        let mut nodes = vec![];
+
+        // Iterate over all edges in the subgraph
+        for hedge_index in subgraph.included_iter() {
+            if !visited_edges.includes(&hedge_index) {
+                // Perform DFS to find all reachable edges from this edge
+
+                //
+                let root_node = self.node_id(hedge_index);
+                let tree =
+                    SimpleTraversalTree::depth_first_traverse(self, subgraph, &root_node, None)
+                        .unwrap();
+
+                let reachable_edges = tree.covers(subgraph);
+
+                visited_edges.union_with(&reachable_edges);
+                let mut nodes_of_tree = tree.node_order();
+                nodes_of_tree.remove(0);
+                nodes.extend(nodes_of_tree);
+            }
+        }
+
+        let mut included = subgraph.included().clone();
+        for h in exts.included_iter() {
+            included.sub(h);
+        }
+
+        ref_self.contract_edge_for_spanning(nodes, included)
     }
 
     fn contract_edge_for_spanning<S>(self, mut nodes: Vec<NodeIndex>, mut subgraph: S) -> Vec<S>
@@ -2188,9 +2208,9 @@ impl<E, V, H, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, H, N> {
     pub fn all_spinneys_rec(&self, spinneys: &mut AHashSet<HedgeNode>, cycle_sums: Vec<HedgeNode>) {
         let _len = spinneys.len();
 
-        let mut pset = PowersetIterator::new(cycle_sums.len() as u8);
+        // let mut pset:Su = PowersetIterator::new(cycle_sums.len() as u8);
 
-        pset.next(); //Skip empty set
+        // pset.next(); //Skip empty set
 
         for (ci, cj) in cycle_sums.iter().tuple_combinations() {
             let _union = ci.internal_graph.union(&cj.internal_graph);
@@ -2204,7 +2224,7 @@ impl<E, V, H, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, H, N> {
     ) -> AHashMap<InternalSubGraph, Vec<(InternalSubGraph, Option<InternalSubGraph>)>> {
         let basis_cycles = self.cycle_basis().0;
 
-        let mut all_combinations = PowersetIterator::new(basis_cycles.len() as u8);
+        let mut all_combinations = PowersetIterator::<usize>::new(basis_cycles.len() as u8);
         all_combinations.next(); //Skip empty set
 
         let mut spinneys: AHashMap<
@@ -2217,7 +2237,7 @@ impl<E, V, H, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, H, N> {
             let mut base_cycle: InternalSubGraph = self.empty_subgraph();
 
             for i in p.included_iter() {
-                base_cycle.sym_diff_with(&basis_cycles[i.0].clone().internal_graph(self));
+                base_cycle.sym_diff_with(&basis_cycles[i].clone().internal_graph(self));
             }
 
             cycles.push(base_cycle);
@@ -2243,14 +2263,14 @@ impl<E, V, H, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, H, N> {
         let mut spinneys = AHashSet::new();
         let cycles = self.all_cycles();
 
-        let mut pset = PowersetIterator::new(cycles.len() as u8);
+        let mut pset = PowersetIterator::<usize>::new(cycles.len() as u8);
         pset.next(); //Skip empty set
 
         for p in pset {
             let mut union: InternalSubGraph = self.empty_subgraph();
 
             for i in p.included_iter() {
-                union.union_with(&cycles[i.0].clone().internal_graph(self));
+                union.union_with(&cycles[i].clone().internal_graph(self));
             }
 
             spinneys.insert(union);

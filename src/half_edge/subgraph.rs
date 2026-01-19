@@ -90,17 +90,17 @@ pub trait SubSetOps<ID = Hedge, Other: SubSetLike<ID> = Self>: SubSetLike<ID> {
         filter_map: &impl Fn(Self) -> Option<Self>,
     ) -> Result<AHashSet<Self>, TryFromIntError> {
         let mut s = AHashSet::new();
-        let mut pset = PowersetIterator::new(set.len().try_into()?);
+        let mut pset = PowersetIterator::<usize>::new(set.len().try_into()?);
 
         pset.next().unwrap(); //Skip the empty set
 
         for i in pset {
             let mut ones = i.included_iter();
 
-            let mut union = set[ones.next().unwrap().0].clone();
+            let mut union = set[ones.next().unwrap()].clone();
 
             for o in ones {
-                op(&mut union, &set[o.0]);
+                op(&mut union, &set[o]);
             }
 
             if let Some(union) = filter_map(union) {
