@@ -26,7 +26,7 @@ fn test_spanning_trees_of_tree() {
           3 -> 4
     })
     .unwrap();
-    let trees = tree.all_spanning_trees(&tree.full_filter());
+    let trees = tree.all_spanning_forests_of(&tree.full_filter());
 
     for t in &trees {
         println!("{}", tree.dot(t))

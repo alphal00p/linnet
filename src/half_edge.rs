@@ -75,7 +75,7 @@
 //!     accessing edge/node data.
 //!   - **Analysis**: Checking connectivity (`is_connected`), counting components
 //!     (`count_connected_components`), finding cycle bases (`cycle_basis`), spanning trees
-//!     (`all_spanning_trees`), and calculating cyclotomatic numbers.
+//!     (`all_spanning_forests_of`), and calculating cyclotomatic numbers.
 //!   - **Serialization/Visualization**: Generating DOT format strings for graph visualization.
 //!
 //! This module forms the backbone of the `linnet` library, enabling complex graph
@@ -1959,7 +1959,7 @@ impl<E, V, H, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, H, N> {
 impl<E, V, H, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, H, N> {
     ///Gives all subgraphs corresponding to all the spanning trees of the graph
     ///Winter, Pawel. “An Algorithm for the Enumeration of Spanning Trees.” BIT Numerical Mathematics 26, no. 1 (March 1, 1986): 44–62. https://doi.org/10.1007/BF01939361.
-    pub fn all_spanning_trees<S: SubGraphLike>(&self, subgraph: &S) -> Vec<S::Base>
+    pub fn all_spanning_forests_of<S: SubGraphLike>(&self, subgraph: &S) -> Vec<S::Base>
     where
         for<'a> N::OpStorage<&'a V>: Clone,
         S::Base: SubSetLike<Base = S::Base>

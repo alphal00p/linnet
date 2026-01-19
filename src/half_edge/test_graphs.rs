@@ -18,7 +18,7 @@ fn test_mobius_ladder_6() -> TestResult {
 fn test_complete_5() -> TestResult {
     println!("{}", TestGraph::Complete(5).build().0.base_dot());
     let complete = TestGraph::Complete(5).build().0;
-    let trees = complete.all_spanning_trees(&complete.full_filter());
+    let trees = complete.all_spanning_forests_of(&complete.full_filter());
 
     // for t in &trees {
     //     println!("{}", complete.dot(t))
@@ -40,7 +40,7 @@ fn test_cycle_5() -> TestResult {
     println!("{}", TestGraph::Cycle(5).build().0.base_dot());
 
     let cycle = TestGraph::Cycle(5).build();
-    let trees = cycle.0.all_spanning_trees(&cycle.0.full_filter());
+    let trees = cycle.0.all_spanning_forests_of(&cycle.0.full_filter());
 
     // for t in &trees {
     //     println!("{}", cycle.0.dot(t))
