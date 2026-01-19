@@ -419,6 +419,55 @@ impl<ID: IndexLike> SubSetLike<ID> for SubSet<ID> {
         base62_string
     }
 
+    fn from_base62(label: &str, size: usize) -> Option<Self> {
+        let label = label.trim();
+        if label.is_empty() {
+            return None;
+        }
+
+        let mut digits: Vec<u8> = Vec::with_capacity(label.len());
+        for byte in label.as_bytes() {
+            let digit = BASE62_ALPHABET.iter().position(|&b| b == *byte)? as u8;
+            digits.push(digit);
+        }
+
+        while digits.len() > 1 && digits.first() == Some(&0) {
+            digits.remove(0);
+        }
+
+        let mut bits = Vec::new();
+        while digits.iter().any(|&d| d != 0) {
+            let mut carry = 0u8;
+            let mut next = Vec::with_capacity(digits.len());
+            for digit in digits {
+                let value = (carry as u16) * 62 + digit as u16;
+                let next_digit = (value / 2) as u8;
+                carry = (value % 2) as u8;
+                if !next.is_empty() || next_digit != 0 {
+                    next.push(next_digit);
+                }
+            }
+            bits.push(carry == 1);
+            digits = next;
+        }
+
+        if bits.len() > size {
+            return None;
+        }
+
+        let mut set = bitvec![usize, Lsb0; 0; size];
+        for (index, bit) in bits.into_iter().enumerate() {
+            if bit {
+                set.set(index, true);
+            }
+        }
+
+        Some(Self {
+            set,
+            id: PhantomData,
+        })
+    }
+
     fn is_empty(&self) -> bool {
         self.n_included() == 0
     }
@@ -465,5 +514,43 @@ impl SubGraphOps for SuBitGraph {
             set: !self.set.clone(),
             id: PhantomData,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::half_edge::involution::Hedge;
+    use crate::half_edge::subgraph::SubSetLike;
+
+    #[test]
+    fn base62_roundtrip() {
+        let size = 128;
+        let mut subset = SuBitGraph::empty(size);
+        subset.add(Hedge(0));
+        subset.add(Hedge(1));
+        subset.add(Hedge(2));
+        subset.add(Hedge(31));
+        subset.add(Hedge(63));
+        subset.add(Hedge(64));
+        subset.add(Hedge(127));
+
+        let label = subset.string_label();
+        let parsed = <SuBitGraph as SubSetLike>::from_base62(&label, size).unwrap();
+        assert_eq!(subset, parsed);
+
+        let empty_label = SuBitGraph::empty(size).string_label();
+        let empty_parsed = <SuBitGraph as SubSetLike>::from_base62(&empty_label, size).unwrap();
+        assert!(empty_parsed.is_empty());
+
+        let a = "rt12UAag4";
+        assert_eq!(SuBitGraph::from_base62(&a, 1000).unwrap().n_included(), 27);
+        assert_eq!(
+            SuBitGraph::from_base62(&a, 1000)
+                .unwrap()
+                .string_label()
+                .as_str(),
+            a
+        )
     }
 }

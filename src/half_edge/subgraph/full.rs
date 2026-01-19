@@ -196,6 +196,12 @@ impl From<Range<Hedge>> for RangeHedgeIter {
     }
 }
 
+impl DoubleEndedIterator for RangeHedgeIter {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        self.iter.next_back().map(Hedge)
+    }
+}
+
 impl Iterator for RangeHedgeIter {
     type Item = Hedge;
 
@@ -265,6 +271,15 @@ impl SubSetLike<Hedge> for FullOrEmpty {
             "∅".into()
         } else {
             "full".into()
+        }
+    }
+    fn from_base62(label: &str, size: usize) -> Option<Self> {
+        if label.is_empty() {
+            Some(FullOrEmpty::empty(size))
+        } else {
+            Some(FullOrEmpty {
+                size: size as isize,
+            })
         }
     }
     fn is_empty(&self) -> bool {

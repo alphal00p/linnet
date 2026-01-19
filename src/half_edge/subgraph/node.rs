@@ -137,6 +137,14 @@ impl SubSetLike<Hedge> for HedgeNode {
             hairs: SuBitGraph::empty(size),
         }
     }
+
+    fn from_base62(label: &str, size: usize) -> Option<Self> {
+        let hairs = SuBitGraph::from_base62(label, size)?;
+        Some(HedgeNode {
+            internal_graph: InternalSubGraph::empty(size),
+            hairs,
+        })
+    }
 }
 impl Inclusion<Range<Hedge>> for HedgeNode {
     fn includes(&self, other: &Range<Hedge>) -> bool {

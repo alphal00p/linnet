@@ -176,6 +176,14 @@ impl SubSetLike for ContractedSubGraph {
             allhedges: SuBitGraph::empty(size),
         }
     }
+
+    fn from_base62(label: &str, size: usize) -> Option<Self> {
+        let allhedges = SuBitGraph::from_base62(label, size)?;
+        Some(Self {
+            internal_graph: InternalSubGraph::empty(size),
+            allhedges,
+        })
+    }
 }
 
 impl SubGraphOps for ContractedSubGraph {

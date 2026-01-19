@@ -251,6 +251,13 @@ impl SubSetLike<Hedge> for InternalSubGraph {
     fn string_label(&self) -> String {
         self.filter.string_label()
     }
+    fn from_base62(label: &str, size: usize) -> Option<Self> {
+        let filter = SuBitGraph::from_base62(label, size)?;
+        Some(InternalSubGraph {
+            filter,
+            loopcount: None,
+        })
+    }
     fn is_empty(&self) -> bool {
         self.filter.is_empty()
     }

@@ -433,7 +433,7 @@ pub trait SubSetLike<ID = Hedge>:
     + Inclusion<ID>
 {
     type Base: SubSetLike<ID>;
-    type BaseIter<'a>: Iterator<Item = ID>
+    type BaseIter<'a>: Iterator<Item = ID> + DoubleEndedIterator
     where
         Self: 'a,
         ID: 'a;
@@ -458,7 +458,9 @@ pub trait SubSetLike<ID = Hedge>:
     fn join_mut(&mut self, other: Self);
 
     fn string_label(&self) -> String;
+    fn from_base62(label: &str, size: usize) -> Option<Self>;
     fn included_iter(&self) -> Self::BaseIter<'_>;
+    // fn included_iter_(&self) -> Self::BaseIter<'_>;
     // SubGraphHedgeIter {
     //     SubGraphHedgeIter {
     //         iter: self.included().iter_ones().map(Hedge),

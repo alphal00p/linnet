@@ -148,6 +148,12 @@ impl<T> Iterator for EmptyIter<T> {
     }
 }
 
+impl<T> DoubleEndedIterator for EmptyIter<T> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        None
+    }
+}
+
 impl SubGraphLike for Empty {
     fn nedges<E, V, H, N: NodeStorageOps<NodeData = V>>(
         &self,
@@ -191,6 +197,14 @@ impl SubSetLike for Empty {
 
     fn string_label(&self) -> String {
         "∅".into()
+    }
+    fn from_base62(label: &str, size: usize) -> Option<Self> {
+        // let subset = SuBitGraph::from_base62(label, size)?;
+        if label.is_empty() {
+            Some(Empty::empty(size))
+        } else {
+            None
+        }
     }
     fn is_empty(&self) -> bool {
         true
