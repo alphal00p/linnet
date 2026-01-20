@@ -68,9 +68,11 @@ impl<ID> SubSet<ID> {
         self.set.push(val);
     }
 
-    pub fn from_usize(num: usize) -> Self {
+    pub fn from_usize(num: usize, size: usize) -> Self {
+        let mut set = BitVec::from_element(num);
+        set.truncate(size);
         Self {
-            set: BitVec::from_element(num),
+            set,
             id: std::marker::PhantomData,
         }
     }

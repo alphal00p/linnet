@@ -61,6 +61,16 @@ pub trait Shiftable {
     ) -> bool;
 }
 
+pub trait HasPointConstraint {
+    fn point_constraint(&self) -> &PointConstraint;
+}
+
+impl HasPointConstraint for PointConstraint {
+    fn point_constraint(&self) -> &PointConstraint {
+        self
+    }
+}
+
 fn apply_directional_shift(shift_val: f64, direction: ShiftDirection) -> f64 {
     match direction {
         ShiftDirection::Any => shift_val,
@@ -314,6 +324,68 @@ impl LayoutNeighbor {
     }
 }
 
+pub struct PinnedLayoutNeighbor;
+
+impl<'a, E, V, H, N> Neighbor<LayoutState<'a, E, V, H, N>> for PinnedLayoutNeighbor
+where
+    E: Shiftable + HasPointConstraint,
+    V: Shiftable + HasPointConstraint,
+    N: NodeStorageOps<NodeData = V> + Clone,
+{
+    fn propose(
+        &self,
+        s: &LayoutState<'a, E, V, H, N>,
+        rng: &mut impl Rng,
+        step: f64,
+        _temp: f64,
+    ) -> LayoutState<'a, E, V, H, N> {
+        let mut st = s.clone();
+        let n_v: NodeIndex = st.vertex_points.len();
+        let n_e: EdgeIndex = st.edge_points.len();
+        let step_range: Uniform<f64> = Uniform::try_from(-step..step).unwrap();
+
+        let mut didnothing = true;
+        while didnothing {
+            match rng.gen_range(0..100) {
+                0..=69 => {
+                    // single-DOF
+                    if rng.gen_bool(0.6) {
+                        let v = NodeIndex(rng.gen_range(0..n_v.0));
+
+                        let shift = LayoutNeighbor::axis_shift(&step_range, rng);
+                        let changed = apply_vertex_shift_with_groups(&mut st, v, shift);
+                        didnothing = !changed;
+                    } else {
+                        let e = EdgeIndex(rng.gen_range(0..n_e.0));
+                        let shift = LayoutNeighbor::axis_shift(&step_range, rng);
+                        let changed = apply_edge_shift_with_groups(&mut st, e, shift);
+                        didnothing = !changed;
+                    }
+                }
+                _ => {
+                    // vertex block
+                    let v = NodeIndex(rng.gen_range(0..n_v.0));
+
+                    let shift = LayoutNeighbor::diagonal_shift(&step_range, rng, 0.6);
+
+                    // Cache whether a vertex move succeeded so we can mark it.
+                    let mut changed_any = apply_vertex_shift_with_groups(&mut st, v, shift);
+
+                    st.graph.iter_crown(v).for_each(|a| {
+                        let index = st.graph[&a];
+
+                        // Propagate to incident edge control points; any change gets recorded.
+                        changed_any |= apply_edge_shift_with_groups(&mut st, index, shift);
+                    });
+
+                    didnothing = !changed_any;
+                }
+            }
+        }
+        st
+    }
+}
+
 fn apply_vertex_shift<
     'a,
     E: Shiftable,
@@ -340,6 +412,143 @@ fn apply_edge_shift<'a, E: Shiftable, V: Shiftable, H, N: NodeStorageOps<NodeDat
     let changed = state.graph[idx].shift(shift, idx, &mut state.edge_points);
     if changed {
         state.mark_edge_changed(idx);
+    }
+    changed
+}
+
+fn is_group_reference(constraints: &PointConstraint, reference: usize) -> bool {
+    matches!(constraints.x, Constraint::Grouped(r, _) if r == reference)
+        || matches!(constraints.y, Constraint::Grouped(r, _) if r == reference)
+}
+
+fn propagate_grouped_nodes<'a, E, V, H, N>(
+    state: &mut LayoutState<'a, E, V, H, N>,
+    reference: NodeIndex,
+) -> bool
+where
+    V: HasPointConstraint,
+    N: NodeStorageOps<NodeData = V> + Clone,
+{
+    let graph = state.graph;
+    let reference_point = state.vertex_points[reference];
+    let reference_id = reference.0;
+    let mut changed_any = false;
+    let len = state.vertex_points.len().0;
+
+    for i in 0..len {
+        if i == reference_id {
+            continue;
+        }
+        let idx = NodeIndex(i);
+        let constraints = graph[idx].point_constraint();
+        let mut changed = false;
+
+        if matches!(constraints.x, Constraint::Grouped(r, _) if r == reference_id) {
+            if state.vertex_points[idx].x != reference_point.x {
+                state.vertex_points[idx].x = reference_point.x;
+                changed = true;
+            }
+        }
+        if matches!(constraints.y, Constraint::Grouped(r, _) if r == reference_id) {
+            if state.vertex_points[idx].y != reference_point.y {
+                state.vertex_points[idx].y = reference_point.y;
+                changed = true;
+            }
+        }
+
+        if changed {
+            state.mark_node_changed(idx);
+            changed_any = true;
+        }
+    }
+
+    changed_any
+}
+
+fn propagate_grouped_edges<'a, E, V, H, N>(
+    state: &mut LayoutState<'a, E, V, H, N>,
+    reference: EdgeIndex,
+) -> bool
+where
+    E: HasPointConstraint,
+    N: NodeStorageOps<NodeData = V> + Clone,
+{
+    let graph = state.graph;
+    let reference_point = state.edge_points[reference];
+    let reference_id = reference.0;
+    let mut changed_any = false;
+    let len = state.edge_points.len().0;
+
+    for i in 0..len {
+        if i == reference_id {
+            continue;
+        }
+        let idx = EdgeIndex(i);
+        let constraints = graph[idx].point_constraint();
+        let mut changed = false;
+
+        if matches!(constraints.x, Constraint::Grouped(r, _) if r == reference_id) {
+            if state.edge_points[idx].x != reference_point.x {
+                state.edge_points[idx].x = reference_point.x;
+                changed = true;
+            }
+        }
+        if matches!(constraints.y, Constraint::Grouped(r, _) if r == reference_id) {
+            if state.edge_points[idx].y != reference_point.y {
+                state.edge_points[idx].y = reference_point.y;
+                changed = true;
+            }
+        }
+
+        if changed {
+            state.mark_edge_changed(idx);
+            changed_any = true;
+        }
+    }
+
+    changed_any
+}
+
+fn apply_vertex_shift_with_groups<
+    'a,
+    E: Shiftable + HasPointConstraint,
+    V: Shiftable + HasPointConstraint,
+    H,
+    N: NodeStorageOps<NodeData = V> + Clone,
+>(
+    state: &mut LayoutState<'a, E, V, H, N>,
+    idx: NodeIndex,
+    shift: Vector2<f64>,
+) -> bool {
+    let changed = state.graph[idx].shift(shift, idx, &mut state.vertex_points);
+    if changed {
+        state.mark_node_changed(idx);
+        let constraints = state.graph[idx].point_constraint();
+        if is_group_reference(constraints, idx.0) {
+            return propagate_grouped_nodes(state, idx) || changed;
+        }
+    }
+    changed
+}
+
+fn apply_edge_shift_with_groups<
+    'a,
+    E: Shiftable + HasPointConstraint,
+    V: Shiftable + HasPointConstraint,
+    H,
+    N: NodeStorageOps<NodeData = V> + Clone,
+>(
+    state: &mut LayoutState<'a, E, V, H, N>,
+    idx: EdgeIndex,
+    shift: Vector2<f64>,
+) -> bool {
+    let changed = state.graph[idx].shift(shift, idx, &mut state.edge_points);
+    if changed {
+        state.mark_edge_changed(idx);
+        let constraints = state.graph[idx].point_constraint();
+        if is_group_reference(constraints, idx.0) {
+            return propagate_grouped_edges(state, idx) || changed;
+        }
     }
     changed
 }

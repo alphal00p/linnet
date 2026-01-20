@@ -148,6 +148,7 @@ pub struct PowersetIterator<ID = Hedge> {
     /// The current subset index, ranging from 0 to `size - 1`.
     /// Each bit in `current` corresponds to an element's presence in the subset.
     current: usize,
+    len: u8,
     id: std::marker::PhantomData<ID>,
 }
 
@@ -156,6 +157,7 @@ impl<ID> PowersetIterator<ID> {
         PowersetIterator {
             size: 1 << n_elements,
             current: 0,
+            len: n_elements,
             id: std::marker::PhantomData,
         }
     }
@@ -166,7 +168,7 @@ impl<ID> Iterator for PowersetIterator<ID> {
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.current < self.size {
-            let out = SubSet::from_usize(self.current);
+            let out = SubSet::from_usize(self.current, self.len as usize);
             self.current += 1;
             Some(out)
         } else {

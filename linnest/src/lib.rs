@@ -9,8 +9,8 @@ use linnet::{
         layout::{
             simulatedanneale::{anneal, GeoSchedule, SAConfig},
             spring::{
-                Constraint, LayoutNeighbor, ParamTuning, PointConstraint, ShiftDirection,
-                Shiftable, SpringChargeEnergy,
+                Constraint, HasPointConstraint, ParamTuning, PinnedLayoutNeighbor, PointConstraint,
+                ShiftDirection, Shiftable, SpringChargeEnergy,
             },
         },
         nodestore::NodeStorageOps,
@@ -344,6 +344,12 @@ impl Shiftable for TypstNode {
     }
 }
 
+impl HasPointConstraint for TypstNode {
+    fn point_constraint(&self) -> &PointConstraint {
+        &self.constraints
+    }
+}
+
 impl TypstNode {
     /// Convert back to DotVertexData
     fn to_dot(&self) -> DotVertexData {
@@ -443,6 +449,12 @@ impl Shiftable for TypstEdge {
         values: &mut R,
     ) -> bool {
         self.constraints.shift(shift, index, values)
+    }
+}
+
+impl HasPointConstraint for TypstEdge {
+    fn point_constraint(&self) -> &PointConstraint {
+        &self.constraints
     }
 }
 impl Default for TypstEdge {
@@ -1171,12 +1183,15 @@ impl TypstGraph {
                 step: self.layout_config.step,
                 seed: self.layout_config.seed,
             },
-            &LayoutNeighbor,
+            &PinnedLayoutNeighbor,
             &energy,
             &mut schedule,
         );
 
-        self.update_positions(out.vertex_points, out.edge_points);
+        let mut vertex_points = out.vertex_points;
+        let mut edge_points = out.edge_points;
+        self.apply_grouped_constraints(&mut vertex_points, &mut edge_points);
+        self.update_positions(vertex_points, edge_points);
     }
 
     fn tree_init_cfg(&self, tune: &ParamTuning) -> (TreeInitCfg, SpringChargeEnergy) {
@@ -1195,6 +1210,44 @@ impl TypstGraph {
             },
             energycfg,
         )
+    }
+
+    fn apply_grouped_constraints(
+        &self,
+        pos_v: &mut NodeVec<Point2<f64>>,
+        pos_e: &mut EdgeVec<Point2<f64>>,
+    ) {
+        let node_len = pos_v.len().0;
+        for i in 0..node_len {
+            let idx = NodeIndex(i);
+            let constraints = &self[idx].constraints;
+            if let Constraint::Grouped(reference, _) = constraints.x {
+                if reference < node_len && reference != i {
+                    pos_v[idx].x = pos_v[NodeIndex(reference)].x;
+                }
+            }
+            if let Constraint::Grouped(reference, _) = constraints.y {
+                if reference < node_len && reference != i {
+                    pos_v[idx].y = pos_v[NodeIndex(reference)].y;
+                }
+            }
+        }
+
+        let edge_len = pos_e.len().0;
+        for i in 0..edge_len {
+            let idx = EdgeIndex(i);
+            let constraints = &self[idx].constraints;
+            if let Constraint::Grouped(reference, _) = constraints.x {
+                if reference < edge_len && reference != i {
+                    pos_e[idx].x = pos_e[EdgeIndex(reference)].x;
+                }
+            }
+            if let Constraint::Grouped(reference, _) = constraints.y {
+                if reference < edge_len && reference != i {
+                    pos_e[idx].y = pos_e[EdgeIndex(reference)].y;
+                }
+            }
+        }
     }
 
     pub fn update_positions(&mut self, node: NodeVec<Point2<f64>>, edge: EdgeVec<Point2<f64>>) {
@@ -1851,6 +1904,7 @@ impl TypstGraph {
             }
         }
 
+        self.apply_grouped_constraints(&mut pos_v, &mut pos_e);
         (pos_v, pos_e)
     }
 
