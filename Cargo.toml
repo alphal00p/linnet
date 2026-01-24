@@ -15,11 +15,11 @@ path = "src/lib.rs"
 [profile.bench]
 debug = true
 opt-level = 3
-lto = true
+lto = false
 
 [profile.release]
 lto = true          # Enable link-time optimization
-strip = true        # Strip symbols from binary*
+strip = false        # Strip symbols from binary*
 opt-level = 'z'     # Optimize for size
 codegen-units = 1   # Reduce number of codegen units to increase optimizations
 panic = 'abort'     # Abort on panic
@@ -33,6 +33,14 @@ harness = false
 
 [[bench]]
 name = "layout_small"
+harness = false
+
+[[bench]]
+name = "layout_gl303"
+harness = false
+
+[[bench]]
+name = "energy_gl303"
 harness = false
 
 
@@ -64,6 +72,7 @@ serde = ["dep:serde", "bitvec/serde"]
 symbolica = ["dep:symbolica"]
 bincode = ["dep:bincode", "serde"]
 drawing = ["dep:cgmath"]
+energy_trace = []
 default = ["serde"]
 # layout = ["dep:argmin"]
 

@@ -1,19 +1,21 @@
 pub mod geom;
 use cgmath::{EuclideanSpace, Point2, Rad, Vector2, Zero};
 use figment::{providers::Serialized, Figment, Profile};
+use linnet::half_edge::swap::Swap;
 #[cfg(any(test, target_arch = "wasm32"))]
 use linnet::parser::set::DotGraphSet;
 use linnet::{
     half_edge::{
         involution::{EdgeData, EdgeIndex, EdgeVec, Flow, Hedge, HedgePair, Involution},
         layout::{
+            force::{force_directed_layout, ForceLayoutConfig},
             simulatedanneale::{anneal, GeoSchedule, SAConfig},
             spring::{
-                Constraint, HasPointConstraint, ParamTuning, PinnedLayoutNeighbor, PointConstraint,
-                ShiftDirection, Shiftable, SpringChargeEnergy,
+                Constraint, HasPointConstraint, LayoutState, ParamTuning, PinnedLayoutNeighbor,
+                PointConstraint, ShiftDirection, Shiftable, SpringChargeEnergy,
             },
         },
-        nodestore::NodeStorageOps,
+        nodestore::{NodeStorageOps, NodeStorageVec},
         subgraph::{Inclusion, SuBitGraph, SubSetLike, SubSetOps},
         tree::SimpleTraversalTree,
         EdgeAccessors, HedgeGraph, NodeIndex, NodeVec,
@@ -731,6 +733,17 @@ pub struct TreeInitCfg {
     pub dx: f64, // ≈ 0.9 * L
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum LayoutAlgo {
+    Anneal,
+    Force,
+}
+
+fn default_layout_algo() -> LayoutAlgo {
+    LayoutAlgo::Anneal
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct LayoutConfig {
     #[serde(default = "default_viewport_w", deserialize_with = "deserialize_f64")]
@@ -749,8 +762,22 @@ struct LayoutConfig {
     seed: u64,
     #[serde(default = "default_delta", deserialize_with = "deserialize_f64")]
     delta: f64,
+    #[serde(
+        default = "default_directional_force",
+        deserialize_with = "deserialize_f64"
+    )]
+    directional_force: f64,
+    #[serde(default = "default_z_spring", deserialize_with = "deserialize_f64")]
+    z_spring: f64,
+    #[serde(
+        default = "default_z_spring_growth",
+        deserialize_with = "deserialize_f64"
+    )]
+    z_spring_growth: f64,
     #[serde(default = "default_incremental_energy")]
     incremental_energy: bool,
+    #[serde(default = "default_layout_algo")]
+    layout_algo: LayoutAlgo,
     #[serde(default, flatten)]
     spring: SpringConfig,
     #[serde(default, flatten)]
@@ -768,7 +795,11 @@ impl Default for LayoutConfig {
             temp: default_temp(),
             seed: default_seed(),
             delta: default_delta(),
+            directional_force: default_directional_force(),
+            z_spring: default_z_spring(),
+            z_spring_growth: default_z_spring_growth(),
             incremental_energy: default_incremental_energy(),
+            layout_algo: default_layout_algo(),
             spring: SpringConfig::default(),
             schedule: ScheduleConfig::default(),
         }
@@ -797,6 +828,16 @@ impl LayoutConfig {
         insert!("temp", self.temp);
         insert!("seed", self.seed);
         insert!("delta", self.delta);
+        insert!("directional_force", self.directional_force);
+        insert!("z_spring", self.z_spring);
+        insert!("z_spring_growth", self.z_spring_growth);
+        insert!(
+            "layout_algo",
+            match self.layout_algo {
+                LayoutAlgo::Anneal => "anneal",
+                LayoutAlgo::Force => "force",
+            }
+        );
         global_data.statements.insert(
             "incremental_energy".to_string(),
             self.incremental_energy.to_string(),
@@ -854,8 +895,24 @@ fn default_delta() -> f64 {
     0.4
 }
 
+fn default_directional_force() -> f64 {
+    0.0
+}
+
+fn default_z_spring() -> f64 {
+    0.0
+}
+
+fn default_z_spring_growth() -> f64 {
+    1.0
+}
+
 fn default_incremental_energy() -> bool {
     true
+}
+
+fn default_crossing_penalty() -> f64 {
+    0.0
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -877,6 +934,11 @@ struct SpringConfig {
     gamma_ee: f64,
     #[serde(default = "default_g_center", deserialize_with = "deserialize_f64")]
     g_center: f64,
+    #[serde(
+        default = "default_crossing_penalty",
+        deserialize_with = "deserialize_f64"
+    )]
+    crossing_penalty: f64,
     #[serde(default = "default_eps", deserialize_with = "deserialize_f64")]
     eps: f64,
 }
@@ -891,6 +953,7 @@ impl Default for SpringConfig {
             gamma_ev: default_gamma_ev(),
             gamma_ee: default_gamma_ee(),
             g_center: default_g_center(),
+            crossing_penalty: default_crossing_penalty(),
             eps: default_eps(),
         }
     }
@@ -906,6 +969,7 @@ impl From<&SpringConfig> for ParamTuning {
             gamma_ev: cfg.gamma_ev,
             gamma_ee: cfg.gamma_ee,
             g_center: cfg.g_center,
+            crossing_penalty: cfg.crossing_penalty,
             eps: cfg.eps,
         }
     }
@@ -1165,33 +1229,75 @@ where
 impl TypstGraph {
     pub fn layout(&mut self) {
         let spring_params = ParamTuning::from(&self.layout_config.spring);
-        let mut schedule = GeoSchedule::from(&self.layout_config.schedule);
 
+        let (tree_cfg, energy) = self.tree_init_cfg(&spring_params);
+        let (pos_n, pos_e) = self.new_positions(tree_cfg);
+        let mut state = self.graph.new_layout_state(
+            pos_n,
+            pos_e,
+            self.layout_config.delta,
+            self.layout_config.directional_force,
+            self.layout_config.incremental_energy,
+        );
+
+        let (mut vertex_points, mut edge_points) = match self.layout_config.layout_algo {
+            LayoutAlgo::Anneal => {
+                let mut schedule = GeoSchedule::from(&self.layout_config.schedule);
+                let (out, _stats) = anneal::<_, _, _, _, SmallRng>(
+                    state,
+                    SAConfig {
+                        temp: self.layout_config.temp,
+                        step: self.layout_config.step,
+                        seed: self.layout_config.seed,
+                    },
+                    &PinnedLayoutNeighbor,
+                    &energy,
+                    &mut schedule,
+                );
+                (out.vertex_points, out.edge_points)
+            }
+            LayoutAlgo::Force => {
+                force_directed_layout(
+                    &mut state,
+                    &energy,
+                    ForceLayoutConfig {
+                        steps: self.layout_config.schedule.steps,
+                        epochs: self.layout_config.schedule.epochs,
+                        step: self.layout_config.step,
+                        cool: self.layout_config.schedule.cool,
+                        max_delta: self.layout_config.delta,
+                        early_tol: self.layout_config.schedule.early_tol,
+                        seed: self.layout_config.seed,
+                        z_spring: self.layout_config.z_spring,
+                        z_spring_growth: self.layout_config.z_spring_growth,
+                    },
+                );
+                (state.vertex_points, state.edge_points)
+            }
+        };
+
+        self.apply_grouped_constraints(&mut vertex_points, &mut edge_points);
+        self.update_positions(vertex_points, edge_points);
+    }
+
+    pub fn layout_energy_state(
+        &self,
+    ) -> (
+        LayoutState<'_, TypstEdge, TypstNode, TypstHedge, NodeStorageVec<TypstNode>>,
+        SpringChargeEnergy,
+    ) {
+        let spring_params = ParamTuning::from(&self.layout_config.spring);
         let (tree_cfg, energy) = self.tree_init_cfg(&spring_params);
         let (pos_n, pos_e) = self.new_positions(tree_cfg);
         let state = self.graph.new_layout_state(
             pos_n,
             pos_e,
             self.layout_config.delta,
+            self.layout_config.directional_force,
             self.layout_config.incremental_energy,
         );
 
-        let (out, _stats) = anneal::<_, _, _, _, SmallRng>(
-            state,
-            SAConfig {
-                temp: self.layout_config.temp,
-                step: self.layout_config.step,
-                seed: self.layout_config.seed,
-            },
-            &PinnedLayoutNeighbor,
-            &energy,
-            &mut schedule,
-        );
-
-        let mut vertex_points = out.vertex_points;
-        let mut edge_points = out.edge_points;
-        self.apply_grouped_constraints(&mut vertex_points, &mut edge_points);
-        self.update_positions(vertex_points, edge_points);
+        (state, energy)
     }
 
     fn tree_init_cfg(&self, tune: &ParamTuning) -> (TreeInitCfg, SpringChargeEnergy) {

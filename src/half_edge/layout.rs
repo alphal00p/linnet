@@ -4,6 +4,8 @@ pub mod spring;
 
 pub mod simulatedanneale;
 
+pub mod force;
+
 impl<E, V, H> HedgeGraph<E, V, H, NodeStorageVec<V>> {
     // pub fn layout(
     //     self,
