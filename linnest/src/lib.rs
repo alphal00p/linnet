@@ -1,5 +1,5 @@
 pub mod geom;
-use cgmath::{EuclideanSpace, Point2, Rad, Vector2, Zero};
+use cgmath::{EuclideanSpace, InnerSpace, Point2, Rad, Vector2, Zero};
 use figment::{providers::Serialized, Figment, Profile};
 use linnet::half_edge::swap::Swap;
 #[cfg(any(test, target_arch = "wasm32"))]
@@ -432,12 +432,15 @@ impl TypstNode {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct TypstEdge {
-    from: Option<NodeIndex>,
-    to: Option<NodeIndex>,
+    from: Option<(NodeIndex,Hedge)>,
+    to: Option<(NodeIndex,Hedge)>,
     bend: Result<Rad<f64>, GeomError>,
     pos: Point2<f64>,
+    label_pos: Option<Point2<f64>>,
+    label_angle: Option<f64>,
     eval_sink: Option<String>,
     eval_source: Option<String>,
+    eval_label: Option<String>,
     mom_eval: Option<String>,
     shift: Option<Vector2<f64>>,
     statements: BTreeMap<String, String>,
@@ -466,7 +469,10 @@ impl Default for TypstEdge {
             to: None,
             bend: Err(GeomError::NotComputed),
             pos: Point2::origin(),
+            label_pos: None,
+            label_angle: None,
             shift: None,
+            eval_label: None,
             eval_sink: None,
             eval_source: None,
             mom_eval: None,
@@ -488,6 +494,19 @@ impl TypstEdge {
         data.map(|d| {
             let shift =
                 TypstNode::parse_position(&d.statements, "shift").map(|(x, y)| Vector2::new(x, y));
+
+            let label_pos =
+                TypstNode::parse_position(&d.statements, "label_pos").map(|(x, y)| {
+                    Point2::new(x, y)
+                });
+            let label_angle = d
+                .statements
+                .get("label_angle")
+                .and_then(|value| {
+                    let unquoted = value.trim().trim_matches('"');
+                    let cleaned = unquoted.trim().trim_end_matches("rad");
+                    cleaned.trim().parse::<f64>().ok()
+                });
 
             let mut eval_sink: Option<String> = d.get("eval_sink").transpose().unwrap();
 
@@ -513,6 +532,18 @@ impl TypstEdge {
                 expand_template(clean_template, &d.statements)
             });
 
+            let mut eval_label: Option<String> = d.get("eval_label").transpose().unwrap();
+
+            // Apply template expansion and clean quotes for eval
+            eval_label = eval_label.map(|template| {
+                let clean_template = template
+                    .strip_prefix('"')
+                    .unwrap_or(&template)
+                    .strip_suffix('"')
+                    .unwrap_or(&template);
+                expand_template(clean_template, &d.statements)
+            });
+
             let mut mom_eval: Option<String> = d.get("mom_eval").transpose().unwrap();
 
             // Apply template expansion and clean quotes for mom_eval
@@ -528,21 +559,21 @@ impl TypstEdge {
             let mut to = None;
             match p {
                 HedgePair::Split { source, sink, .. } | HedgePair::Paired { source, sink } => {
-                    from = Some(node_store.node_id_ref(source));
-                    to = Some(node_store.node_id_ref(sink));
+                    from = Some((node_store.node_id_ref(source),source));
+                    to = Some((node_store.node_id_ref(sink),sink));
                 }
                 HedgePair::Unpaired {
                     hedge,
                     flow: Flow::Source,
                 } => {
-                    from = Some(node_store.node_id_ref(hedge));
+                    from = Some((node_store.node_id_ref(hedge),hedge));
                 }
 
                 HedgePair::Unpaired {
                     hedge,
                     flow: Flow::Sink,
                 } => {
-                    to = Some(node_store.node_id_ref(hedge));
+                    to = Some((node_store.node_id_ref(hedge),hedge));
                 }
             }
 
@@ -553,6 +584,9 @@ impl TypstEdge {
                 to,
                 pos,
                 constraints,
+                label_pos,
+                label_angle,
+                eval_label,
                 eval_sink,
                 eval_source,
                 mom_eval,
@@ -578,6 +612,14 @@ impl TypstEdge {
         // Add bend if non-default
         if let Ok(b) = self.bend {
             statements.insert("bend".to_string(), format!("{}rad", b.0));
+        }
+
+        if let Some(p) = self.label_pos {
+            statements.insert("label_pos".to_string(), format!("{},{}", p.x, p.y));
+        }
+
+        if let Some(a) = self.label_angle {
+            statements.insert("label_angle".to_string(), format!("{a}rad"));
         }
 
         if let Some(eval) = &self.eval_sink {
@@ -774,6 +816,26 @@ struct LayoutConfig {
         deserialize_with = "deserialize_f64"
     )]
     z_spring_growth: f64,
+    #[serde(default = "default_label_steps", deserialize_with = "deserialize_usize")]
+    label_steps: usize,
+    #[serde(default = "default_label_step", deserialize_with = "deserialize_f64")]
+    label_step: f64,
+    #[serde(
+        default = "default_label_length_scale",
+        deserialize_with = "deserialize_f64"
+    )]
+    label_length_scale: f64,
+    #[serde(default = "default_label_charge", deserialize_with = "deserialize_f64")]
+    label_charge: f64,
+    #[serde(default = "default_label_spring", deserialize_with = "deserialize_f64")]
+    label_spring: f64,
+    #[serde(default = "default_label_early_tol", deserialize_with = "deserialize_f64")]
+    label_early_tol: f64,
+    #[serde(
+        default = "default_label_max_delta_scale",
+        deserialize_with = "deserialize_f64"
+    )]
+    label_max_delta_scale: f64,
     #[serde(default = "default_incremental_energy")]
     incremental_energy: bool,
     #[serde(default = "default_layout_algo")]
@@ -798,6 +860,13 @@ impl Default for LayoutConfig {
             directional_force: default_directional_force(),
             z_spring: default_z_spring(),
             z_spring_growth: default_z_spring_growth(),
+            label_steps: default_label_steps(),
+            label_step: default_label_step(),
+            label_length_scale: default_label_length_scale(),
+            label_charge: default_label_charge(),
+            label_spring: default_label_spring(),
+            label_early_tol: default_label_early_tol(),
+            label_max_delta_scale: default_label_max_delta_scale(),
             incremental_energy: default_incremental_energy(),
             layout_algo: default_layout_algo(),
             spring: SpringConfig::default(),
@@ -831,6 +900,13 @@ impl LayoutConfig {
         insert!("directional_force", self.directional_force);
         insert!("z_spring", self.z_spring);
         insert!("z_spring_growth", self.z_spring_growth);
+        insert!("label_steps", self.label_steps);
+        insert!("label_step", self.label_step);
+        insert!("label_length_scale", self.label_length_scale);
+        insert!("label_charge", self.label_charge);
+        insert!("label_spring", self.label_spring);
+        insert!("label_early_tol", self.label_early_tol);
+        insert!("label_max_delta_scale", self.label_max_delta_scale);
         insert!(
             "layout_algo",
             match self.layout_algo {
@@ -905,6 +981,34 @@ fn default_z_spring() -> f64 {
 
 fn default_z_spring_growth() -> f64 {
     1.0
+}
+
+fn default_label_steps() -> usize {
+    20
+}
+
+fn default_label_step() -> f64 {
+    0.15
+}
+
+fn default_label_length_scale() -> f64 {
+    0.3
+}
+
+fn default_label_charge() -> f64 {
+    0.2
+}
+
+fn default_label_spring() -> f64 {
+    1.0
+}
+
+fn default_label_early_tol() -> f64 {
+    1e-3
+}
+
+fn default_label_max_delta_scale() -> f64 {
+    0.5
 }
 
 fn default_incremental_energy() -> bool {
@@ -1278,6 +1382,7 @@ impl TypstGraph {
 
         self.apply_grouped_constraints(&mut vertex_points, &mut edge_points);
         self.update_positions(vertex_points, edge_points);
+        self.layout_edge_labels(energy.spring_length);
     }
 
     pub fn layout_energy_state(
@@ -1383,6 +1488,170 @@ impl TypstGraph {
             self.graph[i].bend = angle;
             self.graph[i].pos = p;
         });
+    }
+
+    fn layout_edge_labels(&mut self, spring_length: f64) {
+        let cfg = &self.layout_config;
+        if cfg.label_steps == 0 {
+            return;
+        }
+
+        let label_length = cfg.label_length_scale * spring_length;
+        let label_charge = cfg.label_charge * spring_length.powi(2);
+        let label_spring = cfg.label_spring;
+        let step = cfg.label_step;
+        let max_delta = cfg.label_max_delta_scale * spring_length;
+        let eps = 1e-4;
+
+        let normals: EdgeVec<Vector2<f64>> =
+            self.new_edgevec(|_e, idx, pair| self.edge_label_normal(idx, pair));
+
+        let mut labels: EdgeVec<Point2<f64>> = self.new_edgevec(|_e, idx, _pair| {
+            let edge_pos = self.graph[idx].pos;
+            edge_pos + normals[idx] * label_length
+        });
+
+        for _ in 0..cfg.label_steps {
+            let mut max_move:f64 = 0.0;
+
+            for i in 0..labels.len().0 {
+                let idx = EdgeIndex(i);
+                let mut force = Vector2::zero();
+                let edge_pos = self.graph[idx].pos;
+                let target = edge_pos + normals[idx] * label_length;
+                if label_spring != 0.0 {
+                    force += (target - labels[idx]) * label_spring;
+                }
+
+                if label_charge != 0.0 {
+                    for n in 0..self.n_nodes() {
+                        let ni = NodeIndex(n);
+                        let np = self[ni].pos;
+                        let d = labels[idx] - np;
+                        let dist = d.magnitude();
+                        if dist > 1e-9 {
+                            let dir = d / dist;
+                            force += dir * (label_charge / (dist + eps).powi(2));
+                        }
+                    }
+
+                    for e in 0..labels.len().0 {
+                        let ej = EdgeIndex(e);
+                        if ej == idx {
+                            continue;
+                        }
+                        let ep = self.graph[ej].pos;
+                        let d = labels[idx] - ep;
+                        let dist = d.magnitude();
+                        if dist > 1e-9 {
+                            let dir = d / dist;
+                            force += dir * (label_charge / (dist + eps).powi(2));
+                        }
+                    }
+
+                    for e in 0..labels.len().0 {
+                        if e == i {
+                            continue;
+                        }
+                        let ej = EdgeIndex(e);
+                        let d = labels[idx] - labels[ej];
+                        let dist = d.magnitude();
+                        if dist > 1e-9 {
+                            let dir = d / dist;
+                            force += dir * (label_charge / (dist + eps).powi(2));
+                        }
+                    }
+                }
+
+                let mut move_vec = force * step;
+                let mag = move_vec.magnitude();
+                if max_delta > 0.0 && mag > max_delta {
+                    move_vec *= max_delta / mag;
+                }
+                labels[idx] += move_vec;
+                let offset = labels[idx] - edge_pos;
+                if offset.dot(normals[idx]) < 0.0 {
+                    let dist = offset.magnitude();
+                    labels[idx] = edge_pos + normals[idx] * dist;
+                }
+                max_move = max_move.max(move_vec.magnitude());
+            }
+
+            if max_move < cfg.label_early_tol {
+                break;
+            }
+        }
+
+        for i in 0..labels.len().0 {
+            let idx = EdgeIndex(i);
+            self.graph[idx].label_pos = Some(labels[idx]);
+            let angle = self.edge_label_angle(idx);
+            self.graph[idx].label_angle = Some(angle);
+        }
+    }
+
+    fn edge_label_normal(&self, edge: EdgeIndex, pair: &HedgePair) -> Vector2<f64> {
+        let edge_pos = self.graph[edge].pos;
+        let mut tangent = match pair {
+            HedgePair::Paired { source, sink } | HedgePair::Split { source, sink, .. } => {
+                let a = self[self.node_id(*source)].pos;
+                let b = self[self.node_id(*sink)].pos;
+                b - a
+            }
+            HedgePair::Unpaired { hedge, .. } => {
+                let a = self[self.node_id(*hedge)].pos;
+                edge_pos - a
+            }
+        };
+
+        if tangent.magnitude2() <= 1e-12 {
+            tangent = Vector2::new(1.0, 0.0);
+        }
+
+        let mut normal = Vector2::new(-tangent.y, tangent.x);
+        if normal.magnitude2() <= 1e-12 {
+            normal = Vector2::new(0.0, 1.0);
+        }
+
+        if let HedgePair::Paired { source, sink } | HedgePair::Split { source, sink, .. } = pair {
+            let a = self[self.node_id(*source)].pos;
+            let b = self[self.node_id(*sink)].pos;
+            let mid = a + (b - a) * 0.5;
+            let to_ctrl = edge_pos - mid;
+            let cross = tangent.x * to_ctrl.y - tangent.y * to_ctrl.x;
+            if cross < 0.0 {
+                normal = -normal;
+            }
+        }
+
+        normal.normalize()
+    }
+
+    fn edge_label_angle(&self, edge: EdgeIndex) -> f64 {
+        let (_, pair) = &self.graph[&edge];
+        let mut dir = match pair {
+            HedgePair::Paired { source, sink } | HedgePair::Split { source, sink, .. } => {
+                let a = self[self.node_id(*source)].pos;
+                let b = self[self.node_id(*sink)].pos;
+                b - a
+            }
+            HedgePair::Unpaired { hedge, .. } => {
+                let a = self[self.node_id(*hedge)].pos;
+                self.graph[edge].pos - a
+            }
+        };
+
+        if dir.magnitude2() <= 1e-12 {
+            dir = Vector2::new(1.0, 0.0);
+        }
+
+        let mut angle = dir.y.atan2(dir.x);
+        if angle > std::f64::consts::FRAC_PI_2 {
+            angle -= std::f64::consts::PI;
+        } else if angle < -std::f64::consts::FRAC_PI_2 {
+            angle += std::f64::consts::PI;
+        }
+        angle
     }
 
     /// Generate new positions based on tree layout while respecting constraints.
