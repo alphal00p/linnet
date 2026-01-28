@@ -412,68 +412,13 @@ impl<V> ForestNodeStore for ParentChildStore<V> {
     }
 
     fn split_off(&mut self, at: TreeNodeId) -> Self {
-        for mut current in (0..self.nodes.len()).map(TreeNodeId) {
-            while let ParentId::Node(p) = self[&current] {
-                let mut newp = p;
-                while (newp <= at) ^ (current > at) {
-                    // the pointer crosses the splitting boundary, we need to find a new pointer.
-
-                    match self[&newp] {
-                        ParentId::Node(next) => {
-                            newp = next;
-                        }
-                        ParentId::Root(_) => {
-                            // split_root = true;
-                            break;
-                        }
-                        ParentId::PointingRoot(next) => {
-                            newp = next;
-                        }
-                    }
-                }
-
-                if let ParentId::Root(r) = self[&newp] {
-                    // set current to now be the root, and original root to point here.
-
-                    self.nodes[newp.0].parent_pointer.parent = ParentId::PointingRoot(current);
-                    self.nodes[current.0].parent_pointer.parent = ParentId::Root(r);
-                } else {
-                    self.reparent(newp, current);
-                }
-
-                current = p
-            }
-        }
-
-        for n in (0..self.nodes.len()).map(TreeNodeId) {
-            if self.nodes[n.0].neighbor_left > at {
-                self.nodes[n.0].neighbor_left.0 -= at.0;
-            }
-
-            if self.nodes[n.0].neighbor_right > at {
-                self.nodes[n.0].neighbor_right.0 -= at.0;
-            }
-
-            if let Some(c) = &mut self.nodes[n.0].child {
-                if *c > at {
-                    c.0 -= at.0;
-                }
-            }
-
-            if let ParentId::Node(n) = &mut self.nodes[n.0].parent_pointer.parent {
-                if *n > at {
-                    n.0 -= at.0;
-                }
-            }
-
-            if let ParentId::PointingRoot(rp) = self[&n] {
-                let root = self[&rp];
-                self.nodes[n.0].parent_pointer.parent = root;
-            }
-        }
-        Self {
-            nodes: self.nodes.split_off(at.0),
-        }
+        let tmp = ParentChildStore {
+            nodes: std::mem::take(&mut self.nodes),
+        };
+        let mut as_vec: ChildVecStore<V> = tmp.into();
+        let extracted = as_vec.split_off(at);
+        *self = ParentChildStore::from(as_vec);
+        ParentChildStore::from(extracted)
     }
 
     fn extend(&mut self, other: Self, shift_roots_by: RootId) {
@@ -511,85 +456,17 @@ impl<V> ForestNodeStore for ParentChildStore<V> {
     }
 
     fn swap(&mut self, a: TreeNodeId, b: TreeNodeId) {
-        println!("Swap CP");
-        if a != b {
-            if let ParentId::Node(pp) = self.nodes[a.0].parent_pointer.parent {
-                let mut children = self.nodes[pp.0].child;
-                let mut init = None;
-                while let Some(child) = children {
-                    if init.is_none() {
-                        init = children
-                    } else if init == children {
-                        break;
-                    }
-                    let childnode = &mut self.nodes[child.0];
-
-                    children = Some(childnode.neighbor_right);
-                    if childnode.neighbor_right == a {
-                        childnode.neighbor_right = b;
-                    }
-
-                    if childnode.neighbor_left == a {
-                        childnode.neighbor_left = b;
-                    }
-                }
-            }
-
-            if let ParentId::Node(pp) = self.nodes[b.0].parent_pointer.parent {
-                let mut children = self.nodes[pp.0].child;
-                let mut init = None;
-                while let Some(child) = children {
-                    if init.is_none() {
-                        init = children
-                    } else if init == children {
-                        break;
-                    }
-                    let childnode = &mut self.nodes[child.0];
-
-                    children = Some(childnode.neighbor_right);
-                    if childnode.neighbor_right == a {
-                        childnode.neighbor_right = b;
-                    }
-
-                    if childnode.neighbor_left == a {
-                        childnode.neighbor_left = b;
-                    }
-                }
-            }
-
-            let mut children = self.nodes[a.0].child;
-            let mut init = None;
-            while let Some(child) = children {
-                if init.is_none() {
-                    init = children
-                } else if init == children {
-                    break;
-                }
-                children = Some(self.nodes[child.0].neighbor_right);
-                if let ParentId::Node(pp) = &mut self.nodes[child.0].parent_pointer.parent {
-                    if *pp == a {
-                        *pp = b;
-                    }
-                }
-            }
-            let mut children = self.nodes[b.0].child;
-            let mut init = None;
-            while let Some(child) = children {
-                if init.is_none() {
-                    init = children
-                } else if init == children {
-                    break;
-                }
-                children = Some(self.nodes[child.0].neighbor_right);
-                if let ParentId::Node(pp) = &mut self.nodes[child.0].parent_pointer.parent {
-                    if *pp == b {
-                        *pp = a;
-                    }
-                }
-            }
-
-            self.nodes.swap(a.0, b.0);
+        if a == b {
+            return;
         }
+
+        // Reuse the proven swap logic from ChildVecStore to keep parent/child links consistent.
+        let tmp = ParentChildStore {
+            nodes: std::mem::take(&mut self.nodes),
+        };
+        let mut as_vec: ChildVecStore<V> = tmp.into();
+        as_vec.swap(a, b);
+        *self = ParentChildStore::from(as_vec);
     }
 
     fn to_store(self) -> Self::Store<Self::NodeData> {

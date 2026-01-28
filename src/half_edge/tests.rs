@@ -37,7 +37,7 @@ fn test_spanning_trees_of_tree() {
 
 #[test]
 fn join_mut_simple() {
-    let two: DotGraph = dot!(
+    let two: DotGraph<NodeStorageVec<DotVertexData>> = dot!(
     digraph {
 
       0 [label = "∑"];
@@ -52,7 +52,7 @@ fn join_mut_simple() {
 
     //with
 
-    let one: DotGraph = dot!(digraph {
+    let one: DotGraph<NodeStorageVec<DotVertexData>> = dot!(digraph {
       node [shape=circle,height=0.1,label=""];  overlap="scale"; layout="neato";
 
       0 [label = "S:5"];
@@ -92,7 +92,7 @@ fn threeloop() {
     builder.add_edge(c, d, (), false);
     builder.add_edge(d, a, (), false);
 
-    let graph: HedgeGraph<(), ()> = builder.build();
+    let graph: HedgeGraph<(), (), NoData, NodeStorageVec<()>> = builder.build();
 
     insta::assert_snapshot!("three_loop_dot", graph.base_dot());
     #[cfg(feature = "serde")]
@@ -143,7 +143,7 @@ fn hairythreeloop() {
 
     let n_h: Hedge = builder.involution.len();
     assert_eq!(n_h, Hedge(15));
-    let graph: HedgeGraph<(), ()> = builder.build();
+    let graph: HedgeGraph<(), (), NoData, NodeStorageVec<()>> = builder.build();
 
     insta::assert_snapshot!("hairy_three_loop_dot", graph.base_dot());
 
@@ -685,7 +685,8 @@ fn join() {
     ab.add_external_edge(v1, "esink", true, Flow::Sink);
     ab.add_external_edge(v2, "esource", true, Flow::Source);
 
-    let a: HedgeGraph<&'static str, &'static str> = ab.build();
+    let a: HedgeGraph<&'static str, &'static str, NoData, NodeStorageVec<&'static str>> =
+        ab.build();
 
     let mut ab = HedgeGraphBuilder::new();
     let v1 = ab.add_node("b");
@@ -696,14 +697,14 @@ fn join() {
     ab.add_external_edge(v1, "f", true, Flow::Sink);
     ab.add_external_edge(v2, "f", true, Flow::Source);
 
-    let b = ab.build();
+    let b: HedgeGraph<&'static str, &'static str, NoData, NodeStorageVec<&'static str>> =
+        ab.build();
 
     let mut c = a
         .clone()
         .join(b.clone(), |af, _, bf, _| af == -bf, |af, ad, _, _| (af, ad))
         .unwrap();
 
-    assert_eq!(c.node_store.node_data.len(), NodeIndex(4));
     let n_len: NodeIndex = c.node_store.len();
     assert_eq!(n_len, NodeIndex(4));
     let n_h: Hedge = c.node_store.len();
@@ -715,12 +716,14 @@ fn join() {
     let mut a = HedgeGraphBuilder::new();
     let n = a.add_node("a");
     a.add_external_edge(n, "e", true, Flow::Sink);
-    let a: HedgeGraph<&'static str, &'static str> = a.build();
+    let a: HedgeGraph<&'static str, &'static str, NoData, NodeStorageVec<&'static str>> =
+        a.build();
 
     let mut b = HedgeGraphBuilder::new();
     let n = b.add_node("b");
     b.add_external_edge(n, "f", true, Flow::Sink);
-    let b = b.build();
+    let b: HedgeGraph<&'static str, &'static str, NoData, NodeStorageVec<&'static str>> =
+        b.build();
     let c = a
         .join(
             b,
@@ -743,7 +746,7 @@ use dot_parser::ast::CompassPt;
 use insta::assert_snapshot;
 use nodestore::NodeStorageVec;
 
-use crate::{dot, half_edge::swap::Swap, parser::DotGraph};
+use crate::{dot, half_edge::swap::Swap, parser::{DotGraph, DotVertexData}};
 
 use super::*;
 
@@ -799,7 +802,7 @@ fn self_energy_cut() {
     epem_builder.add_external_edge(nodes[3], (), true, Flow::Source);
     epem_builder.add_external_edge(nodes[3], (), true, Flow::Source);
 
-    let epem: HedgeGraph<(), ()> = epem_builder.build::<NodeStorageVec<()>>();
+    let epem: HedgeGraph<(), ()> = epem_builder.build();
     println!("{}", epem.dot(&epem.full_filter()));
 
     let cuts = epem.all_cuts_from_ids(&nodes[0..=0], &nodes[3..=3]);
@@ -840,22 +843,22 @@ fn double_pentagon_all_cuts() {
     // );
 
     let cuts = graph.all_cuts(
-        graph.iter_crown(NodeIndex(10)).clone().into(),
-        graph.iter_crown(NodeIndex(9)).clone().into(),
+        graph.combine_to_single_hedgenode(&[NodeIndex(10)]),
+        graph.combine_to_single_hedgenode(&[NodeIndex(9)]),
     );
 
     assert_eq!(cuts.len(), 9);
 
     let cuts = graph.all_cuts(
-        graph.iter_crown(NodeIndex(10)).clone().into(),
-        graph.iter_crown(NodeIndex(13)).clone().into(),
+        graph.combine_to_single_hedgenode(&[NodeIndex(10)]),
+        graph.combine_to_single_hedgenode(&[NodeIndex(13)]),
     );
 
     assert_eq!(cuts.len(), 14);
 
     let cuts = graph.all_cuts(
-        graph.iter_crown(NodeIndex(1)).clone().into(),
-        graph.iter_crown(NodeIndex(2)).clone().into(),
+        graph.combine_to_single_hedgenode(&[NodeIndex(1)]),
+        graph.combine_to_single_hedgenode(&[NodeIndex(2)]),
     );
 
     assert_eq!(cuts.len(), 16);
@@ -942,7 +945,7 @@ fn self_energy_box() {
 
     cut_to_look_for.sort();
 
-    let self_energy: HedgeGraph<(), (), _> = self_energy_builder.build::<NodeStorageVec<()>>();
+    let self_energy: HedgeGraph<(), (), _> = self_energy_builder.build();
 
     let cuts = self_energy.all_cuts_from_ids(&[nodes[0]], &[nodes[7]]);
 

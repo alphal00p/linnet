@@ -5,7 +5,7 @@ use figment;
 use figment::Figment;
 
 use crate::half_edge::{
-    nodestore::{NodeStorage, NodeStorageOps, NodeStorageVec},
+    nodestore::{DefaultNodeStore, NodeStorage, NodeStorageOps},
     HedgeGraph,
 };
 
@@ -19,8 +19,13 @@ pub struct GraphSet<E, V, H, G, S: NodeStorage<NodeData = V>> {
     pub set: Vec<HedgeGraph<E, V, H, S>>,
 }
 
-pub type DotGraphSet =
-    GraphSet<DotEdgeData, DotVertexData, DotHedgeData, GlobalData, NodeStorageVec<DotVertexData>>;
+pub type DotGraphSet = GraphSet<
+    DotEdgeData,
+    DotVertexData,
+    DotHedgeData,
+    GlobalData,
+    DefaultNodeStore<DotVertexData>,
+>;
 
 impl<S: NodeStorageOps<NodeData = DotVertexData>>
     GraphSet<DotEdgeData, DotVertexData, DotHedgeData, GlobalData, S>

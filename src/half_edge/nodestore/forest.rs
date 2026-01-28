@@ -2,7 +2,7 @@ use super::{NodeStorage, NodeStorageOps, NodeStorageVec};
 use crate::{
     half_edge::{
         involution::Hedge,
-        subgraph::{BaseSubgraph, SuBitGraph},
+        subgraph::{BaseSubgraph, Inclusion, ModifySubSet, SubSetLike, SubSetOps, SuBitGraph},
         swap::Swap,
         NodeIndex, NodeVec,
     },
@@ -104,8 +104,11 @@ impl<V, P: ForestNodeStore> Swap<NodeIndex> for Forest<V, P> {
     fn is_zero_length(&self) -> bool {
         self.roots.is_empty()
     }
-    fn swap(&mut self, _i: NodeIndex, _j: NodeIndex) {
-        todo!()
+    fn swap(&mut self, i: NodeIndex, j: NodeIndex) {
+        if i == j {
+            return;
+        }
+        self.swap_roots(RootId(i.0), RootId(j.0));
     }
 }
 
@@ -114,10 +117,48 @@ impl<V, P: ForestNodeStore + ForestNodeStorePreorder + Clone> NodeStorageOps for
     type OpStorage<N> = Forest<N, P>;
 
     fn check_nodes(&self) -> Result<(), crate::half_edge::HedgeGraphError> {
-        todo!()
+        let n_hedges: Hedge = <Self as Swap<Hedge>>::len(self);
+        let mut cover = SuBitGraph::empty(n_hedges.0);
+
+        for (i, _) in self.roots.iter().enumerate() {
+            let node_id = NodeIndex(i);
+            for h in self.get_neighbor_iterator(node_id) {
+                if h >= n_hedges {
+                    return Err(crate::half_edge::HedgeGraphError::InvalidHedge(h));
+                }
+                if cover.includes(&h) {
+                    return Err(crate::half_edge::HedgeGraphError::NodesDoNotPartition(
+                        format!("They overlap for node {node_id:?}: Cover:{cover:?}, crown:{h:?}"),
+                    ));
+                }
+                cover.add(h);
+            }
+        }
+
+        let full = !SuBitGraph::empty(n_hedges.0);
+        if !(cover.sym_diff(&full).is_empty()) {
+            return Err(crate::half_edge::HedgeGraphError::NodesDoNotPartition(format!(
+                "They do not cover all hedges: Cover:{cover:?}"
+            )));
+        }
+
+        Ok(())
     }
-    fn extract_nodes(&mut self, _nodes: impl IntoIterator<Item = NodeIndex>) -> (SuBitGraph, Self) {
-        todo!()
+    fn extract_nodes(&mut self, nodes: impl IntoIterator<Item = NodeIndex>) -> (SuBitGraph, Self) {
+        let nodes: Vec<NodeIndex> = nodes.into_iter().collect();
+        let n_hedges: Hedge = <Self as Swap<Hedge>>::len(self);
+        let mut extracted = SuBitGraph::empty(n_hedges.0);
+        for node in nodes {
+            extracted.union_with_iter(self.get_neighbor_iterator(node));
+        }
+
+        let extracted_store = self.extract(
+            &extracted,
+            |_| panic!("Forest::extract_nodes encountered a split node; expected full nodes only."),
+            |d| d,
+        );
+
+        (extracted, extracted_store)
     }
 
     fn iter(&self) -> impl Iterator<Item = (NodeIndex, &Self::NodeData)> {

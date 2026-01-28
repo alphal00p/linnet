@@ -3,7 +3,7 @@ use crate::{
     half_edge::{
         builder::HedgeGraphBuilder,
         involution::{Flow, Hedge},
-        nodestore::NodeStorageOps,
+        nodestore::{NodeStorageOps, NodeStorageVec},
         subgraph::{ModifySubSet, SuBitGraph},
         HedgeGraph, NodeIndex,
     },
@@ -88,7 +88,7 @@ fn extact_single_dangling() {
 
 #[test]
 fn extract_buggy() {
-    let mut aligned: DotGraph = dot!(
+    let mut aligned: DotGraph<NodeStorageVec<DotVertexData>> = dot!(
     digraph {
         ext0 [flow=sink];
         ext0 -> 0[dir=back];
@@ -164,7 +164,7 @@ fn extract_buggy() {
 
 #[test]
 fn extract_normal() {
-    let mut aligned: DotGraph = dot!(
+    let mut aligned: DotGraph<NodeStorageVec<DotVertexData>> = dot!(
     digraph {
       ext4 [flow=sink];
       0 -> 1;

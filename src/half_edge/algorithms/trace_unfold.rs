@@ -248,7 +248,7 @@ mod tests {
 
     use crate::{
         dot,
-        half_edge::{involution::HedgePair, nodestore::NodeStorageVec},
+        half_edge::{involution::HedgePair, nodestore::DefaultNodeStore},
         parser::{DotEdgeData, DotGraph, DotHedgeData, DotVertexData},
     };
 
@@ -379,7 +379,7 @@ mod tests {
             .graph
             .transitive_closure()
             .unwrap()
-            .trace_unfold::<NodeStorageVec<usize>>(NodeIndex(0));
+            .trace_unfold::<DefaultNodeStore<usize>>(NodeIndex(0));
         let mut output = String::new();
         g.dot_impl_fmt(
             &mut output,

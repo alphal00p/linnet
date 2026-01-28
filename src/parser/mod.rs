@@ -96,7 +96,7 @@ use crate::{
     half_edge::{
         builder::HedgeGraphBuilder,
         involution::{EdgeIndex, Hedge},
-        nodestore::{NodeStorage, NodeStorageOps, NodeStorageVec},
+        nodestore::{DefaultNodeStore, NodeStorage, NodeStorageOps},
         subgraph::{ModifySubSet, SubGraphLike, SubSetLike},
         swap::Swap,
         GVEdgeAttrs, HedgeGraph, NodeIndex,
@@ -133,7 +133,7 @@ pub mod hedge;
 pub use hedge::DotHedgeData;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DotGraph<N: NodeStorage<NodeData = DotVertexData> = NodeStorageVec<DotVertexData>> {
+pub struct DotGraph<N: NodeStorage<NodeData = DotVertexData> = DefaultNodeStore<DotVertexData>> {
     pub global_data: GlobalData,
     pub graph: HedgeGraph<DotEdgeData, DotVertexData, DotHedgeData, N>,
 }
