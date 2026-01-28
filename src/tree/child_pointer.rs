@@ -50,7 +50,9 @@ impl<V> PCNode<V> {
         self.neighbor_left.0 += nodes.0;
         self.neighbor_right.0 += nodes.0;
         self.parent_pointer.shift(root, nodes);
-        self.child.as_mut().map(|a| a.0 += nodes.0).unwrap();
+        if let Some(child) = &mut self.child {
+            child.0 += nodes.0;
+        }
     }
 
     pub fn forget<U>(&self) -> PCNode<U> {

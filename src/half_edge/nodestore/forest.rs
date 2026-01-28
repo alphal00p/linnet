@@ -8,7 +8,7 @@ use crate::{
     },
     tree::{
         parent_pointer::ParentPointerStore, Forest, ForestNodeStore, ForestNodeStorePreorder,
-        RootData, RootId,
+        RootData, RootId, TreeNodeId,
     },
 };
 
@@ -245,7 +245,7 @@ impl<V, P: ForestNodeStore + ForestNodeStorePreorder + Clone> NodeStorageOps for
     }
 
     fn extend_mut(&mut self, other: Self) {
-        let nodeshift: NodeIndex = other.len();
+        let nodeshift = TreeNodeId(self.nodes.n_nodes());
         let shift_roots_by = RootId(self.roots.len());
         self.roots.extend(other.roots.into_iter().map(|mut a| {
             a.root_id.0 += nodeshift.0;
