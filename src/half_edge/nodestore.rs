@@ -1,3 +1,7 @@
+#[cfg(feature = "nodestore-forest-parent-child")]
+use crate::tree::child_pointer::ParentChildStore;
+#[cfg(feature = "nodestore-forest-child-vec")]
+use crate::tree::child_vec::ChildVecStore;
 use crate::tree::{parent_pointer::ParentPointerStore, Forest};
 
 use super::{
@@ -163,6 +167,29 @@ mod vec;
 
 pub use vec::BitVecNeighborIter;
 pub use vec::NodeStorageVec;
+
+#[cfg(all(
+    feature = "nodestore-forest-child-vec",
+    feature = "nodestore-forest-parent-child"
+))]
+compile_error!(
+    "Select only one forest nodestore feature: nodestore-forest-child-vec or nodestore-forest-parent-child."
+);
+
+#[cfg(feature = "nodestore-forest-child-vec")]
+pub type DefaultNodeStore<V> = Forest<V, ChildVecStore<()>>;
+
+#[cfg(all(
+    not(feature = "nodestore-forest-child-vec"),
+    feature = "nodestore-forest-parent-child"
+))]
+pub type DefaultNodeStore<V> = Forest<V, ParentChildStore<()>>;
+
+#[cfg(all(
+    not(feature = "nodestore-forest-child-vec"),
+    not(feature = "nodestore-forest-parent-child")
+))]
+pub type DefaultNodeStore<V> = NodeStorageVec<V>;
 
 #[cfg(test)]
 mod test;

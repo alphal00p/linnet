@@ -126,11 +126,15 @@ impl<E, V, H, N: NodeStorageOps<NodeData = V>> Swap<NodeIndex> for HedgeGraph<E,
 
 #[cfg(test)]
 mod test {
-    use crate::{dot, parser::DotGraph};
+    use crate::{
+        dot,
+        half_edge::nodestore::NodeStorageVec,
+        parser::{DotGraph, DotVertexData},
+    };
 
     #[test]
     fn swap() {
-        let graph: DotGraph = dot!(digraph {
+        let graph: DotGraph<NodeStorageVec<DotVertexData>> = dot!(digraph {
             edge [label = "test"]
             node [label = "test"]
             in [style=invis]

@@ -15,7 +15,7 @@ use linnet::{
                 PointConstraint, ShiftDirection, Shiftable, SpringChargeEnergy,
             },
         },
-        nodestore::{NodeStorageOps, NodeStorageVec},
+        nodestore::{DefaultNodeStore, NodeStorageOps},
         subgraph::{Inclusion, SuBitGraph, SubSetLike, SubSetOps},
         tree::SimpleTraversalTree,
         EdgeAccessors, HedgeGraph, NodeIndex, NodeVec,
@@ -1388,7 +1388,7 @@ impl TypstGraph {
     pub fn layout_energy_state(
         &self,
     ) -> (
-        LayoutState<'_, TypstEdge, TypstNode, TypstHedge, NodeStorageVec<TypstNode>>,
+        LayoutState<'_, TypstEdge, TypstNode, TypstHedge, DefaultNodeStore<TypstNode>>,
         SpringChargeEnergy,
     ) {
         let spring_params = ParamTuning::from(&self.layout_config.spring);

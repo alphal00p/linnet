@@ -439,8 +439,9 @@ mod tests {
     use crate::{
         dot,
         half_edge::{nodestore::NodeStorageOps, HedgeGraph, NoData},
-        parser::DotGraph,
+        parser::{DotGraph, DotVertexData},
     };
+    use crate::half_edge::nodestore::NodeStorageVec;
 
     #[test]
     fn test_transitive_closure_simple() {
@@ -544,23 +545,27 @@ mod tests {
 
     #[test]
     fn test_empty_graph() {
-        let graph: DotGraph = dot!(
+        let graph: DotGraph<NodeStorageVec<DotVertexData>> = DotGraph::from_string(
+            r#"
             digraph {
                 A
                 B
                 C
             }
+            "#,
         )
         .unwrap();
 
         let closure = graph.graph.transitive_closure().unwrap();
 
-        let graph2: DotGraph = dot!(
+        let graph2: DotGraph<NodeStorageVec<DotVertexData>> = DotGraph::from_string(
+            r#"
             digraph {
                 A
                 B
                 C
             }
+            "#,
         )
         .unwrap();
         let reduction = graph2.graph.transitive_reduction().unwrap();
@@ -572,11 +577,13 @@ mod tests {
 
     #[test]
     fn test_single_node() {
-        let graph: DotGraph = dot!(digraph { A }).unwrap();
+        let graph: DotGraph<NodeStorageVec<DotVertexData>> =
+            DotGraph::from_string("digraph { A }").unwrap();
 
         let closure = graph.graph.transitive_closure().unwrap();
 
-        let graph2: DotGraph = dot!(digraph { A }).unwrap();
+        let graph2: DotGraph<NodeStorageVec<DotVertexData>> =
+            DotGraph::from_string("digraph { A }").unwrap();
         let reduction = graph2.graph.transitive_reduction().unwrap();
 
         assert_eq!(closure.n_nodes(), 1);
@@ -1026,7 +1033,8 @@ mod tests {
 
     #[test]
     fn test_transitive_closure_with_isolated_components() {
-        let original: DotGraph = dot!(
+        let original: DotGraph<NodeStorageVec<DotVertexData>> = DotGraph::from_string(
+            r#"
             digraph {
                 // Component 1: Chain
                 a1 -> b1
@@ -1048,6 +1056,7 @@ mod tests {
                 isolated1
                 isolated2
             }
+            "#,
         )
         .unwrap();
 
@@ -1097,7 +1106,8 @@ mod tests {
 
     #[test]
     fn test_comprehensive_reachability() {
-        let graph: DotGraph = dot!(
+        let graph: DotGraph<NodeStorageVec<DotVertexData>> = DotGraph::from_string(
+            r#"
             digraph {
                 // Create a graph with known reachability patterns
                 root -> branch_a
@@ -1119,6 +1129,7 @@ mod tests {
                 // Single node
                 singleton
             }
+            "#,
         )
         .unwrap();
 

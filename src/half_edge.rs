@@ -101,7 +101,7 @@ use involution::{
 };
 
 use itertools::Itertools;
-use nodestore::{NodeStorage, NodeStorageOps, NodeStorageVec};
+use nodestore::{DefaultNodeStore, NodeStorage, NodeStorageOps};
 use rand::{rngs::SmallRng, Rng, SeedableRng};
 use swap::Swap;
 
@@ -245,8 +245,9 @@ pub mod swap;
 /// - `V`: The type of data associated with each node (vertex).
 /// - `S`: The node storage strategy, implementing the [`NodeStorage`] trait.
 ///   This determines how node data and their connectivity to half-edges
-///   are stored. Defaults to [`NodeStorageVec<V>`].
-pub struct HedgeGraph<E, V, H = NoData, S: NodeStorage<NodeData = V> = NodeStorageVec<V>> {
+///   are stored. Defaults to [`DefaultNodeStore<V>`] (feature-selected; `nodestore-vec` uses
+///   [`NodeStorageVec<V>`]).
+pub struct HedgeGraph<E, V, H = NoData, S: NodeStorage<NodeData = V> = DefaultNodeStore<V>> {
     hedge_data: HedgeVec<H>,
     /// Internal storage for all half-edges, their data, and their topological
     /// relationships (e.g., opposite half-edge, next half-edge around a node).
