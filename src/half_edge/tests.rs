@@ -37,7 +37,7 @@ fn test_spanning_trees_of_tree() {
 
 #[test]
 fn join_mut_simple() {
-    let two: DotGraph<NodeStorageVec<DotVertexData>> = dot!(
+    let two: DotGraph = dot!(
     digraph {
 
       0 [label = "∑"];
@@ -52,7 +52,7 @@ fn join_mut_simple() {
 
     //with
 
-    let one: DotGraph<NodeStorageVec<DotVertexData>> = dot!(digraph {
+    let one: DotGraph = dot!(digraph {
       node [shape=circle,height=0.1,label=""];  overlap="scale"; layout="neato";
 
       0 [label = "S:5"];
@@ -685,8 +685,7 @@ fn join() {
     ab.add_external_edge(v1, "esink", true, Flow::Sink);
     ab.add_external_edge(v2, "esource", true, Flow::Source);
 
-    let a: HedgeGraph<&'static str, &'static str, NoData, NodeStorageVec<&'static str>> =
-        ab.build();
+    let a: HedgeGraph<&'static str, &'static str> = ab.build();
 
     let mut ab = HedgeGraphBuilder::new();
     let v1 = ab.add_node("b");
@@ -697,8 +696,7 @@ fn join() {
     ab.add_external_edge(v1, "f", true, Flow::Sink);
     ab.add_external_edge(v2, "f", true, Flow::Source);
 
-    let b: HedgeGraph<&'static str, &'static str, NoData, NodeStorageVec<&'static str>> =
-        ab.build();
+    let b: HedgeGraph<&'static str, &'static str> = ab.build();
 
     let mut c = a
         .clone()
@@ -716,14 +714,12 @@ fn join() {
     let mut a = HedgeGraphBuilder::new();
     let n = a.add_node("a");
     a.add_external_edge(n, "e", true, Flow::Sink);
-    let a: HedgeGraph<&'static str, &'static str, NoData, NodeStorageVec<&'static str>> =
-        a.build();
+    let a: HedgeGraph<&'static str, &'static str> = a.build();
 
     let mut b = HedgeGraphBuilder::new();
     let n = b.add_node("b");
     b.add_external_edge(n, "f", true, Flow::Sink);
-    let b: HedgeGraph<&'static str, &'static str, NoData, NodeStorageVec<&'static str>> =
-        b.build();
+    let b: HedgeGraph<&'static str, &'static str> = b.build();
     let c = a
         .join(
             b,
@@ -746,7 +742,7 @@ use dot_parser::ast::CompassPt;
 use insta::assert_snapshot;
 use nodestore::NodeStorageVec;
 
-use crate::{dot, half_edge::swap::Swap, parser::{DotGraph, DotVertexData}};
+use crate::{dot, half_edge::swap::Swap, parser::DotGraph};
 
 use super::*;
 

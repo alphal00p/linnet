@@ -56,6 +56,23 @@ pub struct ChildVecStore<V> {
     pub nodes: Vec<CVNode<V>>,
 }
 
+impl<V> ChildVecStore<V> {
+    fn rebuild_children_from_parents(&mut self) {
+        let len = self.nodes.len();
+        for node in &mut self.nodes {
+            node.children.clear();
+        }
+        for child_id in 0..len {
+            let child = TreeNodeId(child_id);
+            if let ParentId::Node(parent) = self[&child] {
+                if parent.0 < len {
+                    self.nodes[parent.0].children.push(child);
+                }
+            }
+        }
+    }
+}
+
 //
 // Indexing implementations, similar to ParentChildStore/ParentPointerStore.
 //
@@ -252,6 +269,7 @@ impl<V> ForestNodeStore for ChildVecStore<V> {
     }
 
     fn split_off(&mut self, at: TreeNodeId) -> Self {
+        self.rebuild_children_from_parents();
         println!("Boundary: {at}");
         println!("{}", self.debug_draw(|_| None));
         let mut roots = vec![];
@@ -315,6 +333,7 @@ impl<V> ForestNodeStore for ChildVecStore<V> {
             self.nodes[n2.0].parent_pointer.parent = ParentId::Root(r);
         }
 
+        self.rebuild_children_from_parents();
         println!("{}", self.debug_draw(|_| None));
         for n in self.iter_node_id() {
             if n >= at {
