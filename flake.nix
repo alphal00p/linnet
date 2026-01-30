@@ -201,8 +201,35 @@
             });
         };
 
-      apps.default = flake-utils.lib.mkApp {
-        drv = my-crate;
+      apps = {
+        default = flake-utils.lib.mkApp {
+          drv = my-crate;
+        };
+
+        maturin-build = flake-utils.lib.mkApp {
+          drv = pkgs.writeShellApplication {
+            name = "maturin-build";
+            runtimeInputs = [pkgs.maturin pkgs.python3 pkgs.uv];
+            text = ''
+              cd linnet-py
+              uv sync --no-install-project
+              maturin build -o target/wheels
+              uv pip install --python .venv/bin/python target/wheels/*.whl
+            '';
+          };
+        };
+
+        py-tests = flake-utils.lib.mkApp {
+          drv = pkgs.writeShellApplication {
+            name = "py-tests";
+            runtimeInputs = [pkgs.python3 pkgs.uv];
+            text = ''
+              cd linnet-py
+              uv sync --no-install-project
+              uv run -m unittest tests/test_basic.py
+            '';
+          };
+        };
       };
 
       devShells.default = craneLib.devShell {
@@ -222,6 +249,9 @@
           typstfmt
           #
           # iaiCallgrindRunner
+          maturin
+          python3
+          uv
           cargo-udeps
           cargo-insta
           cargo-deny

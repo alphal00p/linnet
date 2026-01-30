@@ -270,19 +270,19 @@ impl<V> ForestNodeStore for ChildVecStore<V> {
 
     fn split_off(&mut self, at: TreeNodeId) -> Self {
         self.rebuild_children_from_parents();
-        println!("Boundary: {at}");
-        println!("{}", self.debug_draw(|_| None));
+        // println!("Boundary: {at}");
+        // println!("{}", self.debug_draw(|_| None));
         let mut roots = vec![];
         for mut current in self.iter_node_id() {
             while let ParentId::Node(p) = self[&current] {
                 let mut newp = p;
-                println!("parent {newp} of current {current}");
+                // println!("parent {newp} of current {current}");
                 let mut crosses_boundary = false;
                 let mut split_root = false;
                 while !((newp < at) ^ (current >= at)) {
                     crosses_boundary = true;
                     // the pointer crosses the splitting boundary, we need to find a new pointer.
-                    println!("New parent {newp} and current {current} on opposite sides of the boundary {at}");
+                    // println!("New parent {newp} and current {current} on opposite sides of the boundary {at}");
 
                     match self[&newp] {
                         ParentId::Node(next) => {
@@ -316,11 +316,11 @@ impl<V> ForestNodeStore for ChildVecStore<V> {
                             }
                             roots.push((r, newp, current));
 
-                            println!("Turning {current} into pointing root pointing to {newp}, and {newp} into pointing root pointing to {current}");
+                            // println!("Turning {current} into pointing root pointing to {newp}, and {newp} into pointing root pointing to {current}");
                         }
                     } else {
                         self.reparent(newp, current);
-                        println!("making {newp} the new parent of {current}")
+                        // println!("making {newp} the new parent of {current}")
                     }
                 }
 
@@ -334,21 +334,21 @@ impl<V> ForestNodeStore for ChildVecStore<V> {
         }
 
         self.rebuild_children_from_parents();
-        println!("{}", self.debug_draw(|_| None));
+        // println!("{}", self.debug_draw(|_| None));
         for n in self.iter_node_id() {
             if n >= at {
-                println!("Shifting children of {n}");
+                // println!("Shifting children of {n}");
                 for n in &mut self.nodes[n.0].children {
-                    print!("child {n}->");
+                    // print!("child {n}->");
                     n.0 -= at.0;
-                    println!("{n}");
+                    // println!("{n}");
                 }
 
-                println!("Shifting parents of {n}");
+                // println!("Shifting parents of {n}");
                 if let ParentId::Node(n) = &mut self.nodes[n.0].parent_pointer.parent {
-                    print!("parent {n}->");
+                    // print!("parent {n}->");
                     n.0 -= at.0;
-                    println!("{n}");
+                    // println!("{n}");
                 }
             }
 
@@ -359,7 +359,7 @@ impl<V> ForestNodeStore for ChildVecStore<V> {
         }
         let extracte_nodes = self.nodes.split_off(at.0);
 
-        println!("{}", self.debug_draw(|_| None));
+        // println!("{}", self.debug_draw(|_| None));
         Self {
             nodes: extracte_nodes,
         }
@@ -392,7 +392,7 @@ impl<V> ForestNodeStore for ChildVecStore<V> {
     }
 
     fn swap(&mut self, a: TreeNodeId, b: TreeNodeId) {
-        println!("Swapping {a} <-> {b}");
+        // println!("Swapping {a} <-> {b}");
         if a == b {
             return;
         }
@@ -450,7 +450,7 @@ impl<V> ForestNodeStore for ChildVecStore<V> {
             }
         }
 
-        println!("SS");
+        // println!("SS");
 
         //Now we modify the child pointers of the parents. Here a swap is dangerous as we could have that parent(a) = parent(b)
         if parent_b == parent_a {
@@ -493,7 +493,7 @@ impl<V> ForestNodeStore for ChildVecStore<V> {
             }
         }
 
-        println!("SSSS");
+        // println!("SSSS");
         self.nodes.swap(a.0, b.0);
         #[cfg(test)]
         self.panicing_validate();

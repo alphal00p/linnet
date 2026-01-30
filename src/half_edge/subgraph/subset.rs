@@ -33,6 +33,26 @@ pub struct SubSet<ID> {
     id: std::marker::PhantomData<ID>,
 }
 
+impl<ID> Not for &SubSet<ID> {
+    type Output = SubSet<ID>;
+    fn not(self) -> Self::Output {
+        Self::Output {
+            set: self.set.clone().not(),
+            id: std::marker::PhantomData,
+        }
+    }
+}
+
+impl<ID> FromIterator<bool> for SubSet<ID> {
+    fn from_iter<T: IntoIterator<Item = bool>>(iter: T) -> Self {
+        let set: BitVec = iter.into_iter().collect();
+        Self {
+            set,
+            id: std::marker::PhantomData,
+        }
+    }
+}
+
 impl<ID: IndexLike> Swap<ID> for SubSet<ID> {
     fn is_zero_length(&self) -> bool {
         self.set.is_empty()
@@ -48,6 +68,9 @@ impl<ID: IndexLike> Swap<ID> for SubSet<ID> {
 }
 
 impl<ID> SubSet<ID> {
+    pub fn iter(&self) -> impl Iterator<Item = bool> + '_ {
+        self.set.iter().by_vals()
+    }
     pub fn split_off(&mut self, at: ID) -> Self
     where
         ID: IndexLike,

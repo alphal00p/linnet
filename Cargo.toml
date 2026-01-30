@@ -98,7 +98,7 @@ figment = "0.10.19"
 linnest = { path = "linnest" }
 
 [workspace]
-members = ["clinnet","linnest"]
+members = ["clinnet","linnest","linnet-py"]
 
 [patch.crates-io]
 linnet = { path = "." }

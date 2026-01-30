@@ -2,7 +2,7 @@ use super::{NodeStorage, NodeStorageOps, NodeStorageVec};
 use crate::{
     half_edge::{
         involution::Hedge,
-        subgraph::{BaseSubgraph, Inclusion, ModifySubSet, SubSetLike, SubSetOps, SuBitGraph},
+        subgraph::{BaseSubgraph, Inclusion, ModifySubSet, SuBitGraph, SubSetLike, SubSetOps},
         swap::Swap,
         NodeIndex, NodeVec,
     },
@@ -137,9 +137,9 @@ impl<V, P: ForestNodeStore + ForestNodeStorePreorder + Clone> NodeStorageOps for
 
         let full = !SuBitGraph::empty(n_hedges.0);
         if !(cover.sym_diff(&full).is_empty()) {
-            return Err(crate::half_edge::HedgeGraphError::NodesDoNotPartition(format!(
-                "They do not cover all hedges: Cover:{cover:?}"
-            )));
+            return Err(crate::half_edge::HedgeGraphError::NodesDoNotPartition(
+                format!("They do not cover all hedges: Cover:{cover:?}"),
+            ));
         }
 
         Ok(())
@@ -393,10 +393,10 @@ impl<V, P: ForestNodeStore + ForestNodeStorePreorder + Clone> NodeStorageOps for
     ) -> Self::OpStorage<V2> {
         let mut left = Hedge(0);
         let mut extracted = self.len();
-        println!("{}", self.nodes.debug_draw(|_| None));
+        // println!("{}", self.nodes.debug_draw(|_| None));
         // Do the same swapping as for the edge store, so that they line up
         while left < extracted {
-            println!("{left},{extracted}");
+            // println!("{left},{extracted}");
             if !subgraph.includes(&left) {
                 //left is in the right place
                 left.0 += 1;
@@ -405,13 +405,13 @@ impl<V, P: ForestNodeStore + ForestNodeStorePreorder + Clone> NodeStorageOps for
                 extracted.0 -= 1;
                 if !subgraph.includes(&extracted) {
                     //only with an extracted that is in the wrong spot
-                    println!("{left}<->{extracted}");
+                    // println!("{left}<->{extracted}");
                     self.swap(left, extracted);
                     left.0 += 1;
                 }
             }
         }
-        println!("{}", self.nodes.debug_draw(|_| None));
+        // println!("{}", self.nodes.debug_draw(|_| None));
 
         // Now need to partition the nodes into 3 ranges,
         // - 0..left_nodes do not contain any half edges in the subgraph,

@@ -1,0 +1,18 @@
+[package]
+name = "linnet-py"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Python bindings for linnet"
+
+[lib]
+name = "linnet_py"
+crate-type = ["cdylib"]
+
+[dependencies]
+pyo3 = { version = "0.28", features = ["extension-module"] }
+linnet = { path = ".." }
+dot-parser = "0.5"
+
+[package.metadata.maturin]
+name = "linnet_py"
