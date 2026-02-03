@@ -7,12 +7,18 @@ description = "Python bindings for linnet"
 
 [lib]
 name = "linnet_py"
-crate-type = ["cdylib"]
+crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-pyo3 = { version = "0.28", features = ["extension-module"] }
+pyo3 = { version = "0.28" }
 linnet = { path = ".." }
 dot-parser = "0.5"
+pyo3-stub-gen = { version = "0.18", default-features = false }
+
+[features]
+default = ["extension-module"]
+extension-module = ["pyo3/extension-module"]
+abi3-py310 = ["pyo3/abi3-py310"]
 
 [package.metadata.maturin]
 name = "linnet_py"

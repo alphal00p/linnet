@@ -1,23 +1,38 @@
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 
+use linnet::half_edge::builder::{HedgeData, HedgeGraphBuilder};
 use linnet::half_edge::involution::{EdgeData, EdgeIndex, Flow, Hedge, HedgePair, Orientation};
+use linnet::half_edge::nodestore::DefaultNodeStore;
 use linnet::half_edge::subgraph::{Inclusion, ModifySubSet, SuBitGraph, SubSetLike, SubSetOps};
 use linnet::half_edge::tree::SimpleTraversalTree;
 use linnet::half_edge::{HedgeGraphError, NodeIndex};
-use linnet::parser::{DotEdgeData, DotGraph, DotHedgeData, DotVertexData};
+use linnet::parser::{DotEdgeData, DotGraph, DotHedgeData, DotVertexData, GlobalData};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::{PyAny, PyDict, PyTuple, PyType};
+use pyo3_stub_gen::{
+    define_stub_info_gatherer,
+    derive::{gen_stub_pyclass, gen_stub_pymethods},
+    inventory::submit,
+    type_info::{
+        MethodInfo, MethodType, ParameterDefault, ParameterInfo, ParameterKind, PyMethodsInfo,
+    },
+    PyStubType,
+};
 
-#[pyclass(from_py_object)]
+/// Half-edge identifier.
+#[gen_stub_pyclass]
+#[pyclass(from_py_object, name = "Hedge")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 struct PyHedge {
     hedge: Hedge,
 }
 
+#[gen_stub_pymethods]
 #[pymethods]
 impl PyHedge {
+    /// Create a hedge from a zero-based index.
     #[new]
     fn new(value: usize) -> Self {
         Self {
@@ -25,28 +40,35 @@ impl PyHedge {
         }
     }
 
+    /// Numeric value of this hedge.
     #[getter]
     fn value(&self) -> usize {
         self.hedge.0
     }
 
+    /// Convert to int.
     fn __int__(&self) -> usize {
         self.hedge.0
     }
 
+    /// Debug-style representation.
     fn __repr__(&self) -> String {
         format!("Hedge({})", self.hedge.0)
     }
 }
 
-#[pyclass(from_py_object)]
+/// Node index identifier.
+#[gen_stub_pyclass]
+#[pyclass(from_py_object, name = "NodeIndex")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 struct PyNodeIndex {
     node: NodeIndex,
 }
 
+#[gen_stub_pymethods]
 #[pymethods]
 impl PyNodeIndex {
+    /// Create a node index from a zero-based index.
     #[new]
     fn new(value: usize) -> Self {
         Self {
@@ -54,28 +76,35 @@ impl PyNodeIndex {
         }
     }
 
+    /// Numeric value of this node index.
     #[getter]
     fn value(&self) -> usize {
         self.node.0
     }
 
+    /// Convert to int.
     fn __int__(&self) -> usize {
         self.node.0
     }
 
+    /// Debug-style representation.
     fn __repr__(&self) -> String {
         format!("NodeIndex({})", self.node.0)
     }
 }
 
-#[pyclass(from_py_object)]
+/// Edge index identifier.
+#[gen_stub_pyclass]
+#[pyclass(from_py_object, name = "EdgeIndex")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 struct PyEdgeIndex {
     edge: EdgeIndex,
 }
 
+#[gen_stub_pymethods]
 #[pymethods]
 impl PyEdgeIndex {
+    /// Create an edge index from a zero-based index.
     #[new]
     fn new(value: usize) -> Self {
         Self {
@@ -83,38 +112,47 @@ impl PyEdgeIndex {
         }
     }
 
+    /// Numeric value of this edge index.
     #[getter]
     fn value(&self) -> usize {
         self.edge.0
     }
 
+    /// Convert to int.
     fn __int__(&self) -> usize {
         self.edge.0
     }
 
+    /// Debug-style representation.
     fn __repr__(&self) -> String {
         format!("EdgeIndex({})", self.edge.0)
     }
 }
 
-#[pyclass(from_py_object)]
+/// Flow direction (Source/Sink).
+#[gen_stub_pyclass]
+#[pyclass(from_py_object, name = "Flow")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 struct PyFlow {
     flow: Flow,
 }
 
+#[gen_stub_pymethods]
 #[pymethods]
 impl PyFlow {
+    /// Flow::Source.
     #[staticmethod]
     fn source() -> Self {
         Self { flow: Flow::Source }
     }
 
+    /// Flow::Sink.
     #[staticmethod]
     fn sink() -> Self {
         Self { flow: Flow::Sink }
     }
 
+    /// Debug-style representation.
     fn __repr__(&self) -> String {
         match self.flow {
             Flow::Source => "Flow.Source".to_string(),
@@ -123,14 +161,18 @@ impl PyFlow {
     }
 }
 
-#[pyclass(from_py_object)]
+/// Edge orientation (Default/Reversed/Undirected).
+#[gen_stub_pyclass]
+#[pyclass(from_py_object, name = "Orientation")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 struct PyOrientation {
     orientation: Orientation,
 }
 
+#[gen_stub_pymethods]
 #[pymethods]
 impl PyOrientation {
+    /// Orientation::Default.
     #[staticmethod]
     fn default() -> Self {
         Self {
@@ -138,6 +180,7 @@ impl PyOrientation {
         }
     }
 
+    /// Orientation::Reversed.
     #[staticmethod]
     fn reversed() -> Self {
         Self {
@@ -145,6 +188,7 @@ impl PyOrientation {
         }
     }
 
+    /// Orientation::Undirected.
     #[staticmethod]
     fn undirected() -> Self {
         Self {
@@ -152,6 +196,7 @@ impl PyOrientation {
         }
     }
 
+    /// Debug-style representation.
     fn __repr__(&self) -> String {
         match self.orientation {
             Orientation::Default => "Orientation.Default".to_string(),
@@ -161,15 +206,20 @@ impl PyOrientation {
     }
 }
 
-#[pyclass(from_py_object)]
+/// DOT vertex data (name, optional index, and attribute statements).
+#[gen_stub_pyclass]
+#[pyclass(from_py_object, name = "DotVertexData")]
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct PyDotVertexData {
     data: DotVertexData,
 }
 
+#[gen_stub_pymethods]
 #[pymethods]
 impl PyDotVertexData {
+    /// Create vertex data from fields.
     #[new]
+    #[pyo3(signature = (name=None, index=None, statements=None))]
     fn new(
         name: Option<String>,
         index: Option<usize>,
@@ -184,16 +234,19 @@ impl PyDotVertexData {
         }
     }
 
+    /// Optional vertex name.
     #[getter]
     fn name(&self) -> Option<String> {
         self.data.name.clone()
     }
 
+    /// Optional node index.
     #[getter]
     fn index(&self) -> Option<PyNodeIndex> {
         self.data.index.map(|i| PyNodeIndex { node: i })
     }
 
+    /// Attribute statements as a dict.
     #[getter]
     fn statements<'py>(&self, py: Python<'py>) -> Bound<'py, PyDict> {
         let dict = PyDict::new(py);
@@ -203,10 +256,12 @@ impl PyDotVertexData {
         dict
     }
 
+    /// Insert or update an attribute statement.
     fn add_statement(&mut self, key: String, value: String) {
         self.data.add_statement(key, value);
     }
 
+    /// Debug-style representation.
     fn __repr__(&self) -> String {
         format!(
             "DotVertexData(name={:?}, index={:?}, statements={})",
@@ -217,15 +272,20 @@ impl PyDotVertexData {
     }
 }
 
-#[pyclass(from_py_object)]
+/// DOT hedge (half-edge) data.
+#[gen_stub_pyclass]
+#[pyclass(from_py_object, name = "DotHedgeData")]
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct PyDotHedgeData {
     data: DotHedgeData,
 }
 
+#[gen_stub_pymethods]
 #[pymethods]
 impl PyDotHedgeData {
+    /// Create hedge data from fields.
     #[new]
+    #[pyo3(signature = (statement=None, id=None, port_label=None, compasspt=None))]
     fn new(
         statement: Option<String>,
         id: Option<usize>,
@@ -243,26 +303,31 @@ impl PyDotHedgeData {
         }
     }
 
+    /// Optional statement string.
     #[getter]
     fn statement(&self) -> Option<String> {
         self.data.statement.clone()
     }
 
+    /// Optional hedge id.
     #[getter]
     fn id(&self) -> Option<PyHedge> {
         self.data.id.map(|h| PyHedge { hedge: h })
     }
 
+    /// Optional port label.
     #[getter]
     fn port_label(&self) -> Option<String> {
         self.data.port_label.clone()
     }
 
+    /// Optional compass point as a string.
     #[getter]
     fn compasspt(&self) -> Option<String> {
         self.data.compasspt.as_ref().map(|c| format!("{c:?}"))
     }
 
+    /// Debug-style representation.
     fn __repr__(&self) -> String {
         format!(
             "DotHedgeData(statement={:?}, id={:?}, port_label={:?}, compasspt={:?})",
@@ -274,15 +339,20 @@ impl PyDotHedgeData {
     }
 }
 
-#[pyclass(from_py_object)]
+/// DOT edge data (attributes + optional edge id).
+#[gen_stub_pyclass]
+#[pyclass(from_py_object, name = "DotEdgeData")]
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct PyDotEdgeData {
     data: DotEdgeData,
 }
 
+#[gen_stub_pymethods]
 #[pymethods]
 impl PyDotEdgeData {
+    /// Create edge data from fields.
     #[new]
+    #[pyo3(signature = (statements=None, local_statements=None, edge_id=None))]
     fn new(
         statements: Option<BTreeMap<String, String>>,
         local_statements: Option<BTreeMap<String, String>>,
@@ -297,6 +367,7 @@ impl PyDotEdgeData {
         }
     }
 
+    /// Edge attributes as a dict.
     #[getter]
     fn statements<'py>(&self, py: Python<'py>) -> Bound<'py, PyDict> {
         let dict = PyDict::new(py);
@@ -306,6 +377,7 @@ impl PyDotEdgeData {
         dict
     }
 
+    /// Local edge attributes as a dict.
     #[getter]
     fn local_statements<'py>(&self, py: Python<'py>) -> Bound<'py, PyDict> {
         let dict = PyDict::new(py);
@@ -315,15 +387,18 @@ impl PyDotEdgeData {
         dict
     }
 
+    /// Optional edge id.
     #[getter]
     fn edge_id(&self) -> Option<PyEdgeIndex> {
         self.data.edge_id.map(|i| PyEdgeIndex { edge: i })
     }
 
+    /// Insert or update an attribute statement.
     fn add_statement(&mut self, key: String, value: String) {
         self.data.add_statement(key, value);
     }
 
+    /// Debug-style representation.
     fn __repr__(&self) -> String {
         format!(
             "DotEdgeData(statements={}, local_statements={}, edge_id={:?})",
@@ -334,14 +409,18 @@ impl PyDotEdgeData {
     }
 }
 
-#[pyclass(from_py_object)]
+/// Edge data with orientation.
+#[gen_stub_pyclass]
+#[pyclass(from_py_object, name = "EdgeData")]
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct PyEdgeData {
     data: EdgeData<DotEdgeData>,
 }
 
+#[gen_stub_pymethods]
 #[pymethods]
 impl PyEdgeData {
+    /// Create edge data from orientation and DotEdgeData.
     #[new]
     fn new(orientation: &Bound<'_, PyAny>, data: &Bound<'_, PyAny>) -> PyResult<Self> {
         let orientation = extract_orientation(orientation)?;
@@ -351,6 +430,7 @@ impl PyEdgeData {
         })
     }
 
+    /// Orientation of this edge.
     #[getter]
     fn orientation(&self) -> PyOrientation {
         PyOrientation {
@@ -358,6 +438,7 @@ impl PyEdgeData {
         }
     }
 
+    /// DOT edge data.
     #[getter]
     fn data(&self) -> PyDotEdgeData {
         PyDotEdgeData {
@@ -365,19 +446,24 @@ impl PyEdgeData {
         }
     }
 
+    /// Debug-style representation.
     fn __repr__(&self) -> String {
         format!("EdgeData(orientation={:?})", self.data.orientation)
     }
 }
 
-#[pyclass(from_py_object)]
+/// Hedge pairing (paired, unpaired, split).
+#[gen_stub_pyclass]
+#[pyclass(from_py_object, name = "HedgePair")]
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct PyHedgePair {
     pair: HedgePair,
 }
 
+#[gen_stub_pymethods]
 #[pymethods]
 impl PyHedgePair {
+    /// Kind of hedge pair: \"paired\", \"unpaired\", or \"split\".
     #[getter]
     fn kind(&self) -> String {
         match self.pair {
@@ -388,6 +474,7 @@ impl PyHedgePair {
         .to_string()
     }
 
+    /// Source hedge (paired/split).
     #[getter]
     fn source(&self) -> Option<PyHedge> {
         match self.pair {
@@ -397,6 +484,7 @@ impl PyHedgePair {
         }
     }
 
+    /// Sink hedge (paired/split).
     #[getter]
     fn sink(&self) -> Option<PyHedge> {
         match self.pair {
@@ -406,6 +494,7 @@ impl PyHedgePair {
         }
     }
 
+    /// Hedge (unpaired only).
     #[getter]
     fn hedge(&self) -> Option<PyHedge> {
         match self.pair {
@@ -414,6 +503,7 @@ impl PyHedgePair {
         }
     }
 
+    /// Flow for unpaired hedge.
     #[getter]
     fn flow(&self) -> Option<PyFlow> {
         match self.pair {
@@ -422,6 +512,7 @@ impl PyHedgePair {
         }
     }
 
+    /// Which side is split for split edges.
     #[getter]
     fn split(&self) -> Option<PyFlow> {
         match self.pair {
@@ -430,19 +521,24 @@ impl PyHedgePair {
         }
     }
 
+    /// Debug-style representation.
     fn __repr__(&self) -> String {
         format!("HedgePair({})", self.kind())
     }
 }
 
-#[pyclass(from_py_object)]
+/// Subgraph represented as a bitset of hedges.
+#[gen_stub_pyclass]
+#[pyclass(from_py_object, name = "Subgraph")]
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct PySubgraph {
     subgraph: SuBitGraph,
 }
 
+#[gen_stub_pymethods]
 #[pymethods]
 impl PySubgraph {
+    /// Create an empty subgraph of the given size (number of hedges).
     #[classmethod]
     fn empty(_cls: &Bound<'_, PyType>, size: usize) -> Self {
         Self {
@@ -450,6 +546,7 @@ impl PySubgraph {
         }
     }
 
+    /// Create a full subgraph including all hedges.
     #[classmethod]
     fn full(_cls: &Bound<'_, PyType>, size: usize) -> Self {
         Self {
@@ -457,6 +554,7 @@ impl PySubgraph {
         }
     }
 
+    /// Create a subgraph from a list of hedges.
     #[classmethod]
     fn from_hedges(
         _cls: &Bound<'_, PyType>,
@@ -471,6 +569,7 @@ impl PySubgraph {
         Ok(Self { subgraph })
     }
 
+    /// List included hedges.
     fn to_hedges(&self) -> Vec<PyHedge> {
         self.subgraph
             .included_iter()
@@ -478,43 +577,51 @@ impl PySubgraph {
             .collect()
     }
 
+    /// Total number of hedges in the parent graph.
     fn size(&self) -> usize {
         self.subgraph.size()
     }
 
+    /// Number of included hedges.
     fn n_included(&self) -> usize {
         self.subgraph.n_included()
     }
 
+    /// Whether a hedge is included.
     fn includes(&self, hedge: &Bound<'_, PyAny>) -> PyResult<bool> {
         let hedge = extract_hedge(hedge)?;
         Ok(self.subgraph.includes(&hedge))
     }
 
+    /// Union with another subgraph.
     fn union(&self, other: &PySubgraph) -> Self {
         Self {
             subgraph: self.subgraph.union(&other.subgraph),
         }
     }
 
+    /// Intersection with another subgraph.
     fn intersection(&self, other: &PySubgraph) -> Self {
         Self {
             subgraph: self.subgraph.intersection(&other.subgraph),
         }
     }
 
+    /// Symmetric difference with another subgraph.
     fn sym_diff(&self, other: &PySubgraph) -> Self {
         Self {
             subgraph: self.subgraph.sym_diff(&other.subgraph),
         }
     }
 
+    /// Subtract another subgraph.
     fn subtract(&self, other: &PySubgraph) -> Self {
         Self {
             subgraph: self.subgraph.subtract(&other.subgraph),
         }
     }
 
+    /// Debug-style representation.
     fn __repr__(&self) -> String {
         format!(
             "Subgraph(size={}, included={})",
@@ -524,20 +631,25 @@ impl PySubgraph {
     }
 }
 
-#[pyclass(from_py_object)]
+/// Traversal tree produced by DFS/BFS.
+#[gen_stub_pyclass]
+#[pyclass(from_py_object, name = "TraversalTree")]
 #[derive(Clone, Debug)]
 struct PyTraversalTree {
     tree: SimpleTraversalTree,
 }
 
+#[gen_stub_pymethods]
 #[pymethods]
 impl PyTraversalTree {
+    /// Subgraph corresponding to the tree edges.
     fn tree_subgraph(&self) -> PySubgraph {
         PySubgraph {
             subgraph: self.tree.tree_subgraph.clone(),
         }
     }
 
+    /// Node order from traversal.
     fn node_order(&self) -> Vec<PyNodeIndex> {
         self.tree
             .node_order()
@@ -546,12 +658,14 @@ impl PyTraversalTree {
             .collect()
     }
 
+    /// Covers a subgraph with the traversal tree.
     fn covers(&self, subgraph: &PySubgraph) -> PySubgraph {
         PySubgraph {
             subgraph: self.tree.covers(&subgraph.subgraph),
         }
     }
 
+    /// Iterate hedges as (hedge, kind, root_hedge).
     fn iter_hedges(&self) -> Vec<(PyHedge, String, Option<PyHedge>)> {
         self.tree
             .iter_hedges()
@@ -572,34 +686,43 @@ impl PyTraversalTree {
     }
 }
 
-#[pyclass(from_py_object)]
+/// DOT-backed hedge graph.
+#[gen_stub_pyclass]
+#[pyclass(from_py_object, name = "DotGraph")]
 #[derive(Clone, Debug)]
 struct PyDotGraph {
     graph: DotGraph,
 }
 
+#[gen_stub_pymethods]
 #[pymethods]
 impl PyDotGraph {
+    /// Parse a DOT string into a graph.
     #[classmethod]
     fn from_string(_cls: &Bound<'_, PyType>, s: &str) -> PyResult<Self> {
         let graph = DotGraph::from_string(s).map_err(|e| PyValueError::new_err(e.to_string()))?;
         Ok(Self { graph })
     }
 
+    /// Parse a DOT file into a graph.
     #[classmethod]
     fn from_file(_cls: &Bound<'_, PyType>, path: &str) -> PyResult<Self> {
         let graph = DotGraph::from_file(path).map_err(|e| PyValueError::new_err(e.to_string()))?;
         Ok(Self { graph })
     }
 
+    /// Serialize graph to DOT for debugging.
     fn debug_dot(&self) -> String {
         self.graph.debug_dot()
     }
 
+    /// Serialize a subgraph to DOT.
     fn dot_of(&self, subgraph: &PySubgraph) -> String {
         self.graph.dot_of(&subgraph.subgraph)
     }
 
+    /// Access hedge/node/edge data via indexing.
+    #[gen_stub(skip)]
     fn __getitem__(&self, key: &Bound<'_, PyAny>, py: Python<'_>) -> PyResult<Py<PyAny>> {
         if let Ok(h) = key.extract::<PyRef<PyHedge>>() {
             let data = self.graph.graph[h.hedge].clone();
@@ -621,38 +744,46 @@ impl PyDotGraph {
         ))
     }
 
+    /// Number of nodes.
     fn n_nodes(&self) -> usize {
         self.graph.n_nodes()
     }
 
+    /// Number of edges.
     fn n_edges(&self) -> usize {
         self.graph.n_edges()
     }
 
+    /// Number of hedges.
     fn n_hedges(&self) -> usize {
         self.graph.n_hedges()
     }
 
+    /// Number of external hedges.
     fn n_externals(&self) -> usize {
         self.graph.n_externals()
     }
 
+    /// Number of internal hedges.
     fn n_internals(&self) -> usize {
         self.graph.n_internals()
     }
 
+    /// Subgraph including all hedges.
     fn full_filter(&self) -> PySubgraph {
         PySubgraph {
             subgraph: self.graph.full_filter(),
         }
     }
 
+    /// Empty subgraph of this graph.
     fn empty_subgraph(&self) -> PySubgraph {
         PySubgraph {
             subgraph: self.graph.empty_subgraph(),
         }
     }
 
+    /// Iterate edges within a subgraph.
     fn iter_edges_of(&self, subgraph: &PySubgraph) -> Vec<(PyHedgePair, PyEdgeIndex, PyEdgeData)> {
         self.graph
             .iter_edges_of(&subgraph.subgraph)
@@ -670,6 +801,7 @@ impl PyDotGraph {
             .collect()
     }
 
+    /// Iterate nodes within a subgraph.
     fn iter_nodes_of(
         &self,
         subgraph: &PySubgraph,
@@ -687,6 +819,7 @@ impl PyDotGraph {
             .collect()
     }
 
+    /// Connected components of a subgraph.
     fn connected_components(&self, subgraph: &PySubgraph) -> Vec<PySubgraph> {
         self.graph
             .connected_components(&subgraph.subgraph)
@@ -695,14 +828,17 @@ impl PyDotGraph {
             .collect()
     }
 
+    /// Count connected components.
     fn count_connected_components(&self, subgraph: &PySubgraph) -> usize {
         self.graph.count_connected_components(&subgraph.subgraph)
     }
 
+    /// Whether a subgraph is connected.
     fn is_connected(&self, subgraph: &PySubgraph) -> bool {
         self.graph.is_connected(&subgraph.subgraph)
     }
 
+    /// Depth-first traversal from a root node.
     fn depth_first_traverse(
         &self,
         subgraph: &PySubgraph,
@@ -724,6 +860,7 @@ impl PyDotGraph {
         Ok(PyTraversalTree { tree })
     }
 
+    /// Breadth-first traversal from a root node.
     fn breadth_first_traverse(
         &self,
         subgraph: &PySubgraph,
@@ -745,6 +882,7 @@ impl PyDotGraph {
         Ok(PyTraversalTree { tree })
     }
 
+    /// Join two graphs, matching dangling edges via a Python callback.
     fn join(
         &self,
         other: &PyDotGraph,
@@ -852,6 +990,7 @@ impl PyDotGraph {
         })
     }
 
+    /// In-place join, matching dangling edges via a Python callback.
     fn join_mut(
         &mut self,
         other: &PyDotGraph,
@@ -952,6 +1091,7 @@ impl PyDotGraph {
         result.map_err(to_py_err)
     }
 
+    /// Extract a subgraph with Python callbacks to transform edge/node data.
     fn extract(
         &mut self,
         subgraph: &PySubgraph,
@@ -1092,6 +1232,133 @@ impl PyDotGraph {
     }
 }
 
+/// Builder for constructing DOT graphs programmatically.
+#[gen_stub_pyclass]
+#[pyclass(name = "DotGraphBuilder")]
+struct PyDotGraphBuilder {
+    builder: HedgeGraphBuilder<DotEdgeData, DotVertexData, DotHedgeData>,
+}
+
+#[gen_stub_pymethods]
+#[pymethods]
+impl PyDotGraphBuilder {
+    /// Create a new, empty graph builder.
+    #[new]
+    fn new() -> Self {
+        Self {
+            builder: HedgeGraphBuilder::new(),
+        }
+    }
+
+    /// Add a node and return its index.
+    #[pyo3(signature = (data=None))]
+    fn add_node(&mut self, data: Option<&PyDotVertexData>) -> PyResult<PyNodeIndex> {
+        let data = match data {
+            Some(obj) => obj.data.clone(),
+            None => DotVertexData::empty(),
+        };
+        let node = self.builder.add_node(data);
+        Ok(PyNodeIndex { node })
+    }
+
+    /// Add an edge between two nodes.
+    #[pyo3(signature = (source, sink, data=None, orientation=None, source_hedge=None, sink_hedge=None))]
+    fn add_edge(
+        &mut self,
+        source: &PyNodeIndex,
+        sink: &PyNodeIndex,
+        data: Option<&PyDotEdgeData>,
+        orientation: Option<&PyOrientation>,
+        source_hedge: Option<&PyDotHedgeData>,
+        sink_hedge: Option<&PyDotHedgeData>,
+    ) -> PyResult<()> {
+        let data = match data {
+            Some(obj) => obj.data.clone(),
+            None => DotEdgeData::empty(),
+        };
+        let orientation = match orientation {
+            Some(obj) => obj.orientation,
+            None => Orientation::Default,
+        };
+        let source_hedge = match source_hedge {
+            Some(obj) => obj.data.clone(),
+            None => DotHedgeData::default(),
+        };
+        let sink_hedge = match sink_hedge {
+            Some(obj) => obj.data.clone(),
+            None => DotHedgeData::default(),
+        };
+
+        self.builder.add_edge(
+            HedgeData {
+                data: source_hedge,
+                is_in_subgraph: false,
+                node: source.node,
+            },
+            HedgeData {
+                data: sink_hedge,
+                is_in_subgraph: false,
+                node: sink.node,
+            },
+            data,
+            orientation,
+        );
+        Ok(())
+    }
+
+    /// Add a dangling (external) edge incident to a node.
+    #[pyo3(signature = (source, data=None, orientation=None, flow=None, hedge=None))]
+    fn add_external_edge(
+        &mut self,
+        source: &PyNodeIndex,
+        data: Option<&PyDotEdgeData>,
+        orientation: Option<&PyOrientation>,
+        flow: Option<&PyFlow>,
+        hedge: Option<&PyDotHedgeData>,
+    ) -> PyResult<()> {
+        let data = match data {
+            Some(obj) => obj.data.clone(),
+            None => DotEdgeData::empty(),
+        };
+        let orientation = match orientation {
+            Some(obj) => obj.orientation,
+            None => Orientation::Default,
+        };
+        let flow = match flow {
+            Some(obj) => obj.flow,
+            None => Flow::Source,
+        };
+        let hedge = match hedge {
+            Some(obj) => obj.data.clone(),
+            None => DotHedgeData::default(),
+        };
+
+        self.builder.add_external_edge(
+            HedgeData {
+                data: hedge,
+                is_in_subgraph: false,
+                node: source.node,
+            },
+            data,
+            orientation,
+            flow,
+        );
+        Ok(())
+    }
+
+    /// Build the graph and reset the builder.
+    fn build(&mut self) -> PyDotGraph {
+        let builder = std::mem::take(&mut self.builder);
+        let graph = builder.build::<DefaultNodeStore<DotVertexData>>();
+        PyDotGraph {
+            graph: DotGraph {
+                graph,
+                global_data: GlobalData::from(()),
+            },
+        }
+    }
+}
+
 #[pymodule]
 fn linnet_py(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyHedge>()?;
@@ -1107,8 +1374,79 @@ fn linnet_py(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PySubgraph>()?;
     m.add_class::<PyTraversalTree>()?;
     m.add_class::<PyDotGraph>()?;
+    m.add_class::<PyDotGraphBuilder>()?;
     Ok(())
 }
+
+submit! {
+    PyMethodsInfo {
+        struct_id: std::any::TypeId::of::<PyDotGraph>,
+        attrs: &[],
+        getters: &[],
+        setters: &[],
+        methods: &[
+            MethodInfo {
+                name: "__getitem__",
+                parameters: &[
+                    ParameterInfo {
+                        name: "key",
+                        kind: ParameterKind::PositionalOrKeyword,
+                        type_info: <PyHedge as PyStubType>::type_input,
+                        default: ParameterDefault::None,
+                    }
+                ],
+                r#return: <PyDotHedgeData as PyStubType>::type_output,
+                doc: "",
+                r#type: MethodType::Instance,
+                is_async: false,
+                deprecated: None,
+                type_ignored: None,
+                is_overload: true,
+            },
+            MethodInfo {
+                name: "__getitem__",
+                parameters: &[
+                    ParameterInfo {
+                        name: "key",
+                        kind: ParameterKind::PositionalOrKeyword,
+                        type_info: <PyNodeIndex as PyStubType>::type_input,
+                        default: ParameterDefault::None,
+                    }
+                ],
+                r#return: <PyDotVertexData as PyStubType>::type_output,
+                doc: "",
+                r#type: MethodType::Instance,
+                is_async: false,
+                deprecated: None,
+                type_ignored: None,
+                is_overload: true,
+            },
+            MethodInfo {
+                name: "__getitem__",
+                parameters: &[
+                    ParameterInfo {
+                        name: "key",
+                        kind: ParameterKind::PositionalOrKeyword,
+                        type_info: <PyEdgeIndex as PyStubType>::type_input,
+                        default: ParameterDefault::None,
+                    }
+                ],
+                r#return: <PyDotEdgeData as PyStubType>::type_output,
+                doc: "",
+                r#type: MethodType::Instance,
+                is_async: false,
+                deprecated: None,
+                type_ignored: None,
+                is_overload: true,
+            },
+        ],
+        file: file!(),
+        line: line!(),
+        column: column!(),
+    }
+}
+
+define_stub_info_gatherer!(stub_info);
 
 fn extract_hedge(obj: &Bound<'_, PyAny>) -> PyResult<Hedge> {
     if let Ok(h) = obj.extract::<PyRef<PyHedge>>() {

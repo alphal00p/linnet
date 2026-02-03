@@ -230,6 +230,21 @@
             '';
           };
         };
+
+        py-stubs = flake-utils.lib.mkApp {
+          drv = pkgs.writeShellApplication {
+            name = "py-stubs";
+            runtimeInputs = [rustToolchain];
+            text = ''
+              cd linnet-py
+              export PYO3_NO_PYTHON=1
+              if [ "$(uname)" = "Darwin" ]; then
+                export RUSTFLAGS="-C link-arg=-Wl,-undefined,dynamic_lookup"
+              fi
+              cargo run --bin stubgen --features abi3-py310
+            '';
+          };
+        };
       };
 
       devShells.default = craneLib.devShell {

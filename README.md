@@ -33,7 +33,7 @@ To start using Linnet in your Rust project, add it as a dependency in your `Carg
 
 ```toml
 [dependencies]
-linnet = "0.6.2"
+linnet = "0.17.0"
 ```
 
 ## AI Agent Context
