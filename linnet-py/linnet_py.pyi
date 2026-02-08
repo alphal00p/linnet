@@ -11,18 +11,42 @@ __all__ = [
     "DotGraphBuilder",
     "DotHedgeData",
     "DotVertexData",
+    "EdgeStatements",
     "EdgeData",
     "EdgeIndex",
     "Flow",
+    "GlobalData",
+    "GlobalStatements",
     "Hedge",
     "HedgeNode",
     "HedgePair",
+    "NodeStatements",
     "NodeIndex",
-    "OrientedCut",
     "Orientation",
+    "OrientedCut",
     "Subgraph",
     "TraversalTree",
 ]
+
+@typing.final
+class Cycle:
+    r"""
+    Cycle represented as a subgraph and optional loop count.
+    """
+    @property
+    def filter(self) -> Subgraph:
+        r"""
+        Subgraph filter for this cycle.
+        """
+    @property
+    def loop_count(self) -> typing.Optional[builtins.int]:
+        r"""
+        Optional loop count for this cycle.
+        """
+    def __repr__(self) -> builtins.str:
+        r"""
+        Debug-style representation.
+        """
 
 @typing.final
 class DotEdgeData:
@@ -30,14 +54,14 @@ class DotEdgeData:
     DOT edge data (attributes + optional edge id).
     """
     @property
-    def statements(self) -> dict:
+    def statements(self) -> EdgeStatements:
         r"""
-        Edge attributes as a dict.
+        Edge attributes as a dict-like proxy.
         """
     @property
-    def local_statements(self) -> dict:
+    def local_statements(self) -> EdgeStatements:
         r"""
-        Local edge attributes as a dict.
+        Local edge attributes as a dict-like proxy.
         """
     @property
     def edge_id(self) -> typing.Optional[EdgeIndex]:
@@ -65,10 +89,41 @@ class DotEdgeData:
         """
 
 @typing.final
+class EdgeStatements:
+    r"""
+    Dict-like proxy for edge attribute statements.
+    """
+    def __getitem__(self, key: builtins.str) -> builtins.str: ...
+    def __setitem__(self, key: builtins.str, value: builtins.str) -> None: ...
+    def __delitem__(self, key: builtins.str) -> None: ...
+    def __contains__(self, key: builtins.str) -> builtins.bool: ...
+    def __len__(self) -> builtins.int: ...
+    def __iter__(self) -> typing.Iterator[builtins.str]: ...
+    def get(self, key: builtins.str, default: typing.Any = ...) -> typing.Any: ...
+    def keys(self) -> builtins.list[builtins.str]: ...
+    def values(self) -> builtins.list[builtins.str]: ...
+    def items(self) -> builtins.list[tuple[builtins.str, builtins.str]]: ...
+    def clear(self) -> None: ...
+    def update(self, other: typing.Mapping[builtins.str, builtins.str]) -> None: ...
+    def pop(self, key: builtins.str, default: typing.Any = ...) -> typing.Any: ...
+    def popitem(self) -> tuple[builtins.str, builtins.str]: ...
+    def setdefault(
+        self, key: builtins.str, default: builtins.str = ...
+    ) -> builtins.str: ...
+    def __repr__(self) -> builtins.str: ...
+
+@typing.final
 class DotGraph:
     r"""
     DOT-backed hedge graph.
     """
+    @property
+    def global_data(self) -> GlobalData:
+        r"""
+        Global graph attributes.
+        """
+    @global_data.setter
+    def global_data(self, value: GlobalData) -> None: ...
     @classmethod
     def from_string(cls, s: builtins.str) -> DotGraph:
         r"""
@@ -161,8 +216,8 @@ class DotGraph:
     def depth_first_traverse(
         self,
         subgraph: Subgraph,
-        root_node: typing.Any,
-        include_hedge: typing.Optional[typing.Any],
+        root_node: NodeIndex,
+        include_hedge: typing.Optional[Hedge],
     ) -> TraversalTree:
         r"""
         Depth-first traversal from a root node.
@@ -170,8 +225,8 @@ class DotGraph:
     def breadth_first_traverse(
         self,
         subgraph: Subgraph,
-        root_node: typing.Any,
-        include_hedge: typing.Optional[typing.Any],
+        root_node: NodeIndex,
+        include_hedge: typing.Optional[Hedge],
     ) -> TraversalTree:
         r"""
         Breadth-first traversal from a root node.
@@ -203,7 +258,7 @@ class DotGraph:
         All spanning forests of a subgraph.
         """
     def combine_to_single_hedgenode(
-        self, nodes: typing.Sequence[typing.Any]
+        self, nodes: typing.Sequence[NodeIndex]
     ) -> HedgeNode:
         r"""
         Combine nodes into a single hedge node.
@@ -215,7 +270,7 @@ class DotGraph:
         All cuts between two hedge nodes.
         """
     def all_cuts_from_ids(
-        self, source: typing.Sequence[typing.Any], target: typing.Sequence[typing.Any]
+        self, source: typing.Sequence[NodeIndex], target: typing.Sequence[NodeIndex]
     ) -> builtins.list[tuple[Subgraph, OrientedCut, Subgraph]]:
         r"""
         All cuts between two sets of node indices.
@@ -353,9 +408,9 @@ class DotVertexData:
         Optional node index.
         """
     @property
-    def statements(self) -> dict:
+    def statements(self) -> NodeStatements:
         r"""
-        Attribute statements as a dict.
+        Attribute statements as a dict-like proxy.
         """
     def __new__(
         cls,
@@ -374,6 +429,30 @@ class DotVertexData:
         r"""
         Debug-style representation.
         """
+
+@typing.final
+class NodeStatements:
+    r"""
+    Dict-like proxy for node attribute statements.
+    """
+    def __getitem__(self, key: builtins.str) -> builtins.str: ...
+    def __setitem__(self, key: builtins.str, value: builtins.str) -> None: ...
+    def __delitem__(self, key: builtins.str) -> None: ...
+    def __contains__(self, key: builtins.str) -> builtins.bool: ...
+    def __len__(self) -> builtins.int: ...
+    def __iter__(self) -> typing.Iterator[builtins.str]: ...
+    def get(self, key: builtins.str, default: typing.Any = ...) -> typing.Any: ...
+    def keys(self) -> builtins.list[builtins.str]: ...
+    def values(self) -> builtins.list[builtins.str]: ...
+    def items(self) -> builtins.list[tuple[builtins.str, builtins.str]]: ...
+    def clear(self) -> None: ...
+    def update(self, other: typing.Mapping[builtins.str, builtins.str]) -> None: ...
+    def pop(self, key: builtins.str, default: typing.Any = ...) -> typing.Any: ...
+    def popitem(self) -> tuple[builtins.str, builtins.str]: ...
+    def setdefault(
+        self, key: builtins.str, default: builtins.str = ...
+    ) -> builtins.str: ...
+    def __repr__(self) -> builtins.str: ...
 
 @typing.final
 class EdgeData:
@@ -443,6 +522,98 @@ class Flow:
         """
 
 @typing.final
+class GlobalData:
+    r"""
+    Global graph attributes (graph/node/edge statements).
+    """
+    @property
+    def name(self) -> builtins.str:
+        r"""
+        Graph name.
+        """
+    @name.setter
+    def name(self, value: builtins.str) -> None: ...
+    @property
+    def statements(self) -> GlobalStatements:
+        r"""
+        Graph-level statements.
+        """
+    @statements.setter
+    def statements(self, value: builtins.dict[builtins.str, builtins.str]) -> None: ...
+    @property
+    def edge_statements(self) -> GlobalStatements:
+        r"""
+        Default edge statements.
+        """
+    @edge_statements.setter
+    def edge_statements(
+        self, value: builtins.dict[builtins.str, builtins.str]
+    ) -> None: ...
+    @property
+    def node_statements(self) -> GlobalStatements:
+        r"""
+        Default node statements.
+        """
+    @node_statements.setter
+    def node_statements(
+        self, value: builtins.dict[builtins.str, builtins.str]
+    ) -> None: ...
+    def __new__(
+        cls,
+        name: typing.Optional[builtins.str] = None,
+        statements: typing.Optional[typing.Mapping[builtins.str, builtins.str]] = None,
+        edge_statements: typing.Optional[
+            typing.Mapping[builtins.str, builtins.str]
+        ] = None,
+        node_statements: typing.Optional[
+            typing.Mapping[builtins.str, builtins.str]
+        ] = None,
+    ) -> GlobalData:
+        r"""
+        Create global data from fields.
+        """
+    def add_statement(self, key: builtins.str, value: builtins.str) -> None:
+        r"""
+        Insert or update a graph-level statement.
+        """
+    def add_edge_statement(self, key: builtins.str, value: builtins.str) -> None:
+        r"""
+        Insert or update a default edge statement.
+        """
+    def add_node_statement(self, key: builtins.str, value: builtins.str) -> None:
+        r"""
+        Insert or update a default node statement.
+        """
+    def __repr__(self) -> builtins.str:
+        r"""
+        Debug-style representation.
+        """
+
+@typing.final
+class GlobalStatements:
+    r"""
+    Dict-like proxy for global statements.
+    """
+    def __getitem__(self, key: builtins.str) -> builtins.str: ...
+    def __setitem__(self, key: builtins.str, value: builtins.str) -> None: ...
+    def __delitem__(self, key: builtins.str) -> None: ...
+    def __contains__(self, key: builtins.str) -> builtins.bool: ...
+    def __len__(self) -> builtins.int: ...
+    def __iter__(self) -> typing.Iterator[builtins.str]: ...
+    def get(self, key: builtins.str, default: typing.Any = ...) -> typing.Any: ...
+    def keys(self) -> builtins.list[builtins.str]: ...
+    def values(self) -> builtins.list[builtins.str]: ...
+    def items(self) -> builtins.list[tuple[builtins.str, builtins.str]]: ...
+    def clear(self) -> None: ...
+    def update(self, other: typing.Mapping[builtins.str, builtins.str]) -> None: ...
+    def pop(self, key: builtins.str, default: typing.Any = ...) -> typing.Any: ...
+    def popitem(self) -> tuple[builtins.str, builtins.str]: ...
+    def setdefault(
+        self, key: builtins.str, default: builtins.str = ...
+    ) -> builtins.str: ...
+    def __repr__(self) -> builtins.str: ...
+
+@typing.final
 class Hedge:
     r"""
     Half-edge identifier.
@@ -459,6 +630,30 @@ class Hedge:
     def __int__(self) -> builtins.int:
         r"""
         Convert to int.
+        """
+    def __repr__(self) -> builtins.str:
+        r"""
+        Debug-style representation.
+        """
+
+@typing.final
+class HedgeNode:
+    r"""
+    Hedge node with internal graph and hairs.
+    """
+    @property
+    def internal_graph(self) -> Subgraph:
+        r"""
+        Internal subgraph.
+        """
+    @property
+    def hairs(self) -> Subgraph:
+        r"""
+        Hair subgraph.
+        """
+    def __new__(cls, internal_graph: Subgraph, hairs: Subgraph) -> HedgeNode:
+        r"""
+        Create a hedge node from internal graph and hairs subgraphs.
         """
     def __repr__(self) -> builtins.str:
         r"""
@@ -554,6 +749,26 @@ class Orientation:
         """
 
 @typing.final
+class OrientedCut:
+    r"""
+    Oriented cut represented by left/right subgraphs.
+    """
+    @property
+    def left(self) -> Subgraph:
+        r"""
+        Left side of the cut.
+        """
+    @property
+    def right(self) -> Subgraph:
+        r"""
+        Right side of the cut.
+        """
+    def __repr__(self) -> builtins.str:
+        r"""
+        Debug-style representation.
+        """
+
+@typing.final
 class Subgraph:
     r"""
     Subgraph represented as a bitset of hedges.
@@ -570,7 +785,7 @@ class Subgraph:
         """
     @classmethod
     def from_hedges(
-        cls, size: builtins.int, hedges: typing.Sequence[typing.Any]
+        cls, size: builtins.int, hedges: typing.Sequence[Hedge]
     ) -> Subgraph:
         r"""
         Create a subgraph from a list of hedges.
@@ -606,70 +821,6 @@ class Subgraph:
     def subtract(self, other: Subgraph) -> Subgraph:
         r"""
         Subtract another subgraph.
-        """
-    def __repr__(self) -> builtins.str:
-        r"""
-        Debug-style representation.
-        """
-
-@typing.final
-class Cycle:
-    r"""
-    Cycle represented as a subgraph and optional loop count.
-    """
-    @property
-    def filter(self) -> Subgraph:
-        r"""
-        Subgraph filter for this cycle.
-        """
-    @property
-    def loop_count(self) -> typing.Optional[builtins.int]:
-        r"""
-        Optional loop count for this cycle.
-        """
-    def __repr__(self) -> builtins.str:
-        r"""
-        Debug-style representation.
-        """
-
-@typing.final
-class OrientedCut:
-    r"""
-    Oriented cut represented by left/right subgraphs.
-    """
-    @property
-    def left(self) -> Subgraph:
-        r"""
-        Left side of the cut.
-        """
-    @property
-    def right(self) -> Subgraph:
-        r"""
-        Right side of the cut.
-        """
-    def __repr__(self) -> builtins.str:
-        r"""
-        Debug-style representation.
-        """
-
-@typing.final
-class HedgeNode:
-    r"""
-    Hedge node with internal graph and hairs.
-    """
-    def __new__(cls, internal_graph: Subgraph, hairs: Subgraph) -> HedgeNode:
-        r"""
-        Create a hedge node from internal graph and hairs subgraphs.
-        """
-    @property
-    def internal_graph(self) -> Subgraph:
-        r"""
-        Internal subgraph.
-        """
-    @property
-    def hairs(self) -> Subgraph:
-        r"""
-        Hair subgraph.
         """
     def __repr__(self) -> builtins.str:
         r"""

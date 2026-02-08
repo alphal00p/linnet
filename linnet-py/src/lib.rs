@@ -15,7 +15,7 @@ use linnet::parser::{
 };
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
-use pyo3::types::{PyAny, PyDict, PyTuple, PyType};
+use pyo3::types::{PyAny, PyList, PyString, PyTuple, PyType};
 use pyo3_stub_gen::{
     define_stub_info_gatherer,
     derive::{gen_stub_pyclass, gen_stub_pymethods},
@@ -211,12 +211,18 @@ impl PyOrientation {
     }
 }
 
+#[derive(Debug)]
+enum DotVertexDataSource {
+    Owned(DotVertexData),
+    Graph { graph: Py<PyAny>, node: NodeIndex },
+}
+
 /// DOT vertex data (name, optional index, and attribute statements).
 #[gen_stub_pyclass]
-#[pyclass(from_py_object, name = "DotVertexData")]
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[pyclass(name = "DotVertexData")]
+#[derive(Debug)]
 struct PyDotVertexData {
-    data: DotVertexData,
+    data: DotVertexDataSource,
 }
 
 #[gen_stub_pymethods]
@@ -231,49 +237,278 @@ impl PyDotVertexData {
         statements: Option<BTreeMap<String, String>>,
     ) -> Self {
         Self {
-            data: DotVertexData {
+            data: DotVertexDataSource::Owned(DotVertexData {
                 name,
                 index: index.map(NodeIndex),
                 statements: statements.unwrap_or_default(),
-            },
+            }),
         }
     }
 
     /// Optional vertex name.
     #[getter]
-    fn name(&self) -> Option<String> {
-        self.data.name.clone()
+    fn name(&self, py: Python<'_>) -> Option<String> {
+        self.read_data(py, |d| d.name.clone())
     }
 
     /// Optional node index.
     #[getter]
-    fn index(&self) -> Option<PyNodeIndex> {
-        self.data.index.map(|i| PyNodeIndex { node: i })
+    fn index(&self, py: Python<'_>) -> Option<PyNodeIndex> {
+        self.read_data(py, |d| d.index.map(|i| PyNodeIndex { node: i }))
     }
 
-    /// Attribute statements as a dict.
+    /// Attribute statements as a dict-like proxy.
     #[getter]
-    fn statements<'py>(&self, py: Python<'py>) -> Bound<'py, PyDict> {
-        let dict = PyDict::new(py);
-        for (k, v) in &self.data.statements {
-            let _ = dict.set_item(k, v);
-        }
-        dict
+    fn statements(slf: PyRef<'_, Self>) -> PyResult<PyNodeStatements> {
+        let py = slf.py();
+        let data = slf.into_pyobject(py)?.unbind().into();
+        Ok(PyNodeStatements { data })
     }
 
     /// Insert or update an attribute statement.
     fn add_statement(&mut self, key: String, value: String) {
-        self.data.add_statement(key, value);
+        let _ = Python::try_attach(|py| self.insert_statement(key, value, py));
     }
 
     /// Debug-style representation.
-    fn __repr__(&self) -> String {
+    fn __repr__(&self, py: Python<'_>) -> String {
+        let (name, index, count) = self.read_data(py, |d| {
+            (d.name.clone(), d.index.map(|i| i.0), d.statements.len())
+        });
         format!(
             "DotVertexData(name={:?}, index={:?}, statements={})",
-            self.data.name,
-            self.data.index.map(|i| i.0),
-            self.data.statements.len()
+            name, index, count
         )
+    }
+}
+
+/// Dict-like proxy for node attribute statements.
+#[gen_stub_pyclass]
+#[pyclass(name = "NodeStatements")]
+#[derive(Debug)]
+struct PyNodeStatements {
+    data: Py<PyAny>,
+}
+
+#[gen_stub_pymethods]
+#[pymethods]
+impl PyNodeStatements {
+    fn __getitem__(&self, key: String, py: Python<'_>) -> PyResult<String> {
+        let value = self.get_value(py, &key);
+        value.ok_or_else(|| pyo3::exceptions::PyKeyError::new_err(key))
+    }
+
+    fn __setitem__(&mut self, key: String, value: String, py: Python<'_>) -> PyResult<()> {
+        let mut data = self.data.bind(py).extract::<PyRefMut<PyDotVertexData>>()?;
+        data.insert_statement(key, value, py);
+        Ok(())
+    }
+
+    fn __delitem__(&mut self, key: String, py: Python<'_>) -> PyResult<()> {
+        let mut data = self.data.bind(py).extract::<PyRefMut<PyDotVertexData>>()?;
+        if data.remove_statement(&key, py) {
+            Ok(())
+        } else {
+            Err(pyo3::exceptions::PyKeyError::new_err(key))
+        }
+    }
+
+    fn __contains__(&self, key: String, py: Python<'_>) -> bool {
+        self.get_value(py, &key).is_some()
+    }
+
+    fn __len__(&self, py: Python<'_>) -> usize {
+        self.snapshot(py).len()
+    }
+
+    fn __iter__<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let keys = self.keys(py)?;
+        keys.call_method0("__iter__")
+    }
+
+    fn get<'py>(
+        &self,
+        key: String,
+        default: Option<Bound<'py, PyAny>>,
+        py: Python<'py>,
+    ) -> Bound<'py, PyAny> {
+        if let Some(value) = self.get_value(py, &key) {
+            PyString::new(py, &value).into_any()
+        } else {
+            default.unwrap_or_else(|| py.None().into_bound(py))
+        }
+    }
+
+    fn keys<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let keys = self
+            .snapshot(py)
+            .into_iter()
+            .map(|(k, _)| k)
+            .collect::<Vec<_>>();
+        Ok(PyList::new(py, keys)?.into_any())
+    }
+
+    fn values<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let values = self
+            .snapshot(py)
+            .into_iter()
+            .map(|(_, v)| v)
+            .collect::<Vec<_>>();
+        Ok(PyList::new(py, values)?.into_any())
+    }
+
+    fn items<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let items = self.snapshot(py);
+        Ok(PyList::new(py, items)?.into_any())
+    }
+
+    fn clear(&mut self, py: Python<'_>) {
+        if let Ok(mut data) = self.data.bind(py).extract::<PyRefMut<PyDotVertexData>>() {
+            data.clear_statements(py);
+        }
+    }
+
+    fn update(&mut self, other: &Bound<'_, PyAny>, py: Python<'_>) -> PyResult<()> {
+        let map = other.extract::<BTreeMap<String, String>>()?;
+        let mut data = self.data.bind(py).extract::<PyRefMut<PyDotVertexData>>()?;
+        for (k, v) in map {
+            data.insert_statement(k, v, py);
+        }
+        Ok(())
+    }
+
+    #[pyo3(signature = (key, default=None))]
+    fn pop<'py>(
+        &mut self,
+        key: String,
+        default: Option<Bound<'py, PyAny>>,
+        py: Python<'py>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let value = self.get_value(py, &key);
+        if let Some(value) = value {
+            let mut data = self.data.bind(py).extract::<PyRefMut<PyDotVertexData>>()?;
+            data.remove_statement(&key, py);
+            Ok(PyString::new(py, &value).into_any())
+        } else if let Some(default) = default {
+            Ok(default)
+        } else {
+            Err(pyo3::exceptions::PyKeyError::new_err(key))
+        }
+    }
+
+    fn popitem<'py>(&mut self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let items = self.snapshot(py);
+        if let Some((key, value)) = items.into_iter().next() {
+            let mut data = self.data.bind(py).extract::<PyRefMut<PyDotVertexData>>()?;
+            data.remove_statement(&key, py);
+            Ok(PyTuple::new(py, [key, value])?.into_any())
+        } else {
+            Err(pyo3::exceptions::PyKeyError::new_err("popitem(): empty"))
+        }
+    }
+
+    #[pyo3(signature = (key, default=None))]
+    fn setdefault<'py>(
+        &mut self,
+        key: String,
+        default: Option<String>,
+        py: Python<'py>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        if let Some(value) = self.get_value(py, &key) {
+            Ok(PyString::new(py, &value).into_any())
+        } else {
+            let value = default.unwrap_or_default();
+            let mut data = self.data.bind(py).extract::<PyRefMut<PyDotVertexData>>()?;
+            data.insert_statement(key, value.clone(), py);
+            Ok(PyString::new(py, &value).into_any())
+        }
+    }
+
+    fn __repr__(&self, py: Python<'_>) -> String {
+        format!("NodeStatements(len={})", self.snapshot(py).len())
+    }
+}
+
+impl PyDotVertexData {
+    fn read_data<R>(&self, py: Python<'_>, f: impl FnOnce(&DotVertexData) -> R) -> R {
+        match &self.data {
+            DotVertexDataSource::Owned(data) => f(data),
+            DotVertexDataSource::Graph { graph, node } => {
+                let graph_ref = graph
+                    .bind(py)
+                    .extract::<PyRef<PyDotGraph>>()
+                    .expect("DotVertexData: invalid graph reference");
+                f(&graph_ref.graph.graph[*node])
+            }
+        }
+    }
+
+    fn write_data(&mut self, py: Python<'_>, f: impl FnOnce(&mut DotVertexData)) {
+        match &mut self.data {
+            DotVertexDataSource::Owned(data) => f(data),
+            DotVertexDataSource::Graph { graph, node } => {
+                let mut graph_ref = graph
+                    .bind(py)
+                    .extract::<PyRefMut<PyDotGraph>>()
+                    .expect("DotVertexData: invalid graph reference");
+                f(&mut graph_ref.graph.graph[*node])
+            }
+        }
+    }
+
+    fn snapshot(&self, py: Python<'_>) -> DotVertexData {
+        self.read_data(py, |d| d.clone())
+    }
+
+    fn get_statement(&self, key: &str, py: Python<'_>) -> Option<String> {
+        self.read_data(py, |d| d.statements.get(key).cloned())
+    }
+
+    fn snapshot_statements(&self, py: Python<'_>) -> Vec<(String, String)> {
+        self.read_data(py, |d| {
+            d.statements
+                .iter()
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect()
+        })
+    }
+
+    fn insert_statement(&mut self, key: String, value: String, py: Python<'_>) {
+        self.write_data(py, |d| {
+            d.statements.insert(key, value);
+        });
+    }
+
+    fn remove_statement(&mut self, key: &str, py: Python<'_>) -> bool {
+        let mut removed = false;
+        self.write_data(py, |d| {
+            removed = d.statements.remove(key).is_some();
+        });
+        removed
+    }
+
+    fn clear_statements(&mut self, py: Python<'_>) {
+        self.write_data(py, |d| d.statements.clear());
+    }
+}
+
+impl PyNodeStatements {
+    fn get_value(&self, py: Python<'_>, key: &str) -> Option<String> {
+        let data = self
+            .data
+            .bind(py)
+            .extract::<PyRef<PyDotVertexData>>()
+            .expect("NodeStatements: invalid data reference");
+        data.get_statement(key, py)
+    }
+
+    fn snapshot(&self, py: Python<'_>) -> Vec<(String, String)> {
+        let data = self
+            .data
+            .bind(py)
+            .extract::<PyRef<PyDotVertexData>>()
+            .expect("NodeStatements: invalid data reference");
+        data.snapshot_statements(py)
     }
 }
 
@@ -344,12 +579,18 @@ impl PyDotHedgeData {
     }
 }
 
+#[derive(Debug)]
+enum DotEdgeDataSource {
+    Owned(DotEdgeData),
+    Graph { graph: Py<PyAny>, edge: EdgeIndex },
+}
+
 /// DOT edge data (attributes + optional edge id).
 #[gen_stub_pyclass]
-#[pyclass(from_py_object, name = "DotEdgeData")]
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[pyclass(name = "DotEdgeData")]
+#[derive(Debug)]
 struct PyDotEdgeData {
-    data: DotEdgeData,
+    data: DotEdgeDataSource,
 }
 
 #[gen_stub_pymethods]
@@ -364,53 +605,720 @@ impl PyDotEdgeData {
         edge_id: Option<usize>,
     ) -> Self {
         Self {
-            data: DotEdgeData {
+            data: DotEdgeDataSource::Owned(DotEdgeData {
                 statements: statements.unwrap_or_default(),
                 local_statements: local_statements.unwrap_or_default(),
                 edge_id: edge_id.map(EdgeIndex::from),
-            },
+            }),
         }
     }
 
-    /// Edge attributes as a dict.
+    /// Edge attributes as a dict-like proxy.
     #[getter]
-    fn statements<'py>(&self, py: Python<'py>) -> Bound<'py, PyDict> {
-        let dict = PyDict::new(py);
-        for (k, v) in &self.data.statements {
-            let _ = dict.set_item(k, v);
-        }
-        dict
+    fn statements(slf: PyRef<'_, Self>) -> PyResult<PyEdgeStatements> {
+        let py = slf.py();
+        let data = slf.into_pyobject(py)?.unbind().into();
+        Ok(PyEdgeStatements { data, local: false })
     }
 
-    /// Local edge attributes as a dict.
+    /// Local edge attributes as a dict-like proxy.
     #[getter]
-    fn local_statements<'py>(&self, py: Python<'py>) -> Bound<'py, PyDict> {
-        let dict = PyDict::new(py);
-        for (k, v) in &self.data.local_statements {
-            let _ = dict.set_item(k, v);
-        }
-        dict
+    fn local_statements(slf: PyRef<'_, Self>) -> PyResult<PyEdgeStatements> {
+        let py = slf.py();
+        let data = slf.into_pyobject(py)?.unbind().into();
+        Ok(PyEdgeStatements { data, local: true })
     }
 
     /// Optional edge id.
     #[getter]
-    fn edge_id(&self) -> Option<PyEdgeIndex> {
-        self.data.edge_id.map(|i| PyEdgeIndex { edge: i })
+    fn edge_id(&self, py: Python<'_>) -> Option<PyEdgeIndex> {
+        self.read_data(py, |d| d.edge_id.map(|i| PyEdgeIndex { edge: i }))
     }
 
     /// Insert or update an attribute statement.
     fn add_statement(&mut self, key: String, value: String) {
-        self.data.add_statement(key, value);
+        let _ = Python::try_attach(|py| self.insert_statement(false, key, value, py));
     }
 
     /// Debug-style representation.
-    fn __repr__(&self) -> String {
+    fn __repr__(&self, py: Python<'_>) -> String {
+        let (statements, local, edge_id) = self.read_data(py, |d| {
+            (
+                d.statements.len(),
+                d.local_statements.len(),
+                d.edge_id.map(|i| i.0),
+            )
+        });
         format!(
             "DotEdgeData(statements={}, local_statements={}, edge_id={:?})",
-            self.data.statements.len(),
-            self.data.local_statements.len(),
-            self.data.edge_id.map(|i| i.0)
+            statements, local, edge_id
         )
+    }
+}
+
+/// Dict-like proxy for edge attribute statements.
+#[gen_stub_pyclass]
+#[pyclass(name = "EdgeStatements")]
+#[derive(Debug)]
+struct PyEdgeStatements {
+    data: Py<PyAny>,
+    local: bool,
+}
+
+#[gen_stub_pymethods]
+#[pymethods]
+impl PyEdgeStatements {
+    fn __getitem__(&self, key: String, py: Python<'_>) -> PyResult<String> {
+        let value = self.get_value(py, &key);
+        value.ok_or_else(|| pyo3::exceptions::PyKeyError::new_err(key))
+    }
+
+    fn __setitem__(&mut self, key: String, value: String, py: Python<'_>) -> PyResult<()> {
+        let mut data = self.data.bind(py).extract::<PyRefMut<PyDotEdgeData>>()?;
+        data.insert_statement(self.local, key, value, py);
+        Ok(())
+    }
+
+    fn __delitem__(&mut self, key: String, py: Python<'_>) -> PyResult<()> {
+        let mut data = self.data.bind(py).extract::<PyRefMut<PyDotEdgeData>>()?;
+        if data.remove_statement(self.local, &key, py) {
+            Ok(())
+        } else {
+            Err(pyo3::exceptions::PyKeyError::new_err(key))
+        }
+    }
+
+    fn __contains__(&self, key: String, py: Python<'_>) -> bool {
+        self.get_value(py, &key).is_some()
+    }
+
+    fn __len__(&self, py: Python<'_>) -> usize {
+        self.snapshot(py).len()
+    }
+
+    fn __iter__<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let keys = self.keys(py)?;
+        keys.call_method0("__iter__")
+    }
+
+    fn get<'py>(
+        &self,
+        key: String,
+        default: Option<Bound<'py, PyAny>>,
+        py: Python<'py>,
+    ) -> Bound<'py, PyAny> {
+        if let Some(value) = self.get_value(py, &key) {
+            PyString::new(py, &value).into_any()
+        } else {
+            default.unwrap_or_else(|| py.None().into_bound(py))
+        }
+    }
+
+    fn keys<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let keys = self
+            .snapshot(py)
+            .into_iter()
+            .map(|(k, _)| k)
+            .collect::<Vec<_>>();
+        Ok(PyList::new(py, keys)?.into_any())
+    }
+
+    fn values<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let values = self
+            .snapshot(py)
+            .into_iter()
+            .map(|(_, v)| v)
+            .collect::<Vec<_>>();
+        Ok(PyList::new(py, values)?.into_any())
+    }
+
+    fn items<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let items = self.snapshot(py);
+        Ok(PyList::new(py, items)?.into_any())
+    }
+
+    fn clear(&mut self, py: Python<'_>) {
+        if let Ok(mut data) = self.data.bind(py).extract::<PyRefMut<PyDotEdgeData>>() {
+            data.clear_statements(self.local, py);
+        }
+    }
+
+    fn update(&mut self, other: &Bound<'_, PyAny>, py: Python<'_>) -> PyResult<()> {
+        let map = other.extract::<BTreeMap<String, String>>()?;
+        let mut data = self.data.bind(py).extract::<PyRefMut<PyDotEdgeData>>()?;
+        for (k, v) in map {
+            data.insert_statement(self.local, k, v, py);
+        }
+        Ok(())
+    }
+
+    #[pyo3(signature = (key, default=None))]
+    fn pop<'py>(
+        &mut self,
+        key: String,
+        default: Option<Bound<'py, PyAny>>,
+        py: Python<'py>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let value = self.get_value(py, &key);
+        if let Some(value) = value {
+            let mut data = self.data.bind(py).extract::<PyRefMut<PyDotEdgeData>>()?;
+            data.remove_statement(self.local, &key, py);
+            Ok(PyString::new(py, &value).into_any())
+        } else if let Some(default) = default {
+            Ok(default)
+        } else {
+            Err(pyo3::exceptions::PyKeyError::new_err(key))
+        }
+    }
+
+    fn popitem<'py>(&mut self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let items = self.snapshot(py);
+        if let Some((key, value)) = items.into_iter().next() {
+            let mut data = self.data.bind(py).extract::<PyRefMut<PyDotEdgeData>>()?;
+            data.remove_statement(self.local, &key, py);
+            Ok(PyTuple::new(py, [key, value])?.into_any())
+        } else {
+            Err(pyo3::exceptions::PyKeyError::new_err("popitem(): empty"))
+        }
+    }
+
+    #[pyo3(signature = (key, default=None))]
+    fn setdefault<'py>(
+        &mut self,
+        key: String,
+        default: Option<String>,
+        py: Python<'py>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        if let Some(value) = self.get_value(py, &key) {
+            Ok(PyString::new(py, &value).into_any())
+        } else {
+            let value = default.unwrap_or_default();
+            let mut data = self.data.bind(py).extract::<PyRefMut<PyDotEdgeData>>()?;
+            data.insert_statement(self.local, key, value.clone(), py);
+            Ok(PyString::new(py, &value).into_any())
+        }
+    }
+
+    fn __repr__(&self, py: Python<'_>) -> String {
+        let label = if self.local {
+            "EdgeStatements(local)"
+        } else {
+            "EdgeStatements"
+        };
+        format!("{}(len={})", label, self.snapshot(py).len())
+    }
+}
+
+impl PyDotEdgeData {
+    fn read_data<R>(&self, py: Python<'_>, f: impl FnOnce(&DotEdgeData) -> R) -> R {
+        match &self.data {
+            DotEdgeDataSource::Owned(data) => f(data),
+            DotEdgeDataSource::Graph { graph, edge } => {
+                let graph_ref = graph
+                    .bind(py)
+                    .extract::<PyRef<PyDotGraph>>()
+                    .expect("DotEdgeData: invalid graph reference");
+                f(&graph_ref.graph.graph[*edge])
+            }
+        }
+    }
+
+    fn write_data(&mut self, py: Python<'_>, f: impl FnOnce(&mut DotEdgeData)) {
+        match &mut self.data {
+            DotEdgeDataSource::Owned(data) => f(data),
+            DotEdgeDataSource::Graph { graph, edge } => {
+                let mut graph_ref = graph
+                    .bind(py)
+                    .extract::<PyRefMut<PyDotGraph>>()
+                    .expect("DotEdgeData: invalid graph reference");
+                f(&mut graph_ref.graph.graph[*edge])
+            }
+        }
+    }
+
+    fn snapshot(&self, py: Python<'_>) -> DotEdgeData {
+        self.read_data(py, |d| d.clone())
+    }
+
+    fn get_statement(&self, local: bool, key: &str, py: Python<'_>) -> Option<String> {
+        self.read_data(py, |d| {
+            let map = if local {
+                &d.local_statements
+            } else {
+                &d.statements
+            };
+            map.get(key).cloned()
+        })
+    }
+
+    fn snapshot_statements(&self, local: bool, py: Python<'_>) -> Vec<(String, String)> {
+        self.read_data(py, |d| {
+            let map = if local {
+                &d.local_statements
+            } else {
+                &d.statements
+            };
+            map.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
+        })
+    }
+
+    fn insert_statement(&mut self, local: bool, key: String, value: String, py: Python<'_>) {
+        self.write_data(py, |d| {
+            let map = if local {
+                &mut d.local_statements
+            } else {
+                &mut d.statements
+            };
+            map.insert(key, value);
+        });
+    }
+
+    fn remove_statement(&mut self, local: bool, key: &str, py: Python<'_>) -> bool {
+        let mut removed = false;
+        self.write_data(py, |d| {
+            let map = if local {
+                &mut d.local_statements
+            } else {
+                &mut d.statements
+            };
+            removed = map.remove(key).is_some();
+        });
+        removed
+    }
+
+    fn clear_statements(&mut self, local: bool, py: Python<'_>) {
+        self.write_data(py, |d| {
+            let map = if local {
+                &mut d.local_statements
+            } else {
+                &mut d.statements
+            };
+            map.clear();
+        });
+    }
+}
+
+impl PyEdgeStatements {
+    fn get_value(&self, py: Python<'_>, key: &str) -> Option<String> {
+        let data = self
+            .data
+            .bind(py)
+            .extract::<PyRef<PyDotEdgeData>>()
+            .expect("EdgeStatements: invalid data reference");
+        data.get_statement(self.local, key, py)
+    }
+
+    fn snapshot(&self, py: Python<'_>) -> Vec<(String, String)> {
+        let data = self
+            .data
+            .bind(py)
+            .extract::<PyRef<PyDotEdgeData>>()
+            .expect("EdgeStatements: invalid data reference");
+        data.snapshot_statements(self.local, py)
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum StatementKind {
+    Graph,
+    Edge,
+    Node,
+}
+
+/// Dict-like proxy for global statements.
+#[gen_stub_pyclass]
+#[pyclass(name = "GlobalStatements")]
+#[derive(Debug)]
+struct PyGlobalStatements {
+    data: Py<PyAny>,
+    kind: StatementKind,
+}
+
+#[gen_stub_pymethods]
+#[pymethods]
+impl PyGlobalStatements {
+    fn __getitem__(&self, key: String, py: Python<'_>) -> PyResult<String> {
+        let value = self.get_value(py, &key);
+        value.ok_or_else(|| pyo3::exceptions::PyKeyError::new_err(key))
+    }
+
+    fn __setitem__(&mut self, key: String, value: String, py: Python<'_>) -> PyResult<()> {
+        let mut data = self.data.bind(py).extract::<PyRefMut<PyGlobalData>>()?;
+        data.insert_statement(self.kind, key, value, py);
+        Ok(())
+    }
+
+    fn __delitem__(&mut self, key: String, py: Python<'_>) -> PyResult<()> {
+        let mut data = self.data.bind(py).extract::<PyRefMut<PyGlobalData>>()?;
+        if data.remove_statement(self.kind, &key, py) {
+            Ok(())
+        } else {
+            Err(pyo3::exceptions::PyKeyError::new_err(key))
+        }
+    }
+
+    fn __contains__(&self, key: String, py: Python<'_>) -> bool {
+        self.get_value(py, &key).is_some()
+    }
+
+    fn __len__(&self, py: Python<'_>) -> usize {
+        self.snapshot(py).len()
+    }
+
+    fn __iter__<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let keys = self.keys(py)?;
+        keys.call_method0("__iter__")
+    }
+
+    fn get<'py>(
+        &self,
+        key: String,
+        default: Option<Bound<'py, PyAny>>,
+        py: Python<'py>,
+    ) -> Bound<'py, PyAny> {
+        if let Some(value) = self.get_value(py, &key) {
+            PyString::new(py, &value).into_any()
+        } else {
+            default.unwrap_or_else(|| py.None().into_bound(py))
+        }
+    }
+
+    fn keys<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let keys = self
+            .snapshot(py)
+            .into_iter()
+            .map(|(k, _)| k)
+            .collect::<Vec<_>>();
+        Ok(PyList::new(py, keys)?.into_any())
+    }
+
+    fn values<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let values = self
+            .snapshot(py)
+            .into_iter()
+            .map(|(_, v)| v)
+            .collect::<Vec<_>>();
+        Ok(PyList::new(py, values)?.into_any())
+    }
+
+    fn items<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let items = self.snapshot(py);
+        Ok(PyList::new(py, items)?.into_any())
+    }
+
+    fn clear(&mut self, py: Python<'_>) {
+        if let Ok(mut data) = self.data.bind(py).extract::<PyRefMut<PyGlobalData>>() {
+            data.clear_statements(self.kind, py);
+        }
+    }
+
+    fn update(&mut self, other: &Bound<'_, PyAny>, py: Python<'_>) -> PyResult<()> {
+        let map = other.extract::<BTreeMap<String, String>>()?;
+        let mut data = self.data.bind(py).extract::<PyRefMut<PyGlobalData>>()?;
+        for (k, v) in map {
+            data.insert_statement(self.kind, k, v, py);
+        }
+        Ok(())
+    }
+
+    #[pyo3(signature = (key, default=None))]
+    fn pop<'py>(
+        &mut self,
+        key: String,
+        default: Option<Bound<'py, PyAny>>,
+        py: Python<'py>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let value = self.get_value(py, &key);
+        if let Some(value) = value {
+            let mut data = self.data.bind(py).extract::<PyRefMut<PyGlobalData>>()?;
+            data.remove_statement(self.kind, &key, py);
+            Ok(PyString::new(py, &value).into_any())
+        } else if let Some(default) = default {
+            Ok(default)
+        } else {
+            Err(pyo3::exceptions::PyKeyError::new_err(key))
+        }
+    }
+
+    fn popitem<'py>(&mut self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let items = self.snapshot(py);
+        if let Some((key, value)) = items.into_iter().next() {
+            let mut data = self.data.bind(py).extract::<PyRefMut<PyGlobalData>>()?;
+            data.remove_statement(self.kind, &key, py);
+            Ok(PyTuple::new(py, [key, value])?.into_any())
+        } else {
+            Err(pyo3::exceptions::PyKeyError::new_err("popitem(): empty"))
+        }
+    }
+
+    #[pyo3(signature = (key, default=None))]
+    fn setdefault<'py>(
+        &mut self,
+        key: String,
+        default: Option<String>,
+        py: Python<'py>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        if let Some(value) = self.get_value(py, &key) {
+            Ok(PyString::new(py, &value).into_any())
+        } else {
+            let value = default.unwrap_or_default();
+            let mut data = self.data.bind(py).extract::<PyRefMut<PyGlobalData>>()?;
+            data.insert_statement(self.kind, key, value.clone(), py);
+            Ok(PyString::new(py, &value).into_any())
+        }
+    }
+
+    fn __repr__(&self, py: Python<'_>) -> String {
+        format!("GlobalStatements(len={})", self.snapshot(py).len())
+    }
+}
+
+/// Global graph attributes (graph/node/edge statements).
+#[gen_stub_pyclass]
+#[pyclass(name = "GlobalData")]
+#[derive(Debug)]
+struct PyGlobalData {
+    data: GlobalData,
+    #[gen_stub(skip)]
+    graph: Option<Py<PyAny>>,
+}
+
+#[gen_stub_pymethods]
+#[pymethods]
+impl PyGlobalData {
+    /// Create global data from fields.
+    #[new]
+    #[pyo3(signature = (name=None, statements=None, edge_statements=None, node_statements=None))]
+    fn new(
+        name: Option<String>,
+        statements: Option<BTreeMap<String, String>>,
+        edge_statements: Option<BTreeMap<String, String>>,
+        node_statements: Option<BTreeMap<String, String>>,
+    ) -> Self {
+        Self {
+            data: GlobalData {
+                name: name.unwrap_or_default(),
+                statements: statements.unwrap_or_default(),
+                edge_statements: edge_statements.unwrap_or_default(),
+                node_statements: node_statements.unwrap_or_default(),
+            },
+            graph: None,
+        }
+    }
+
+    /// Graph name.
+    #[getter]
+    fn name(&self, py: Python<'_>) -> String {
+        self.read_global(|g| g.name.clone(), py)
+    }
+
+    #[setter]
+    fn set_name(&mut self, name: String) {
+        let _ = Python::try_attach(|py| self.write_global(|g| g.name = name, py));
+    }
+
+    /// Graph-level statements.
+    #[getter]
+    fn statements(slf: PyRef<'_, Self>) -> PyResult<PyGlobalStatements> {
+        let py = slf.py();
+        let data = slf.into_pyobject(py)?.unbind().into();
+        Ok(PyGlobalStatements {
+            data,
+            kind: StatementKind::Graph,
+        })
+    }
+
+    #[setter]
+    fn set_statements(&mut self, statements: BTreeMap<String, String>) {
+        let _ = Python::try_attach(|py| self.write_global(|g| g.statements = statements, py));
+    }
+
+    /// Default edge statements.
+    #[getter]
+    fn edge_statements(slf: PyRef<'_, Self>) -> PyResult<PyGlobalStatements> {
+        let py = slf.py();
+        let data = slf.into_pyobject(py)?.unbind().into();
+        Ok(PyGlobalStatements {
+            data,
+            kind: StatementKind::Edge,
+        })
+    }
+
+    #[setter]
+    fn set_edge_statements(&mut self, statements: BTreeMap<String, String>) {
+        let _ = Python::try_attach(|py| self.write_global(|g| g.edge_statements = statements, py));
+    }
+
+    /// Default node statements.
+    #[getter]
+    fn node_statements(slf: PyRef<'_, Self>) -> PyResult<PyGlobalStatements> {
+        let py = slf.py();
+        let data = slf.into_pyobject(py)?.unbind().into();
+        Ok(PyGlobalStatements {
+            data,
+            kind: StatementKind::Node,
+        })
+    }
+
+    #[setter]
+    fn set_node_statements(&mut self, statements: BTreeMap<String, String>) {
+        let _ = Python::try_attach(|py| self.write_global(|g| g.node_statements = statements, py));
+    }
+
+    /// Insert or update a graph-level statement.
+    fn add_statement(&mut self, key: String, value: String) {
+        let _ =
+            Python::try_attach(|py| self.insert_statement(StatementKind::Graph, key, value, py));
+    }
+
+    /// Insert or update a default edge statement.
+    fn add_edge_statement(&mut self, key: String, value: String) {
+        let _ = Python::try_attach(|py| self.insert_statement(StatementKind::Edge, key, value, py));
+    }
+
+    /// Insert or update a default node statement.
+    fn add_node_statement(&mut self, key: String, value: String) {
+        let _ = Python::try_attach(|py| self.insert_statement(StatementKind::Node, key, value, py));
+    }
+
+    /// Debug-style representation.
+    fn __repr__(&self, py: Python<'_>) -> String {
+        self.read_global(
+            |g| {
+                format!(
+                    "GlobalData(name=\"{}\", statements={}, edge_statements={}, node_statements={})",
+                    g.name,
+                    g.statements.len(),
+                    g.edge_statements.len(),
+                    g.node_statements.len()
+                )
+            },
+            py,
+        )
+    }
+}
+
+impl PyGlobalData {
+    fn snapshot(&self, py: Python<'_>) -> GlobalData {
+        self.read_global(|g| g.clone(), py)
+    }
+
+    fn read_global<R>(&self, f: impl FnOnce(&GlobalData) -> R, py: Python<'_>) -> R {
+        if let Some(graph) = &self.graph {
+            let graph_ref = graph
+                .bind(py)
+                .extract::<PyRef<PyDotGraph>>()
+                .expect("GlobalData: invalid graph reference");
+            f(&graph_ref.graph.global_data)
+        } else {
+            f(&self.data)
+        }
+    }
+
+    fn write_global(&mut self, f: impl FnOnce(&mut GlobalData), py: Python<'_>) {
+        if let Some(graph) = &self.graph {
+            let mut graph_ref = graph
+                .bind(py)
+                .extract::<PyRefMut<PyDotGraph>>()
+                .expect("GlobalData: invalid graph reference");
+            f(&mut graph_ref.graph.global_data)
+        } else {
+            f(&mut self.data)
+        }
+    }
+
+    fn get_statement(&self, kind: StatementKind, key: &str, py: Python<'_>) -> Option<String> {
+        self.read_global(
+            |g| match kind {
+                StatementKind::Graph => g.statements.get(key).cloned(),
+                StatementKind::Edge => g.edge_statements.get(key).cloned(),
+                StatementKind::Node => g.node_statements.get(key).cloned(),
+            },
+            py,
+        )
+    }
+
+    fn snapshot_statements(&self, kind: StatementKind, py: Python<'_>) -> Vec<(String, String)> {
+        self.read_global(
+            |g| {
+                let map = match kind {
+                    StatementKind::Graph => &g.statements,
+                    StatementKind::Edge => &g.edge_statements,
+                    StatementKind::Node => &g.node_statements,
+                };
+                map.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
+            },
+            py,
+        )
+    }
+
+    fn insert_statement(
+        &mut self,
+        kind: StatementKind,
+        key: String,
+        value: String,
+        py: Python<'_>,
+    ) {
+        self.write_global(
+            |g| match kind {
+                StatementKind::Graph => {
+                    g.statements.insert(key, value);
+                }
+                StatementKind::Edge => {
+                    g.edge_statements.insert(key, value);
+                }
+                StatementKind::Node => {
+                    g.node_statements.insert(key, value);
+                }
+            },
+            py,
+        );
+    }
+
+    fn remove_statement(&mut self, kind: StatementKind, key: &str, py: Python<'_>) -> bool {
+        let mut removed = false;
+        self.write_global(
+            |g| {
+                removed = match kind {
+                    StatementKind::Graph => g.statements.remove(key).is_some(),
+                    StatementKind::Edge => g.edge_statements.remove(key).is_some(),
+                    StatementKind::Node => g.node_statements.remove(key).is_some(),
+                };
+            },
+            py,
+        );
+        removed
+    }
+
+    fn clear_statements(&mut self, kind: StatementKind, py: Python<'_>) {
+        self.write_global(
+            |g| match kind {
+                StatementKind::Graph => g.statements.clear(),
+                StatementKind::Edge => g.edge_statements.clear(),
+                StatementKind::Node => g.node_statements.clear(),
+            },
+            py,
+        );
+    }
+}
+
+impl PyGlobalStatements {
+    fn get_value(&self, py: Python<'_>, key: &str) -> Option<String> {
+        let data = self
+            .data
+            .bind(py)
+            .extract::<PyRef<PyGlobalData>>()
+            .expect("GlobalStatements: invalid data reference");
+        data.get_statement(self.kind, key, py)
+    }
+
+    fn snapshot(&self, py: Python<'_>) -> Vec<(String, String)> {
+        let data = self
+            .data
+            .bind(py)
+            .extract::<PyRef<PyGlobalData>>()
+            .expect("GlobalStatements: invalid data reference");
+        data.snapshot_statements(self.kind, py)
     }
 }
 
@@ -447,7 +1355,7 @@ impl PyEdgeData {
     #[getter]
     fn data(&self) -> PyDotEdgeData {
         PyDotEdgeData {
-            data: self.data.data.clone(),
+            data: DotEdgeDataSource::Owned(self.data.data.clone()),
         }
     }
 
@@ -561,15 +1469,10 @@ impl PySubgraph {
 
     /// Create a subgraph from a list of hedges.
     #[classmethod]
-    fn from_hedges(
-        _cls: &Bound<'_, PyType>,
-        size: usize,
-        hedges: Vec<Py<PyAny>>,
-        py: Python<'_>,
-    ) -> PyResult<Self> {
+    fn from_hedges(_cls: &Bound<'_, PyType>, size: usize, hedges: Vec<PyHedge>) -> PyResult<Self> {
         let mut subgraph = SuBitGraph::empty(size);
         for h in hedges {
-            subgraph.add(extract_hedge(&h.bind(py))?);
+            subgraph.add(h.hedge);
         }
         Ok(Self { subgraph })
     }
@@ -852,6 +1755,25 @@ impl PyDotGraph {
         self.graph.debug_dot()
     }
 
+    /// Global graph attributes.
+    #[getter]
+    fn global_data(slf: PyRef<'_, Self>) -> PyResult<PyGlobalData> {
+        let py = slf.py();
+        let data = slf.graph.global_data.clone();
+        let graph_obj = slf.into_pyobject(py)?.unbind().into();
+        Ok(PyGlobalData {
+            data,
+            graph: Some(graph_obj),
+        })
+    }
+
+    #[setter]
+    fn set_global_data(&mut self, data: &PyGlobalData) {
+        let _ = Python::try_attach(|py| {
+            self.graph.global_data = data.snapshot(py);
+        });
+    }
+
     /// Serialize the full graph to DOT.
     fn dot(&self) -> String {
         self.graph.dot_of(&self.graph.full_filter())
@@ -864,20 +1786,41 @@ impl PyDotGraph {
 
     /// Access hedge/node/edge data via indexing.
     #[gen_stub(skip)]
-    fn __getitem__(&self, key: &Bound<'_, PyAny>, py: Python<'_>) -> PyResult<Py<PyAny>> {
+    fn __getitem__(
+        slf: Py<PyDotGraph>,
+        key: &Bound<'_, PyAny>,
+        py: Python<'_>,
+    ) -> PyResult<Py<PyAny>> {
         if let Ok(h) = key.extract::<PyRef<PyHedge>>() {
-            let data = self.graph.graph[h.hedge].clone();
+            let graph_ref = slf.borrow(py);
+            let data = graph_ref.graph.graph[h.hedge].clone();
             let obj = Py::new(py, PyDotHedgeData { data })?;
             return Ok(obj.into_any());
         }
         if let Ok(n) = key.extract::<PyRef<PyNodeIndex>>() {
-            let data = self.graph.graph[n.node].clone();
-            let obj = Py::new(py, PyDotVertexData { data })?;
+            let graph_obj: Py<PyAny> = slf.into();
+            let obj = Py::new(
+                py,
+                PyDotVertexData {
+                    data: DotVertexDataSource::Graph {
+                        graph: graph_obj,
+                        node: n.node,
+                    },
+                },
+            )?;
             return Ok(obj.into_any());
         }
         if let Ok(e) = key.extract::<PyRef<PyEdgeIndex>>() {
-            let data = self.graph.graph[e.edge].clone();
-            let obj = Py::new(py, PyDotEdgeData { data })?;
+            let graph_obj: Py<PyAny> = slf.into();
+            let obj = Py::new(
+                py,
+                PyDotEdgeData {
+                    data: DotEdgeDataSource::Graph {
+                        graph: graph_obj,
+                        edge: e.edge,
+                    },
+                },
+            )?;
             return Ok(obj.into_any());
         }
         Err(PyValueError::new_err(
@@ -969,7 +1912,9 @@ impl PyDotGraph {
                 (
                     PyNodeIndex { node },
                     hedges,
-                    PyDotVertexData { data: data.clone() },
+                    PyDotVertexData {
+                        data: DotVertexDataSource::Owned(data.clone()),
+                    },
                 )
             })
             .collect()
@@ -987,7 +1932,9 @@ impl PyDotGraph {
                 (
                     PyNodeIndex { node },
                     hedges,
-                    PyDotVertexData { data: data.clone() },
+                    PyDotVertexData {
+                        data: DotVertexDataSource::Owned(data.clone()),
+                    },
                 )
             })
             .collect()
@@ -1016,14 +1963,11 @@ impl PyDotGraph {
     fn depth_first_traverse(
         &self,
         subgraph: &PySubgraph,
-        root_node: &Bound<'_, PyAny>,
-        include_hedge: Option<Bound<'_, PyAny>>,
+        root_node: &PyNodeIndex,
+        include_hedge: Option<&PyHedge>,
     ) -> PyResult<PyTraversalTree> {
-        let root = extract_node_index(root_node)?;
-        let include = match include_hedge {
-            Some(h) => Some(extract_hedge(&h)?),
-            None => None,
-        };
+        let root = root_node.node;
+        let include = include_hedge.map(|h| h.hedge);
         let tree = SimpleTraversalTree::depth_first_traverse(
             &self.graph.graph,
             &subgraph.subgraph,
@@ -1038,14 +1982,11 @@ impl PyDotGraph {
     fn breadth_first_traverse(
         &self,
         subgraph: &PySubgraph,
-        root_node: &Bound<'_, PyAny>,
-        include_hedge: Option<Bound<'_, PyAny>>,
+        root_node: &PyNodeIndex,
+        include_hedge: Option<&PyHedge>,
     ) -> PyResult<PyTraversalTree> {
-        let root = extract_node_index(root_node)?;
-        let include = match include_hedge {
-            Some(h) => Some(extract_hedge(&h)?),
-            None => None,
-        };
+        let root = root_node.node;
+        let include = include_hedge.map(|h| h.hedge);
         let tree = SimpleTraversalTree::breadth_first_traverse(
             &self.graph.graph,
             &subgraph.subgraph,
@@ -1104,15 +2045,8 @@ impl PyDotGraph {
     }
 
     /// Combine nodes into a single hedge node.
-    fn combine_to_single_hedgenode(
-        &self,
-        nodes: Vec<Py<PyAny>>,
-        py: Python<'_>,
-    ) -> PyResult<PyHedgeNode> {
-        let mut ids = Vec::with_capacity(nodes.len());
-        for node in nodes {
-            ids.push(extract_node_index(&node.bind(py))?);
-        }
+    fn combine_to_single_hedgenode(&self, nodes: Vec<PyNodeIndex>) -> PyResult<PyHedgeNode> {
+        let ids = nodes.into_iter().map(|n| n.node).collect::<Vec<_>>();
         let node = self.graph.combine_to_single_hedgenode(&ids);
         Ok(PyHedgeNode { node })
     }
@@ -1139,18 +2073,11 @@ impl PyDotGraph {
     /// All cuts between two sets of node indices.
     fn all_cuts_from_ids(
         &self,
-        source: Vec<Py<PyAny>>,
-        target: Vec<Py<PyAny>>,
-        py: Python<'_>,
+        source: Vec<PyNodeIndex>,
+        target: Vec<PyNodeIndex>,
     ) -> PyResult<Vec<(PySubgraph, PyOrientedCut, PySubgraph)>> {
-        let mut source_ids = Vec::with_capacity(source.len());
-        for node in source {
-            source_ids.push(extract_node_index(&node.bind(py))?);
-        }
-        let mut target_ids = Vec::with_capacity(target.len());
-        for node in target {
-            target_ids.push(extract_node_index(&node.bind(py))?);
-        }
+        let source_ids = source.into_iter().map(|n| n.node).collect::<Vec<_>>();
+        let target_ids = target.into_iter().map(|n| n.node).collect::<Vec<_>>();
         let cuts = self.graph.all_cuts_from_ids(&source_ids, &target_ids);
         Ok(cuts
             .into_iter()
@@ -1172,7 +2099,9 @@ impl PyDotGraph {
         node_data_merge: Option<&PyDotVertexData>,
     ) {
         let node_data = match node_data_merge {
-            Some(obj) => obj.data.clone(),
+            Some(obj) => {
+                Python::try_attach(|py| obj.snapshot(py)).unwrap_or_else(DotVertexData::empty)
+            }
             None => DotVertexData::empty(),
         };
         self.graph
@@ -1477,7 +2406,7 @@ impl PyDotGraph {
                 }
                 Python::attach(|py| {
                     let py_node = PyDotVertexData {
-                        data: node_ref.clone(),
+                        data: DotVertexDataSource::Owned(node_ref.clone()),
                     };
                     match split_node_fn.bind(py).call1((py_node,)) {
                         Ok(val) => match extract_dot_vertex_data(&val) {
@@ -1499,7 +2428,9 @@ impl PyDotGraph {
                     return DotVertexData::empty();
                 }
                 Python::attach(|py| {
-                    let py_node = PyDotVertexData { data: node_owned };
+                    let py_node = PyDotVertexData {
+                        data: DotVertexDataSource::Owned(node_owned),
+                    };
                     match owned_node_fn.bind(py).call1((py_node,)) {
                         Ok(val) => match extract_dot_vertex_data(&val) {
                             Ok(out) => out,
@@ -1552,7 +2483,9 @@ impl PyDotGraphBuilder {
     #[pyo3(signature = (data=None))]
     fn add_node(&mut self, data: Option<&PyDotVertexData>) -> PyResult<PyNodeIndex> {
         let data = match data {
-            Some(obj) => obj.data.clone(),
+            Some(obj) => {
+                Python::try_attach(|py| obj.snapshot(py)).unwrap_or_else(DotVertexData::empty)
+            }
             None => DotVertexData::empty(),
         };
         let node = self.builder.add_node(data);
@@ -1571,7 +2504,9 @@ impl PyDotGraphBuilder {
         sink_hedge: Option<&PyDotHedgeData>,
     ) -> PyResult<()> {
         let data = match data {
-            Some(obj) => obj.data.clone(),
+            Some(obj) => {
+                Python::try_attach(|py| obj.snapshot(py)).unwrap_or_else(DotEdgeData::empty)
+            }
             None => DotEdgeData::empty(),
         };
         let orientation = match orientation {
@@ -1615,7 +2550,9 @@ impl PyDotGraphBuilder {
         hedge: Option<&PyDotHedgeData>,
     ) -> PyResult<()> {
         let data = match data {
-            Some(obj) => obj.data.clone(),
+            Some(obj) => {
+                Python::try_attach(|py| obj.snapshot(py)).unwrap_or_else(DotEdgeData::empty)
+            }
             None => DotEdgeData::empty(),
         };
         let orientation = match orientation {
@@ -1665,8 +2602,12 @@ fn linnet_py(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyFlow>()?;
     m.add_class::<PyOrientation>()?;
     m.add_class::<PyDotVertexData>()?;
+    m.add_class::<PyNodeStatements>()?;
     m.add_class::<PyDotHedgeData>()?;
     m.add_class::<PyDotEdgeData>()?;
+    m.add_class::<PyEdgeStatements>()?;
+    m.add_class::<PyGlobalData>()?;
+    m.add_class::<PyGlobalStatements>()?;
     m.add_class::<PyEdgeData>()?;
     m.add_class::<PyHedgePair>()?;
     m.add_class::<PySubgraph>()?;
@@ -1757,14 +2698,6 @@ fn extract_hedge(obj: &Bound<'_, PyAny>) -> PyResult<Hedge> {
     }
 }
 
-fn extract_node_index(obj: &Bound<'_, PyAny>) -> PyResult<NodeIndex> {
-    if let Ok(n) = obj.extract::<PyRef<PyNodeIndex>>() {
-        Ok(n.node)
-    } else {
-        Ok(NodeIndex(obj.extract::<usize>()?))
-    }
-}
-
 fn extract_flow(obj: &Bound<'_, PyAny>) -> PyResult<Flow> {
     if let Ok(f) = obj.extract::<PyRef<PyFlow>>() {
         Ok(f.flow)
@@ -1795,11 +2728,13 @@ fn extract_orientation(obj: &Bound<'_, PyAny>) -> PyResult<Orientation> {
 }
 
 fn extract_dot_edge_data(obj: &Bound<'_, PyAny>) -> PyResult<DotEdgeData> {
-    Ok(obj.extract::<PyRef<PyDotEdgeData>>()?.data.clone())
+    let data = obj.extract::<PyRef<PyDotEdgeData>>()?;
+    Ok(data.snapshot(obj.py()))
 }
 
 fn extract_dot_vertex_data(obj: &Bound<'_, PyAny>) -> PyResult<DotVertexData> {
-    Ok(obj.extract::<PyRef<PyDotVertexData>>()?.data.clone())
+    let data = obj.extract::<PyRef<PyDotVertexData>>()?;
+    Ok(data.snapshot(obj.py()))
 }
 
 fn extract_edge_data(obj: &Bound<'_, PyAny>) -> PyResult<EdgeData<DotEdgeData>> {
