@@ -3,7 +3,9 @@
 
 import builtins
 import typing
+
 __all__ = [
+    "Cycle",
     "DotEdgeData",
     "DotGraph",
     "DotGraphBuilder",
@@ -13,8 +15,10 @@ __all__ = [
     "EdgeIndex",
     "Flow",
     "Hedge",
+    "HedgeNode",
     "HedgePair",
     "NodeIndex",
+    "OrientedCut",
     "Orientation",
     "Subgraph",
     "TraversalTree",
@@ -40,7 +44,14 @@ class DotEdgeData:
         r"""
         Optional edge id.
         """
-    def __new__(cls, statements: typing.Optional[typing.Mapping[builtins.str, builtins.str]] = None, local_statements: typing.Optional[typing.Mapping[builtins.str, builtins.str]] = None, edge_id: typing.Optional[builtins.int] = None) -> DotEdgeData:
+    def __new__(
+        cls,
+        statements: typing.Optional[typing.Mapping[builtins.str, builtins.str]] = None,
+        local_statements: typing.Optional[
+            typing.Mapping[builtins.str, builtins.str]
+        ] = None,
+        edge_id: typing.Optional[builtins.int] = None,
+    ) -> DotEdgeData:
         r"""
         Create edge data from fields.
         """
@@ -77,6 +88,10 @@ class DotGraph:
         r"""
         Serialize graph to DOT for debugging.
         """
+    def dot(self) -> builtins.str:
+        r"""
+        Serialize the full graph to DOT.
+        """
     def dot_of(self, subgraph: Subgraph) -> builtins.str:
         r"""
         Serialize a subgraph to DOT.
@@ -109,11 +124,25 @@ class DotGraph:
         r"""
         Empty subgraph of this graph.
         """
-    def iter_edges_of(self, subgraph: Subgraph) -> builtins.list[tuple[HedgePair, EdgeIndex, EdgeData]]:
+    def iter_edges(self) -> builtins.list[tuple[HedgePair, EdgeIndex, EdgeData]]:
+        r"""
+        Iterate edges in the full graph.
+        """
+    def iter_edges_of(
+        self, subgraph: Subgraph
+    ) -> builtins.list[tuple[HedgePair, EdgeIndex, EdgeData]]:
         r"""
         Iterate edges within a subgraph.
         """
-    def iter_nodes_of(self, subgraph: Subgraph) -> builtins.list[tuple[NodeIndex, builtins.list[Hedge], DotVertexData]]:
+    def iter_nodes(
+        self,
+    ) -> builtins.list[tuple[NodeIndex, builtins.list[Hedge], DotVertexData]]:
+        r"""
+        Iterate nodes in the full graph.
+        """
+    def iter_nodes_of(
+        self, subgraph: Subgraph
+    ) -> builtins.list[tuple[NodeIndex, builtins.list[Hedge], DotVertexData]]:
         r"""
         Iterate nodes within a subgraph.
         """
@@ -129,23 +158,94 @@ class DotGraph:
         r"""
         Whether a subgraph is connected.
         """
-    def depth_first_traverse(self, subgraph: Subgraph, root_node: typing.Any, include_hedge: typing.Optional[typing.Any]) -> TraversalTree:
+    def depth_first_traverse(
+        self,
+        subgraph: Subgraph,
+        root_node: typing.Any,
+        include_hedge: typing.Optional[typing.Any],
+    ) -> TraversalTree:
         r"""
         Depth-first traversal from a root node.
         """
-    def breadth_first_traverse(self, subgraph: Subgraph, root_node: typing.Any, include_hedge: typing.Optional[typing.Any]) -> TraversalTree:
+    def breadth_first_traverse(
+        self,
+        subgraph: Subgraph,
+        root_node: typing.Any,
+        include_hedge: typing.Optional[typing.Any],
+    ) -> TraversalTree:
         r"""
         Breadth-first traversal from a root node.
         """
-    def join(self, other: DotGraph, matching_fn: typing.Any, merge_fn: typing.Any) -> DotGraph:
+    def bridges(self) -> Subgraph:
+        r"""
+        Bridges in the full graph.
+        """
+    def bridges_of(self, subgraph: Subgraph) -> Subgraph:
+        r"""
+        Bridges within a subgraph.
+        """
+    def cycle_basis(self) -> tuple[builtins.list[Cycle], TraversalTree]:
+        r"""
+        Cycle basis of the full graph.
+        """
+    def cycle_basis_of(
+        self, subgraph: Subgraph
+    ) -> tuple[builtins.list[Cycle], TraversalTree]:
+        r"""
+        Cycle basis of a subgraph.
+        """
+    def all_spanning_forests(self) -> builtins.list[Subgraph]:
+        r"""
+        All spanning forests of the full graph.
+        """
+    def all_spanning_forests_of(self, subgraph: Subgraph) -> builtins.list[Subgraph]:
+        r"""
+        All spanning forests of a subgraph.
+        """
+    def combine_to_single_hedgenode(
+        self, nodes: typing.Sequence[typing.Any]
+    ) -> HedgeNode:
+        r"""
+        Combine nodes into a single hedge node.
+        """
+    def all_cuts(
+        self, source: HedgeNode, target: HedgeNode
+    ) -> builtins.list[tuple[Subgraph, OrientedCut, Subgraph]]:
+        r"""
+        All cuts between two hedge nodes.
+        """
+    def all_cuts_from_ids(
+        self, source: typing.Sequence[typing.Any], target: typing.Sequence[typing.Any]
+    ) -> builtins.list[tuple[Subgraph, OrientedCut, Subgraph]]:
+        r"""
+        All cuts between two sets of node indices.
+        """
+    def contract_subgraph(
+        self, subgraph: Subgraph, node_data_merge: typing.Optional[DotVertexData] = None
+    ) -> None:
+        r"""
+        Contract a subgraph into a single node, deleting its edges.
+        """
+    def join(
+        self, other: DotGraph, matching_fn: typing.Any, merge_fn: typing.Any
+    ) -> DotGraph:
         r"""
         Join two graphs, matching dangling edges via a Python callback.
         """
-    def join_mut(self, other: DotGraph, matching_fn: typing.Any, merge_fn: typing.Any) -> None:
+    def join_mut(
+        self, other: DotGraph, matching_fn: typing.Any, merge_fn: typing.Any
+    ) -> None:
         r"""
         In-place join, matching dangling edges via a Python callback.
         """
-    def extract(self, subgraph: Subgraph, split_edge_fn: typing.Any, internal_data: typing.Any, split_node: typing.Any, owned_node: typing.Any) -> DotGraph:
+    def extract(
+        self,
+        subgraph: Subgraph,
+        split_edge_fn: typing.Any,
+        internal_data: typing.Any,
+        split_node: typing.Any,
+        owned_node: typing.Any,
+    ) -> DotGraph:
         r"""
         Extract a subgraph with Python callbacks to transform edge/node data.
         """
@@ -169,11 +269,26 @@ class DotGraphBuilder:
         r"""
         Add a node and return its index.
         """
-    def add_edge(self, source: NodeIndex, sink: NodeIndex, data: typing.Optional[DotEdgeData] = None, orientation: typing.Optional[Orientation] = None, source_hedge: typing.Optional[DotHedgeData] = None, sink_hedge: typing.Optional[DotHedgeData] = None) -> None:
+    def add_edge(
+        self,
+        source: NodeIndex,
+        sink: NodeIndex,
+        data: typing.Optional[DotEdgeData] = None,
+        orientation: typing.Optional[Orientation] = None,
+        source_hedge: typing.Optional[DotHedgeData] = None,
+        sink_hedge: typing.Optional[DotHedgeData] = None,
+    ) -> None:
         r"""
         Add an edge between two nodes.
         """
-    def add_external_edge(self, source: NodeIndex, data: typing.Optional[DotEdgeData] = None, orientation: typing.Optional[Orientation] = None, flow: typing.Optional[Flow] = None, hedge: typing.Optional[DotHedgeData] = None) -> None:
+    def add_external_edge(
+        self,
+        source: NodeIndex,
+        data: typing.Optional[DotEdgeData] = None,
+        orientation: typing.Optional[Orientation] = None,
+        flow: typing.Optional[Flow] = None,
+        hedge: typing.Optional[DotHedgeData] = None,
+    ) -> None:
         r"""
         Add a dangling (external) edge incident to a node.
         """
@@ -207,7 +322,13 @@ class DotHedgeData:
         r"""
         Optional compass point as a string.
         """
-    def __new__(cls, statement: typing.Optional[builtins.str] = None, id: typing.Optional[builtins.int] = None, port_label: typing.Optional[builtins.str] = None, compasspt: typing.Optional[builtins.str] = None) -> DotHedgeData:
+    def __new__(
+        cls,
+        statement: typing.Optional[builtins.str] = None,
+        id: typing.Optional[builtins.int] = None,
+        port_label: typing.Optional[builtins.str] = None,
+        compasspt: typing.Optional[builtins.str] = None,
+    ) -> DotHedgeData:
         r"""
         Create hedge data from fields.
         """
@@ -236,7 +357,12 @@ class DotVertexData:
         r"""
         Attribute statements as a dict.
         """
-    def __new__(cls, name: typing.Optional[builtins.str] = None, index: typing.Optional[builtins.int] = None, statements: typing.Optional[typing.Mapping[builtins.str, builtins.str]] = None) -> DotVertexData:
+    def __new__(
+        cls,
+        name: typing.Optional[builtins.str] = None,
+        index: typing.Optional[builtins.int] = None,
+        statements: typing.Optional[typing.Mapping[builtins.str, builtins.str]] = None,
+    ) -> DotVertexData:
         r"""
         Create vertex data from fields.
         """
@@ -443,7 +569,9 @@ class Subgraph:
         Create a full subgraph including all hedges.
         """
     @classmethod
-    def from_hedges(cls, size: builtins.int, hedges: typing.Sequence[typing.Any]) -> Subgraph:
+    def from_hedges(
+        cls, size: builtins.int, hedges: typing.Sequence[typing.Any]
+    ) -> Subgraph:
         r"""
         Create a subgraph from a list of hedges.
         """
@@ -485,6 +613,70 @@ class Subgraph:
         """
 
 @typing.final
+class Cycle:
+    r"""
+    Cycle represented as a subgraph and optional loop count.
+    """
+    @property
+    def filter(self) -> Subgraph:
+        r"""
+        Subgraph filter for this cycle.
+        """
+    @property
+    def loop_count(self) -> typing.Optional[builtins.int]:
+        r"""
+        Optional loop count for this cycle.
+        """
+    def __repr__(self) -> builtins.str:
+        r"""
+        Debug-style representation.
+        """
+
+@typing.final
+class OrientedCut:
+    r"""
+    Oriented cut represented by left/right subgraphs.
+    """
+    @property
+    def left(self) -> Subgraph:
+        r"""
+        Left side of the cut.
+        """
+    @property
+    def right(self) -> Subgraph:
+        r"""
+        Right side of the cut.
+        """
+    def __repr__(self) -> builtins.str:
+        r"""
+        Debug-style representation.
+        """
+
+@typing.final
+class HedgeNode:
+    r"""
+    Hedge node with internal graph and hairs.
+    """
+    def __new__(cls, internal_graph: Subgraph, hairs: Subgraph) -> HedgeNode:
+        r"""
+        Create a hedge node from internal graph and hairs subgraphs.
+        """
+    @property
+    def internal_graph(self) -> Subgraph:
+        r"""
+        Internal subgraph.
+        """
+    @property
+    def hairs(self) -> Subgraph:
+        r"""
+        Hair subgraph.
+        """
+    def __repr__(self) -> builtins.str:
+        r"""
+        Debug-style representation.
+        """
+
+@typing.final
 class TraversalTree:
     r"""
     Traversal tree produced by DFS/BFS.
@@ -501,8 +693,9 @@ class TraversalTree:
         r"""
         Covers a subgraph with the traversal tree.
         """
-    def iter_hedges(self) -> builtins.list[tuple[Hedge, builtins.str, typing.Optional[Hedge]]]:
+    def iter_hedges(
+        self,
+    ) -> builtins.list[tuple[Hedge, builtins.str, typing.Optional[Hedge]]]:
         r"""
         Iterate hedges as (hedge, kind, root_hedge).
         """
-

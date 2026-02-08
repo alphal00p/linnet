@@ -4,7 +4,10 @@ use std::collections::BTreeMap;
 use linnet::half_edge::builder::{HedgeData, HedgeGraphBuilder};
 use linnet::half_edge::involution::{EdgeData, EdgeIndex, Flow, Hedge, HedgePair, Orientation};
 use linnet::half_edge::nodestore::DefaultNodeStore;
-use linnet::half_edge::subgraph::{Inclusion, ModifySubSet, SuBitGraph, SubSetLike, SubSetOps};
+use linnet::half_edge::subgraph::{
+    cut::OrientedCut, cycle::Cycle, internal::InternalSubGraph, node::HedgeNode, Inclusion,
+    ModifySubSet, SuBitGraph, SubSetLike, SubSetOps,
+};
 use linnet::half_edge::tree::SimpleTraversalTree;
 use linnet::half_edge::{HedgeGraphError, NodeIndex};
 use linnet::parser::{
@@ -633,6 +636,130 @@ impl PySubgraph {
     }
 }
 
+/// Cycle represented as a subgraph and optional loop count.
+#[gen_stub_pyclass]
+#[pyclass(from_py_object, name = "Cycle")]
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct PyCycle {
+    cycle: Cycle,
+}
+
+#[gen_stub_pymethods]
+#[pymethods]
+impl PyCycle {
+    /// Subgraph filter for this cycle.
+    #[getter]
+    fn filter(&self) -> PySubgraph {
+        PySubgraph {
+            subgraph: self.cycle.filter.clone(),
+        }
+    }
+
+    /// Optional loop count for this cycle.
+    #[getter]
+    fn loop_count(&self) -> Option<usize> {
+        self.cycle.loop_count
+    }
+
+    /// Debug-style representation.
+    fn __repr__(&self) -> String {
+        let count = match self.cycle.loop_count {
+            Some(v) => v.to_string(),
+            None => "None".to_string(),
+        };
+        format!(
+            "Cycle(included={}, loop_count={})",
+            self.cycle.filter.n_included(),
+            count
+        )
+    }
+}
+
+/// Oriented cut represented by left/right subgraphs.
+#[gen_stub_pyclass]
+#[pyclass(from_py_object, name = "OrientedCut")]
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct PyOrientedCut {
+    cut: OrientedCut,
+}
+
+#[gen_stub_pymethods]
+#[pymethods]
+impl PyOrientedCut {
+    /// Left side of the cut.
+    #[getter]
+    fn left(&self) -> PySubgraph {
+        PySubgraph {
+            subgraph: self.cut.left.clone(),
+        }
+    }
+
+    /// Right side of the cut.
+    #[getter]
+    fn right(&self) -> PySubgraph {
+        PySubgraph {
+            subgraph: self.cut.right.clone(),
+        }
+    }
+
+    /// Debug-style representation.
+    fn __repr__(&self) -> String {
+        format!("OrientedCut({})", self.cut)
+    }
+}
+
+/// Hedge node with internal graph and hairs.
+#[gen_stub_pyclass]
+#[pyclass(from_py_object, name = "HedgeNode")]
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct PyHedgeNode {
+    node: HedgeNode,
+}
+
+#[gen_stub_pymethods]
+#[pymethods]
+impl PyHedgeNode {
+    /// Create a hedge node from internal graph and hairs subgraphs.
+    #[new]
+    fn new(internal_graph: &PySubgraph, hairs: &PySubgraph) -> Self {
+        let internal = InternalSubGraph {
+            filter: internal_graph.subgraph.clone(),
+            loopcount: None,
+        };
+        Self {
+            node: HedgeNode {
+                internal_graph: internal,
+                hairs: hairs.subgraph.clone(),
+            },
+        }
+    }
+
+    /// Internal subgraph.
+    #[getter]
+    fn internal_graph(&self) -> PySubgraph {
+        PySubgraph {
+            subgraph: self.node.internal_graph.filter.clone(),
+        }
+    }
+
+    /// Hair subgraph.
+    #[getter]
+    fn hairs(&self) -> PySubgraph {
+        PySubgraph {
+            subgraph: self.node.hairs.clone(),
+        }
+    }
+
+    /// Debug-style representation.
+    fn __repr__(&self) -> String {
+        format!(
+            "HedgeNode(internal={}, hairs={})",
+            self.node.internal_graph.filter.n_included(),
+            self.node.hairs.n_included()
+        )
+    }
+}
+
 /// Traversal tree produced by DFS/BFS.
 #[gen_stub_pyclass]
 #[pyclass(from_py_object, name = "TraversalTree")]
@@ -725,6 +852,11 @@ impl PyDotGraph {
         self.graph.debug_dot()
     }
 
+    /// Serialize the full graph to DOT.
+    fn dot(&self) -> String {
+        self.graph.dot_of(&self.graph.full_filter())
+    }
+
     /// Serialize a subgraph to DOT.
     fn dot_of(&self, subgraph: &PySubgraph) -> String {
         self.graph.dot_of(&subgraph.subgraph)
@@ -792,6 +924,24 @@ impl PyDotGraph {
         }
     }
 
+    /// Iterate edges in the full graph.
+    fn iter_edges(&self) -> Vec<(PyHedgePair, PyEdgeIndex, PyEdgeData)> {
+        self.graph
+            .iter_edges()
+            .map(|(pair, eid, data)| {
+                let owned = EdgeData {
+                    orientation: data.orientation,
+                    data: data.data.clone(),
+                };
+                (
+                    PyHedgePair { pair },
+                    PyEdgeIndex { edge: eid },
+                    PyEdgeData { data: owned },
+                )
+            })
+            .collect()
+    }
+
     /// Iterate edges within a subgraph.
     fn iter_edges_of(&self, subgraph: &PySubgraph) -> Vec<(PyHedgePair, PyEdgeIndex, PyEdgeData)> {
         self.graph
@@ -805,6 +955,21 @@ impl PyDotGraph {
                     PyHedgePair { pair },
                     PyEdgeIndex { edge: eid },
                     PyEdgeData { data: owned },
+                )
+            })
+            .collect()
+    }
+
+    /// Iterate nodes in the full graph.
+    fn iter_nodes(&self) -> Vec<(PyNodeIndex, Vec<PyHedge>, PyDotVertexData)> {
+        self.graph
+            .iter_nodes()
+            .map(|(node, neighbors, data)| {
+                let hedges = neighbors.map(|h| PyHedge { hedge: h }).collect();
+                (
+                    PyNodeIndex { node },
+                    hedges,
+                    PyDotVertexData { data: data.clone() },
                 )
             })
             .collect()
@@ -889,6 +1054,130 @@ impl PyDotGraph {
         )
         .map_err(to_py_err)?;
         Ok(PyTraversalTree { tree })
+    }
+
+    /// Bridges in the full graph.
+    fn bridges(&self) -> PySubgraph {
+        PySubgraph {
+            subgraph: self.graph.bridges(),
+        }
+    }
+
+    /// Bridges within a subgraph.
+    fn bridges_of(&self, subgraph: &PySubgraph) -> PySubgraph {
+        PySubgraph {
+            subgraph: self.graph.bridges_of(&subgraph.subgraph),
+        }
+    }
+
+    /// Cycle basis of the full graph.
+    fn cycle_basis(&self) -> (Vec<PyCycle>, PyTraversalTree) {
+        let (cycles, tree) = self.graph.cycle_basis();
+        let cycles = cycles.into_iter().map(|c| PyCycle { cycle: c }).collect();
+        (cycles, PyTraversalTree { tree })
+    }
+
+    /// Cycle basis of a subgraph.
+    fn cycle_basis_of(&self, subgraph: &PySubgraph) -> (Vec<PyCycle>, PyTraversalTree) {
+        let (cycles, tree) = self.graph.cycle_basis_of(&subgraph.subgraph);
+        let cycles = cycles.into_iter().map(|c| PyCycle { cycle: c }).collect();
+        (cycles, PyTraversalTree { tree })
+    }
+
+    /// All spanning forests of the full graph.
+    fn all_spanning_forests(&self) -> Vec<PySubgraph> {
+        let full = self.graph.full_filter();
+        self.graph
+            .all_spanning_forests_of(&full)
+            .into_iter()
+            .map(|sg| PySubgraph { subgraph: sg })
+            .collect()
+    }
+
+    /// All spanning forests of a subgraph.
+    fn all_spanning_forests_of(&self, subgraph: &PySubgraph) -> Vec<PySubgraph> {
+        self.graph
+            .all_spanning_forests_of(&subgraph.subgraph)
+            .into_iter()
+            .map(|sg| PySubgraph { subgraph: sg })
+            .collect()
+    }
+
+    /// Combine nodes into a single hedge node.
+    fn combine_to_single_hedgenode(
+        &self,
+        nodes: Vec<Py<PyAny>>,
+        py: Python<'_>,
+    ) -> PyResult<PyHedgeNode> {
+        let mut ids = Vec::with_capacity(nodes.len());
+        for node in nodes {
+            ids.push(extract_node_index(&node.bind(py))?);
+        }
+        let node = self.graph.combine_to_single_hedgenode(&ids);
+        Ok(PyHedgeNode { node })
+    }
+
+    /// All cuts between two hedge nodes.
+    fn all_cuts(
+        &self,
+        source: &PyHedgeNode,
+        target: &PyHedgeNode,
+    ) -> Vec<(PySubgraph, PyOrientedCut, PySubgraph)> {
+        self.graph
+            .all_cuts(source.node.clone(), target.node.clone())
+            .into_iter()
+            .map(|(s_side, cut, t_side)| {
+                (
+                    PySubgraph { subgraph: s_side },
+                    PyOrientedCut { cut },
+                    PySubgraph { subgraph: t_side },
+                )
+            })
+            .collect()
+    }
+
+    /// All cuts between two sets of node indices.
+    fn all_cuts_from_ids(
+        &self,
+        source: Vec<Py<PyAny>>,
+        target: Vec<Py<PyAny>>,
+        py: Python<'_>,
+    ) -> PyResult<Vec<(PySubgraph, PyOrientedCut, PySubgraph)>> {
+        let mut source_ids = Vec::with_capacity(source.len());
+        for node in source {
+            source_ids.push(extract_node_index(&node.bind(py))?);
+        }
+        let mut target_ids = Vec::with_capacity(target.len());
+        for node in target {
+            target_ids.push(extract_node_index(&node.bind(py))?);
+        }
+        let cuts = self.graph.all_cuts_from_ids(&source_ids, &target_ids);
+        Ok(cuts
+            .into_iter()
+            .map(|(s_side, cut, t_side)| {
+                (
+                    PySubgraph { subgraph: s_side },
+                    PyOrientedCut { cut },
+                    PySubgraph { subgraph: t_side },
+                )
+            })
+            .collect())
+    }
+
+    /// Contract a subgraph into a single node, deleting its edges.
+    #[pyo3(signature = (subgraph, node_data_merge=None))]
+    fn contract_subgraph(
+        &mut self,
+        subgraph: &PySubgraph,
+        node_data_merge: Option<&PyDotVertexData>,
+    ) {
+        let node_data = match node_data_merge {
+            Some(obj) => obj.data.clone(),
+            None => DotVertexData::empty(),
+        };
+        self.graph
+            .graph
+            .contract_subgraph(&subgraph.subgraph, node_data);
     }
 
     /// Join two graphs, matching dangling edges via a Python callback.
@@ -1381,6 +1670,9 @@ fn linnet_py(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyEdgeData>()?;
     m.add_class::<PyHedgePair>()?;
     m.add_class::<PySubgraph>()?;
+    m.add_class::<PyCycle>()?;
+    m.add_class::<PyOrientedCut>()?;
+    m.add_class::<PyHedgeNode>()?;
     m.add_class::<PyTraversalTree>()?;
     m.add_class::<PyDotGraph>()?;
     m.add_class::<PyDotGraphBuilder>()?;
