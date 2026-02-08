@@ -64,6 +64,11 @@ class DotGraph:
         Parse a DOT string into a graph.
         """
     @classmethod
+    def from_string_set(cls, s: builtins.str) -> builtins.list[DotGraph]:
+        r"""
+        Parse a DOT string into multiple graphs.
+        """
+    @classmethod
     def from_file(cls, path: builtins.str) -> DotGraph:
         r"""
         Parse a DOT file into a graph.

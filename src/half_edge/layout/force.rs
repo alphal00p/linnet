@@ -37,6 +37,11 @@ pub fn force_directed_layout<'a, E, V, H, N>(
 {
     let mut step = cfg.step;
     let mut rng = SmallRng::seed_from_u64(cfg.seed);
+    // Break perfect symmetry (e.g., all x=0) so forces can separate axes.
+    let jitter = 1e-3 * energy.spring_length * cfg.step.abs();
+    if jitter > 0.0 {
+        apply_initial_jitter(state, &mut rng, jitter);
+    }
     let z_spread = 10.0 * energy.spring_length;
     let mut node_z = init_node_z(&mut rng, state.vertex_points.len().0, z_spread);
     let mut edge_z = init_edge_z(&mut rng, state.edge_points.len().0, z_spread);
@@ -111,6 +116,38 @@ fn clamp_shift3(shift: Vector3<f64>, max_delta: f64) -> Vector3<f64> {
         shift * (max_delta / mag)
     } else {
         shift
+    }
+}
+
+fn apply_initial_jitter<'a, E, V, H, N>(
+    state: &mut LayoutState<'a, E, V, H, N>,
+    rng: &mut impl Rng,
+    jitter: f64,
+) where
+    E: Shiftable + HasPointConstraint,
+    V: Shiftable + HasPointConstraint,
+    N: NodeStorageOps<NodeData = V> + Clone,
+{
+    for i in 0..state.vertex_points.len().0 {
+        let idx = NodeIndex(i);
+        let shift = Vector2::new(
+            rng.gen_range(-jitter..=jitter),
+            rng.gen_range(-jitter..=jitter),
+        );
+        if shift != Vector2::zero() {
+            apply_vertex_shift_with_groups(state, idx, shift);
+        }
+    }
+
+    for i in 0..state.edge_points.len().0 {
+        let idx = EdgeIndex(i);
+        let shift = Vector2::new(
+            rng.gen_range(-jitter..=jitter),
+            rng.gen_range(-jitter..=jitter),
+        );
+        if shift != Vector2::zero() {
+            apply_edge_shift_with_groups(state, idx, shift);
+        }
     }
 }
 

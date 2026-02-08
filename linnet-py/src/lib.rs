@@ -7,7 +7,9 @@ use linnet::half_edge::nodestore::DefaultNodeStore;
 use linnet::half_edge::subgraph::{Inclusion, ModifySubSet, SuBitGraph, SubSetLike, SubSetOps};
 use linnet::half_edge::tree::SimpleTraversalTree;
 use linnet::half_edge::{HedgeGraphError, NodeIndex};
-use linnet::parser::{DotEdgeData, DotGraph, DotHedgeData, DotVertexData, GlobalData};
+use linnet::parser::{
+    set::DotGraphSet, DotEdgeData, DotGraph, DotHedgeData, DotVertexData, GlobalData,
+};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::{PyAny, PyDict, PyTuple, PyType};
@@ -702,6 +704,13 @@ impl PyDotGraph {
     fn from_string(_cls: &Bound<'_, PyType>, s: &str) -> PyResult<Self> {
         let graph = DotGraph::from_string(s).map_err(|e| PyValueError::new_err(e.to_string()))?;
         Ok(Self { graph })
+    }
+
+    /// Parse a DOT string into multiple graphs.
+    #[classmethod]
+    fn from_string_set(_cls: &Bound<'_, PyType>, s: &str) -> PyResult<Vec<Self>> {
+        let set = DotGraphSet::from_string(s).map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(set.into_iter().map(|graph| Self { graph }).collect())
     }
 
     /// Parse a DOT file into a graph.
