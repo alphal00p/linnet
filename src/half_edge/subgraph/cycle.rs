@@ -104,10 +104,12 @@ impl Cycle {
     ) -> bool {
         for (_, c, _) in graph.iter_nodes_of(&self.filter) {
             let adgacent = c.filter(|a| self.filter.includes(a));
-            if adgacent.count() != 2 {
+            let count = adgacent.count();
+            if count != 2 {
                 return false;
             }
         }
+
         if graph.count_connected_components(&self.filter) > 1 {
             return false;
         }

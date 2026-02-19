@@ -83,10 +83,11 @@
 
 use core::panic;
 use std::cmp::Ordering;
+use std::collections::BTreeSet;
 use std::fmt::Display;
 use std::hash::Hash;
 use std::num::TryFromIntError;
-use std::ops::{Index, IndexMut};
+use std::ops::{Index, IndexMut, Range, RangeBounds};
 
 use ahash::{AHashMap, AHashSet};
 
@@ -1805,6 +1806,189 @@ impl<E, V, H, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, H, N> {
                 }
             })
             .collect()
+    }
+
+    pub fn all_bonds<R: RangeBounds<usize>>(&self, size: &R) -> Vec<SuBitGraph> {
+        self.all_bonds_of(&self.full_filter(), size)
+    }
+    pub fn a_bond(&self, cond: &impl Fn(&SuBitGraph) -> bool) -> Option<SuBitGraph> {
+        self.a_bond_of(&self.full_filter(), cond)
+    }
+
+    fn all_bonds_of_impl<R: RangeBounds<usize>>(
+        &self,
+        subgraph: &SuBitGraph,
+        size: &R,
+    ) -> Vec<SuBitGraph> {
+        let Some((growth, cut)) = self
+            .iter_nodes_of(subgraph)
+            .map(|(_, crown, _)| {
+                let mut subcrown: SuBitGraph = self.empty_subgraph();
+                for i in crown.filter(|i| subgraph.includes(i)) {
+                    subcrown.add(i);
+                }
+                let cut: SuBitGraph = self.internal_crown(&subcrown);
+                (subcrown, cut)
+            })
+            .next()
+        else {
+            return vec![];
+        };
+
+        let mut regions = BTreeSet::new();
+
+        self.all_bonds_backtrack_of(&mut regions, subgraph, cut, growth, size)
+    }
+    fn a_bond_of_impl(
+        &self,
+        subgraph: &SuBitGraph,
+        cond: &impl Fn(&SuBitGraph) -> bool,
+    ) -> Option<SuBitGraph> {
+        let Some((growth, cut)) = self
+            .iter_nodes_of(subgraph)
+            .map(|(_, crown, _)| {
+                let mut subcrown: SuBitGraph = self.empty_subgraph();
+                for i in crown.filter(|i| subgraph.includes(i)) {
+                    subcrown.add(i);
+                }
+                let cut: SuBitGraph = self.internal_crown(&subcrown);
+                (subcrown, cut)
+            })
+            .next()
+        else {
+            return None;
+        };
+
+        let mut regions = BTreeSet::new();
+
+        self.a_bond_backtrack_of(&mut regions, subgraph, cut, growth, cond)
+    }
+
+    fn a_bond_backtrack_of(
+        &self,
+        regions: &mut BTreeSet<SuBitGraph>,
+        subgraph: &SuBitGraph,
+        cut: SuBitGraph,
+        growth: SuBitGraph,
+        cond: &impl Fn(&SuBitGraph) -> bool,
+    ) -> Option<SuBitGraph> {
+        if regions.contains(&growth) {
+            return None;
+        } else {
+            regions.insert(growth.clone());
+        }
+
+        if cond(&cut) {
+            if self.is_connected(&subgraph.subtract(&growth)) {
+                return Some(cut);
+            }
+        }
+
+        // println!(
+        //     "//cut: \n{}, //growth: \n{}",
+        //     self.dot(&cut),
+        //     self.dot(&growth)
+        // );
+        let mut seen = BTreeSet::new();
+        for h in cut.included_iter() {
+            let invh = self.inv(h);
+            if invh == h || growth.includes(&invh) {
+                continue;
+            }
+            let new_node = self.node_id(invh);
+
+            if !seen.insert(new_node) {
+                continue;
+            }
+
+            let mut new_growth = growth.clone();
+            for c in self.iter_crown(new_node) {
+                new_growth.add(c);
+            }
+            let new_cut = self.internal_crown(&new_growth);
+            let Some(cut) = self.a_bond_backtrack_of(regions, subgraph, new_cut, new_growth, cond)
+            else {
+                continue;
+            };
+
+            return Some(cut);
+        }
+
+        None
+    }
+
+    fn all_bonds_backtrack_of<R: RangeBounds<usize>>(
+        &self,
+        regions: &mut BTreeSet<SuBitGraph>,
+        subgraph: &SuBitGraph,
+        cut: SuBitGraph,
+        growth: SuBitGraph,
+        size: &R,
+    ) -> Vec<SuBitGraph> {
+        let mut cuts = vec![];
+        if regions.contains(&growth) {
+            return cuts;
+        } else {
+            regions.insert(growth.clone());
+        }
+
+        // println!(
+        //     "//cut: \n{}, //growth: \n{}",
+        //     self.dot(&cut),
+        //     self.dot(&growth)
+        // );
+        let mut seen = BTreeSet::new();
+        for h in cut.included_iter() {
+            let invh = self.inv(h);
+            if invh == h || growth.includes(&invh) {
+                continue;
+            }
+            let new_node = self.node_id(invh);
+
+            if !seen.insert(new_node) {
+                continue;
+            }
+
+            let mut new_growth = growth.clone();
+            for c in self.iter_crown(new_node) {
+                new_growth.add(c);
+            }
+            let new_cut = self.internal_crown(&new_growth);
+            cuts.extend(self.all_bonds_backtrack_of(regions, subgraph, new_cut, new_growth, size));
+        }
+
+        // println!("Hi");
+        if size.contains(&cut.n_included()) {
+            if self.is_connected(&subgraph.subtract(&growth)) {
+                cuts.push(cut);
+            }
+        }
+        cuts
+    }
+
+    pub fn all_bonds_of<S: SubGraphLike<Base = SuBitGraph>, R: RangeBounds<usize>>(
+        &self,
+        subgraph: &S,
+        size: &R,
+    ) -> Vec<SuBitGraph> {
+        let mut cuts = vec![];
+        for c in self.connected_components(subgraph) {
+            cuts.extend(self.all_bonds_of_impl(&c.included(), size))
+        }
+        cuts
+    }
+    pub fn a_bond_of<S: SubGraphLike<Base = SuBitGraph>>(
+        &self,
+        subgraph: &S,
+        cond: &impl Fn(&SuBitGraph) -> bool,
+    ) -> Option<SuBitGraph> {
+        for c in self.connected_components(subgraph) {
+            let Some(cut) = self.a_bond_of_impl(&c.included(), cond) else {
+                continue;
+            };
+            return Some(cut);
+        }
+        None
     }
 
     pub fn all_cuts(

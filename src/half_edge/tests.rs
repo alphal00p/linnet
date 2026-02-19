@@ -1,4 +1,51 @@
 #[test]
+fn twobonds() {
+    let two: DotGraph = dot!(digraph { 0 -> 1
+        1 -> 2
+        0 -> 3
+        2 -> a ->b->c-> 3
+        3 -> 0
+        2 -> 1
+    })
+    .unwrap();
+
+    let all_two_bonds = two.graph.all_bonds(&(2..3));
+    insta::assert_snapshot!(all_two_bonds.len(),@"10");
+    // for i in two.graph.all_bonds(&(2..3)) {
+    //     println!("{}", two.dot(&i));
+    // }
+
+    two.dot(&two.graph.a_bond(&|c| c.n_included() == 3).unwrap());
+}
+
+#[test]
+fn connected_tadpoles() {
+    let two: DotGraph = dot!(
+    digraph {
+
+          0 -> 0
+          1 -> 1
+    })
+    .unwrap();
+
+    assert_eq!(two.connected_components(&two.full_filter()).len(), 2);
+
+    let one: DotGraph = dot!(
+    digraph {
+
+          0:0 -> 0:1
+          0:2-> 0:3
+    })
+    .unwrap();
+
+    let mut single = one.full_filter();
+    single.sub(Hedge(0));
+    single.sub(Hedge(1));
+
+    assert_eq!(one.count_connected_components(&single), 1);
+}
+
+#[test]
 fn cycle_basis() {
     let two: DotGraph = dot!(
     digraph {
