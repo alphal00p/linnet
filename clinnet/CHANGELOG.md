@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.9](https://github.com/alphal00p/linnet/compare/clinnet-v0.1.8...clinnet-v0.1.9) - 2026-02-19
+
+### Other
+
+- update wasm bundle
+
 ## [0.1.8](https://github.com/alphal00p/linnet/compare/clinnet-v0.1.7...clinnet-v0.1.8) - 2025-12-04
 
 ### Other

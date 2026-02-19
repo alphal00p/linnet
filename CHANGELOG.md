@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.17.1](https://github.com/alphal00p/linnet/compare/linnet-v0.17.0...linnet-v0.17.1) - 2026-02-19
+
+### Other
+
+- a_bond and all_bonds
+- Add new classes and update type annotations for DOT graph
+- Add support for parsing DOT string into multiple graphs
+- linnet-py
+- update wasm bundle
+- Fix forest joins/extracts for default nodestore
+- Select default nodestore via feature flags
+
 ## [0.17.0](https://github.com/alphal00p/linnet/compare/linnet-v0.16.1...linnet-v0.17.0) - 2026-01-28
 
 ### Other
