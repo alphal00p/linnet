@@ -429,12 +429,4 @@ impl InternalSubGraph {
     ) {
         self.loopcount = Some(graph.cyclotomatic_number(self));
     }
-
-    pub fn cycle_basis<E, V, H, N: NodeStorageOps<NodeData = V>>(
-        &self,
-        graph: &HedgeGraph<E, V, H, N>,
-    ) -> (Vec<Cycle>, SimpleTraversalTree) {
-        let node = graph.iter_node_ids().next().unwrap();
-        graph.paton_cycle_basis(self, &node, None).unwrap()
-    }
 }

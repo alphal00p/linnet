@@ -250,7 +250,7 @@ impl<P: ForestNodeStore<NodeData = ()>> SimpleTraversalTree<P> {
         NodeIndex::from(self.forest.root(hedge.into()))
     }
 
-    /// get the parent node of the current node
+    /// get the Swapping of the current node
     pub fn node_parent<I: AsRef<Involution>>(&self, from: NodeIndex, inv: I) -> Option<NodeIndex> {
         let root = RootId::from(from);
 

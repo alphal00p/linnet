@@ -906,7 +906,7 @@ impl<E, V, H, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, H, N> {
     ///
     /// The full crown consists of all half-edges that are incident to any node
     /// touched by the `subgraph`, provided that these half-edges are either
-    /// unpaired (identity) or their opposite half-edge is also included in the `subgraph`.
+    /// unpaired (identity) or their opposite half-edge is not included in the `subgraph`.
     ///
     /// This is different from `internal_crown` as it considers all incident edges to
     /// nodes in the subgraph's footprint, not just edges within the subgraph itself.
@@ -936,6 +936,23 @@ impl<E, V, H, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, H, N> {
         crown
     }
 
+    /// Add all half-edges that are incident to any node
+    /// touched by the `subgraph`, provided that these half-edges are either
+    /// unpaired (identity) or their opposite half-edge is not included in the `subgraph`.
+    pub fn add_crown<S: SubSetLike>(&self, subgraph: &mut S)
+    where
+        S: ModifySubSet<Hedge>,
+    {
+        let nodes: Vec<_> = self.iter_nodes_of(subgraph).map(|(n, _, _)| n).collect();
+        for n in nodes {
+            for h in self.iter_crown(n) {
+                let invh = self.inv(h);
+                if h == invh || !subgraph.includes(&invh) {
+                    subgraph.add(h);
+                }
+            }
+        }
+    }
     /// Creates a `SuBitGraph` representing a subgraph containing all external (identity/dangling)
     /// half-edges in the entire graph.
     ///
@@ -2267,19 +2284,15 @@ impl<E, V, H, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, H, N> {
         n_hedges + n_components - n_nodes
     }
 
-    pub fn cycle_basis(&self) -> (Vec<Cycle>, SimpleTraversalTree) {
-        self.paton_cycle_basis(&self.full_graph(), &self.node_id(Hedge(0)), None)
-            .unwrap()
+    pub fn cycle_basis(&self) -> (Vec<Cycle>, SuBitGraph) {
+        self.paton_cycle_basis(&self.full_filter()).unwrap()
     }
 
     pub fn cycle_basis_of<S: SubSetLike<Base = SuBitGraph> + SubGraphLike>(
         &self,
         subgraph: &S,
-    ) -> (Vec<Cycle>, SimpleTraversalTree) {
-        let Some((n, _, _)) = self.iter_nodes_of(subgraph).next() else {
-            return (vec![], SimpleTraversalTree::empty(self));
-        };
-        self.paton_cycle_basis(subgraph, &n, None).unwrap()
+    ) -> (Vec<Cycle>, SuBitGraph) {
+        self.paton_cycle_basis(subgraph.included()).unwrap()
     }
 
     pub fn order_basis(&self, basis: &[HedgeNode]) -> Vec<Vec<InternalSubGraph>> {
@@ -2339,26 +2352,37 @@ impl<E, V, H, N: NodeStorageOps<NodeData = V>> HedgeGraph<E, V, H, N> {
         Ok(self.edge_store.n_internals(&cuts))
     }
 
-    pub fn paton_cycle_basis<S: SubSetLike<Base = SuBitGraph> + SubGraphLike>(
+    fn paton_cycle_basis(
         &self,
-        subgraph: &S,
-        start: &NodeIndex,
-        included_hedge: Option<Hedge>,
-    ) -> Result<(Vec<Cycle>, SimpleTraversalTree), HedgeGraphError> {
-        let tree =
-            SimpleTraversalTree::depth_first_traverse(self, subgraph, start, included_hedge)?;
+        subgraph: &SuBitGraph,
+    ) -> Result<((Vec<Cycle>, SuBitGraph)), HedgeGraphError> {
+        let mut visited_edges: SuBitGraph = self.empty_subgraph();
 
-        let cuts = subgraph.included().subtract(&tree.tree_subgraph);
+        let mut cycle_basis = vec![];
+        let mut forest: SuBitGraph = self.empty_subgraph();
 
-        let mut cycle_basis = Vec::new();
-
-        for c in cuts.included_iter() {
-            if c > self.inv(c) && subgraph.includes(&self.inv(c)) {
-                cycle_basis.push(tree.get_cycle(c, self).unwrap());
+        // Iterate over all edges in the subgraph
+        for hedge_index in subgraph.included_iter() {
+            if visited_edges.includes(&hedge_index) {
+                continue;
             }
+
+            let root_node = self.node_id(hedge_index);
+            let tree = SimpleTraversalTree::depth_first_traverse(self, subgraph, &root_node, None)?;
+
+            let reachable_edges = tree.covers(subgraph);
+            let cuts = subgraph.included().subtract(&tree.tree_subgraph);
+
+            visited_edges.union_with(&reachable_edges);
+            for c in cuts.included_iter() {
+                if c > self.inv(c) && subgraph.includes(&self.inv(c)) {
+                    cycle_basis.push(tree.get_cycle(c, self).unwrap());
+                }
+            }
+            forest.union_with(&tree.tree_subgraph);
         }
 
-        Ok((cycle_basis, tree))
+        Ok((cycle_basis, forest))
     }
 
     pub fn all_spinneys_with_basis(&self, basis: &[&InternalSubGraph]) -> AHashSet<HedgeNode> {

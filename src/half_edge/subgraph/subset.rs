@@ -68,6 +68,10 @@ impl<ID: IndexLike> Swap<ID> for SubSet<ID> {
 }
 
 impl<ID> SubSet<ID> {
+    pub fn is_full(&self) -> bool {
+        self.set.all()
+    }
+
     pub fn iter(&self) -> impl Iterator<Item = bool> + '_ {
         self.set.iter().by_vals()
     }

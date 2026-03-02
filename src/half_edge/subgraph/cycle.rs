@@ -109,7 +109,6 @@ impl Cycle {
                 return false;
             }
         }
-
         if graph.count_connected_components(&self.filter) > 1 {
             return false;
         }
